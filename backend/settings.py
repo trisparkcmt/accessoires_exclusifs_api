@@ -26,7 +26,14 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-$du6=b@-a^c&sg#hj$f
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = ["*", "127.0.0.1", "192.168.1.173", "0.0.0.0", "integral-logically-gator.ngrok-free.app"]
+ALLOWED_HOSTS = [
+    "*",
+    "127.0.0.1",
+    "192.168.1.173",
+    "0.0.0.0",
+    "integral-logically-gator.ngrok-free.app",
+    "accessoires-exclusifs.vercel.app",
+]
 RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
@@ -289,7 +296,11 @@ SESSION_COOKIE_SAMESITE = 'None'
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SAMESITE = 'None'
 CSRF_COOKIE_SECURE = True
-CSRF_TRUSTED_ORIGINS = ["https://integral-logically-gator.ngrok-free.app", "http://172.20.10.5:3000"]
+CSRF_TRUSTED_ORIGINS = [
+    "https://integral-logically-gator.ngrok-free.app",
+    "http://172.20.10.5:3000",
+    "https://accessoires-exclusifs.vercel.app",
+]
 
 
 
@@ -333,6 +344,7 @@ else:
         "http://127.0.0.1:3000",
         "http://172.20.10.5:3000",
         "https://integral-logically-gator.ngrok-free.app",
+        "https://accessoires-exclusifs.vercel.app",
     ]
 CORS_ALLOW_CREDENTIALS = True  # Crucial pour autoriser le partage des cookies HttpOnly
 CORS_ALLOW_HEADERS = list(default_headers) + [
