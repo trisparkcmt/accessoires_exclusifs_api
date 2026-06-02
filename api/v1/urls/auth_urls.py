@@ -37,6 +37,7 @@ urlpatterns = [
 
     # Profil utilisateur personnalisé
     path('me/', manage_me, name='me'),
+    path('me', manage_me),
     path('me/change-email/', change_email, name='me-change-email'),
 
     # Workflow Prestataire (Côté Client)

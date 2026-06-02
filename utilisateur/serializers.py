@@ -177,6 +177,11 @@ class CustomPasswordChangeSerializer(PasswordChangeSerializer):
     new_password = serializers.CharField(required=True)
     new_password_confirm = serializers.CharField(required=True)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields.pop('new_password1', None)
+        self.fields.pop('new_password2', None)
+
     def validate(self, attrs):
         if attrs.get('new_password') != attrs.get('new_password_confirm'):
             raise serializers.ValidationError(
