@@ -557,6 +557,15 @@ class FavoriSerializer(serializers.ModelSerializer):
     def get_type_produit(self, obj):
         return "parfum" if obj.parfum else "accessoire"
 
+    def get_slug_produit(self, obj):
+        if obj.parfum:
+            return obj.parfum.slug
+        return obj.accessoire.slug if obj.accessoire else None
+
+    def get_id_produit(self, obj):
+        if obj.parfum:
+            return obj.parfum.id
+        return obj.accessoire.id if obj.accessoire else None
 
 
 class CategorieParfumSerializer(serializers.ModelSerializer):
