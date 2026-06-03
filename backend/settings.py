@@ -38,10 +38,18 @@ RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
+# Sous-domaine personnalisé Vercel (ex: api.votre-site.com)
+# Définissez VERCEL_API_DOMAIN dans les variables d'environnement Render
+VERCEL_API_DOMAIN = os.getenv('VERCEL_API_DOMAIN')  # ex: "api.votre-site.com"
+if VERCEL_API_DOMAIN:
+    ALLOWED_HOSTS.append(VERCEL_API_DOMAIN)
+
 # Autoriser les requêtes POST/PUT depuis ngrok et Render (indispensable pour l'auth)
 CSRF_TRUSTED_ORIGINS = ["https://integral-logically-gator.ngrok-free.app"]
 if RENDER_EXTERNAL_HOSTNAME:
     CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
+if VERCEL_API_DOMAIN:
+    CSRF_TRUSTED_ORIGINS.append(f"https://{VERCEL_API_DOMAIN}")
 
 # Informer Django que le tunnel ngrok/Render gère le HTTPS
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
