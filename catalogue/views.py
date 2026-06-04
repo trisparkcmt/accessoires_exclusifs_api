@@ -221,7 +221,7 @@ class ParfumViewSet(viewsets.ModelViewSet):
     filterset_class    = ParfumFilter
     search_fields      = ['nom', 'description_courte', 'notes_tete', 'notes_coeur', 'notes_fond']
     ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'contenance_ml']
-    ordering           = ['-date_creation']
+    ordering           = ['?']
     lookup_field       = 'slug'
 
     def get_queryset(self):

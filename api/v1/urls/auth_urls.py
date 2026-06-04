@@ -16,7 +16,8 @@ from utilisateur.views import (
     # Connexion personnalisée
     WebLoginView, MobileLoginView, DeprecatedLoginView,
     ThrottledPasswordResetView, ThrottledRegisterView,
-    ThrottledVerifyEmailView, ThrottledResendEmailVerificationView
+    ThrottledVerifyEmailView, ThrottledResendEmailVerificationView,
+    CustomLogoutView
 )
 
 urlpatterns = [
@@ -25,6 +26,7 @@ urlpatterns = [
     path('web/login/', WebLoginView.as_view(), name='web_login'),
     path('mobile/login/', MobileLoginView.as_view(), name='mobile_login'),
     path('password/reset/', ThrottledPasswordResetView.as_view(), name='rest_password_reset'),
+    path('logout/', CustomLogoutView.as_view(), name='rest_logout'),
     path('', include('dj_rest_auth.urls')),
 
     # Inscription avec limitation anti-abus, mêmes URLs que dj-rest-auth

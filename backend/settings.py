@@ -327,7 +327,7 @@ SPECTACULAR_SETTINGS = {
 
 
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AIzaSyCJWtJ0sHkr5vCRyKxMd4hvzyCN5rfTkK8')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 # Configuration Monetbil (Virement/Payout)
 MONETBIL_SERVICE_KEY = os.getenv('MONETBIL_SERVICE_KEY', 'NhlyzHMYo961mQZ3uCQEUX2xUGUaFhUm')

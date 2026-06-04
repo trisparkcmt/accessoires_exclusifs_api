@@ -17,7 +17,7 @@ from django.template.loader import render_to_string
 from django.db import transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
-from dj_rest_auth.views import LoginView, PasswordResetView
+from dj_rest_auth.views import LoginView, PasswordResetView, LogoutView
 from dj_rest_auth.app_settings import api_settings as dj_rest_auth_settings
 from .serializers import (
     UserSerializer, PrestataireSerializer, PrestataireApplicationSerializer,
@@ -110,6 +110,46 @@ class MobileLoginView(LoginView):
 
 class ThrottledPasswordResetView(PasswordResetView):
     throttle_classes = [PasswordResetIPThrottle, PasswordResetEmailThrottle]
+
+
+class CustomLogoutView(LogoutView):
+    """
+    Vue de déconnexion personnalisée.
+    S'assure que les cookies JWT sont correctement supprimés avec les attributs
+    SameSite=None et Secure=True nécessaires pour le Cross-Origin/HTTPS.
+    """
+    def logout(self, request):
+        response = super().logout(request)
+        
+        cookie_name = dj_rest_auth_settings.JWT_AUTH_COOKIE
+        refresh_cookie_name = dj_rest_auth_settings.JWT_AUTH_REFRESH_COOKIE
+        refresh_cookie_path = dj_rest_auth_settings.JWT_AUTH_REFRESH_COOKIE_PATH
+        cookie_secure = dj_rest_auth_settings.JWT_AUTH_SECURE
+        cookie_samesite = dj_rest_auth_settings.JWT_AUTH_SAMESITE
+        cookie_domain = dj_rest_auth_settings.JWT_AUTH_COOKIE_DOMAIN
+        
+        if cookie_name:
+            response.delete_cookie(
+                cookie_name,
+                path='/',
+                samesite=cookie_samesite,
+                secure=cookie_secure,
+                domain=cookie_domain
+            )
+        if refresh_cookie_name:
+            response.delete_cookie(
+                refresh_cookie_name,
+                path=refresh_cookie_path,
+                samesite=cookie_samesite,
+                secure=cookie_secure,
+                domain=cookie_domain
+            )
+        
+        # Supprimer aussi les cookies de session classiques de Django pour éviter les conflits de session admin
+        response.delete_cookie('sessionid', path='/')
+        response.delete_cookie('csrftoken', path='/')
+        
+        return response
 
 
 #==============================utils================================

@@ -133,6 +133,11 @@ def ia_recommandation(request):
         except Flacon.DoesNotExist:
             flacon = None
 
+    if not flacon:
+        flacon = Flacon.objects.filter(actif=True).order_by('-contenance_ml').first()
+        if flacon:
+            quantite_demandee_ml = flacon.contenance_ml
+
     essences_recommandees = []
     essence_ids = [e.get('id') for e in essences_data if isinstance(e, dict)]
     essences_db = {e.id: e for e in Essence.objects.filter(id__in=essence_ids, actif=True)}
