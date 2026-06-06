@@ -906,11 +906,14 @@ Chaque section répertorie :
       "stock_quantite": 30,                  // [REQUIS] integer
       "seuil_alerte_stock": 3,               // [REQUIS] integer
       "poids_grammes": 150,                  // [REQUIS] integer
-      "image_principale": null,              // [OPTIONNEL] fichier image
+      "image_principale": null,              // [OPTIONNEL] fichier image (multipart/form-data)
       "images_supplementaires": [],          // [OPTIONNEL] tableau d'images
-      "actif": true                          // [OPTIONNEL] boolean (défaut: true)
+      "actif": true,                         // [OPTIONNEL] boolean (défaut: true)
+      "est_bestseller": false,               // [OPTIONNEL] boolean
+      "est_hotseller": false                 // [OPTIONNEL] boolean
     }
     ```
+    **Important image** : pour envoyer `image_principale`, utiliser `multipart/form-data`. En JSON, laisser `null` ou omettre le champ.
 *   **Réponse - 200 OK (GET Liste - Public)** :
     ```json
     {
@@ -948,10 +951,15 @@ Chaque section répertorie :
           "taux_reduction": null,
           "en_promotion": false,
           "stock_quantite": 30,
+          "seuil_alerte_stock": 3,
           "poids_grammes": 150,
-          "image_principale": null,
+          "image_principale": "http://domain.com/media/accessoires/pochette-cuir/image.jpg",
           "images_supplementaires": [],
+          "actif": true,
+          "est_bestseller": false,
+          "est_hotseller": false,
           "date_creation": "2026-05-15T08:00:00Z",
+          "date_modification": "2026-05-15T08:00:00Z",
           "is_favori": false,
           "produits_similaires": []
         }
@@ -978,11 +986,12 @@ Chaque section répertorie :
       "prix_unitaire": "5000.00",            // [REQUIS] string (decimal)
       "stock_quantite": 150,                 // [REQUIS] integer
       "seuil_alerte_stock": 10,              // [REQUIS] integer
-      "image_principale": null,              // [OPTIONNEL] fichier image
+      "image_principale": null,              // [OPTIONNEL] fichier image (multipart/form-data)
       "images_supplementaires": [],          // [OPTIONNEL] tableau d'images
       "actif": true                          // [OPTIONNEL] boolean (défaut: true)
     }
     ```
+    **Important image** : pour envoyer `image_principale`, utiliser `multipart/form-data`. En JSON, laisser `null` ou omettre le champ.
 *   **Réponse - 200 OK (GET Liste - Public)** :
     ```json
     {
@@ -999,7 +1008,10 @@ Chaque section répertorie :
           "prix_unitaire": "5000.00",
           "stock_quantite": 150,
           "stock_suffisant": true,
-          "image_principale": null
+          "image_principale": "http://domain.com/media/flacons/FLC-CRT-100/image.jpg",
+          "actif": true,
+          "date_creation": "2026-05-15T08:00:00Z",
+          "date_modification": "2026-05-15T08:00:00Z"
         }
       ]
     }
@@ -1057,6 +1069,26 @@ Chaque section répertorie :
     }
     ```
 *   **Détail, Modifier & Supprimer** : `GET`, `PUT`, `PATCH`, `DELETE` sur `/api/v1/shop/tags/{slug}/` (Admin)
+*   **Endpoints de select pour le frontend** :
+    *   `GET`, `POST`, `PUT`, `PATCH`, `DELETE` sur `/api/v1/shop/tags-parfum/`
+    *   `GET`, `POST`, `PUT`, `PATCH`, `DELETE` sur `/api/v1/lab/tags-essence/`
+    *   Lecture publique, écriture admin uniquement.
+    *   Ces endpoints servent au même composant select : lire les options, ajouter un tag absent, modifier un tag existant ou supprimer un tag.
+    *   Détail/modification/suppression par slug : `/api/v1/shop/tags-parfum/{slug}/` et `/api/v1/lab/tags-essence/{slug}/`.
+    *   Filtres : `?type=humeur`, `?search=floral`, `?ordering=nom`.
+    *   Réponse d'option :
+        ```json
+        {
+          "id": 1,
+          "libelle": "Floral",
+          "nom": "Floral",
+          "slug": "floral-famille-12345",
+          "type": "famille_olfactive"
+        }
+        ```
+    *   Le frontend affiche `libelle` ou `nom`, conserve `id`, puis envoie `tags: [id]` pour un parfum ou `tag_ids: [id]` pour une essence.
+    *   Types acceptés pour `tags-parfum` : `famille_olfactive`, `humeur`, `saison`, `occasion`.
+    *   Types acceptés pour `tags-essence` : `famille_olfactive`, `humeur`, `saison`, `occasion`, `signe_astrologique`, `moment_journee`.
 
 ### 5.6 Catégories de Parfums
 *   **URL** : `/api/v1/shop/categories-parfum/`
@@ -1093,31 +1125,63 @@ Chaque section répertorie :
 ### 5.7 Types d'Accessoires
 *   **URL** : `/api/v1/shop/types-accessoire/`
 *   **Méthodes** : `GET`, `POST` (Création - Admin uniquement)
+*   **Comportement automatique** : modifier `taux_reduction` met automatiquement à jour les prix promotionnels des accessoires liés à ce type.
 *   **Payload attendu (POST / PUT)** :
     ```json
     {
-      "nom": "Bougie Parfumée", // [REQUIS] string
-      "slug": "bougie-parfumee", // [OPTIONNEL] string (auto-généré)
+      "nom": "Bougie Parfumée",          // [REQUIS] string
+      "slug": "bougie-parfumee",         // [OPTIONNEL] string (auto-généré)
       "description": "Créateurs d'ambiance", // [OPTIONNEL] string
-      "icone": null             // [OPTIONNEL] fichier image
+      "icone": null,                     // [OPTIONNEL] fichier image (multipart/form-data)
+      "actif": true,                     // [OPTIONNEL] boolean (défaut: true)
+      "taux_reduction": "0.00"           // [OPTIONNEL] string (decimal, défaut: "0.00")
     }
     ```
-*   **Réponse - 201 Created** : Objet type d'accessoire complet.
+    **Important image** : `icone` est maintenant un champ uploadable. Pour envoyer un fichier, utiliser `multipart/form-data`. En réponse, `icone` est une URL absolue si le fichier existe.
+*   **Réponse - 201 Created** :
+    ```json
+    {
+      "id": 1,
+      "nom": "Bougie Parfumée",
+      "slug": "bougie-parfumee-12345",
+      "description": "Créateurs d'ambiance",
+      "icone": "http://domain.com/media/types/accessoires/bougie-parfumee/icone.png",
+      "actif": true,
+      "taux_reduction": "0.00",
+      "date_creation": "2026-06-06T12:00:00Z"
+    }
+    ```
 *   **Détail, Modifier & Supprimer** : `GET`, `PUT`, `PATCH`, `DELETE` sur `/api/v1/shop/types-accessoire/{id}/` (Admin)
 
 ### 5.8 Types de Flacons
 *   **URL** : `/api/v1/shop/types-flacon/`
 *   **Méthodes** : `GET`, `POST` (Création - Admin uniquement)
+*   **Comportement automatique** : modifier `taux_reduction` met automatiquement à jour les prix promotionnels des flacons liés à ce type.
 *   **Payload attendu (POST / PUT)** :
     ```json
     {
-      "nom": "Spray Vaporisateur", // [REQUIS] string
-      "slug": "spray-vaporisateur", // [OPTIONNEL] string (auto-généré)
+      "nom": "Spray Vaporisateur",     // [REQUIS] string
+      "slug": "spray-vaporisateur",    // [OPTIONNEL] string (auto-généré)
       "description": "Diffusion fine", // [OPTIONNEL] string
-      "image": null                // [OPTIONNEL] fichier image
+      "image": null,                   // [OPTIONNEL] fichier image (multipart/form-data)
+      "actif": true,                   // [OPTIONNEL] boolean (défaut: true)
+      "taux_reduction": "0.00"         // [OPTIONNEL] string (decimal, défaut: "0.00")
     }
     ```
-*   **Réponse - 201 Created** : Objet type de flacon complet.
+    **Important image** : `image` est maintenant un champ uploadable. Pour envoyer un fichier, utiliser `multipart/form-data`. En réponse, `image` est une URL absolue si le fichier existe.
+*   **Réponse - 201 Created** :
+    ```json
+    {
+      "id": 1,
+      "nom": "Spray Vaporisateur",
+      "slug": "spray-vaporisateur-12345",
+      "description": "Diffusion fine",
+      "image": "http://domain.com/media/types/flacons/1/image.png",
+      "actif": true,
+      "taux_reduction": "0.00",
+      "date_creation": "2026-06-06T12:00:00Z"
+    }
+    ```
 *   **Détail, Modifier & Supprimer** : `GET`, `PUT`, `PATCH`, `DELETE` sur `/api/v1/shop/types-flacon/{id}/` (Admin)
 
 ### 5.9 Produits Essences Finis (Essences vendues prêtes en flacon)
@@ -1221,25 +1285,42 @@ Chaque section répertorie :
     {
       "marque": "Exclusif",                  // [REQUIS] string
       "nom": "Essence de Patchouli",         // [REQUIS] string
-      "slug": "essence-patchouli",           // [OPTIONNEL] string (auto-généré)
-      "categorie": 2,                        // [REQUIS] integer (ID CategorieParfum)
+      "slug": null,                          // [OPTIONNEL] string (auto-généré si absent/null)
+      "categorie": "premium",                // [OPTIONNEL] string ("super_premium" | "premium" | "high", défaut: "premium")
       "code_reference": "ESS-PAT",           // [REQUIS] string (unique)
       "description": "Note boisée",          // [OPTIONNEL] string
       "description_ia": "",                  // [OPTIONNEL] string
       "fournisseur": "Hervé S.A.",           // [OPTIONNEL] string
       "origine_pays": "Cameroun",            // [OPTIONNEL] string
-      "concentration_max": "15.00",          // [OPTIONNEL] string (decimal)
+      "concentration_max": "15.00",          // [OPTIONNEL] string decimal ou null
       "couleur": "Marron",                   // [OPTIONNEL] string
-      "duree": "longue",                     // [OPTIONNEL] string ("courte" | "moyenne" | "longue")
-      "intensite": "forte",                  // [REQUIS] string ("légère" | "moyenne" | "forte" | "très forte")
-      "genre_cible": "mixte",                // [REQUIS] string ("homme" | "femme" | "mixte")
+      "duree": "longue",                     // [OPTIONNEL] string libre
+      "intensite": "forte",                  // [OPTIONNEL] string ("légère" | "moyenne" | "forte" | "très forte" | "")
+      "genre_cible": "mixte",                // [OPTIONNEL] string ("homme" | "femme" | "mixte", défaut: "mixte")
       "notes_tete": "Citron",                // [OPTIONNEL] string
       "notes_coeur": "Patchouli",            // [OPTIONNEL] string
       "notes_fond": "Santal",                // [OPTIONNEL] string
+      "tag_ids": [1, 2, 3],                  // [OPTIONNEL] array d'IDs Tag; remplit automatiquement tag_essence
+      "prix_par_ml": "500.00",               // [OPTIONNEL] string decimal (défaut: "0.00")
       "actif": true,                         // [OPTIONNEL] boolean (défaut: true)
-      "vendu_comme_produit_fini": false      // [OPTIONNEL] boolean (défaut: false)
+      "initial_lot": {                       // [OPTIONNEL] crée le premier lot labo lié
+        "stock_ml": "1000.00",               // [OPTIONNEL] string decimal
+        "seuil_alerte_ml": "100.00",         // [OPTIONNEL] string decimal ou null
+        "reference_fournisseur": "LOT-001"   // [OPTIONNEL] string
+      },
+      "produits_finis": [                    // [OPTIONNEL] crée les formats vendables liés
+        {
+          "taille_ml": 10,                   // [REQUIS dans l'objet] integer
+          "prix": "5000.00",                 // [REQUIS dans l'objet] string decimal
+          "prix_promotionnel": null,         // [OPTIONNEL] string decimal ou null
+          "stock_disponible": 20             // [OPTIONNEL] integer (défaut: 0)
+        }
+      ]
     }
     ```
+    **Champs auto-générés / lecture seule** : `id`, `date_creation`, `date_modification`, `tags`, `famille_olfactive`, `humeurs_compatibles`, `occasions`, `saisons_compatibles`, `signes_astrologiques_compatibles`, `moments_journee`.
+    **Fonctionnement des tags** : récupérer les options via `GET /api/v1/lab/tags-essence/`, afficher `libelle` ou `nom`, conserver `id`, puis envoyer `tag_ids`. Le backend crée les lignes dans `tag_essence`.
+    **Contraintes** : `code_reference` est unique. Le triplet `marque + nom + categorie` doit être unique. Le détail/modification/suppression d'une essence utilise le `slug`.
 *   **Réponse - 200 OK (GET Liste - Public)** :
     ```json
     {
@@ -1258,7 +1339,48 @@ Chaque section répertorie :
       ]
     }
     ```
-*   **Détail, Modifier & Supprimer** : `GET`, `PUT`, `PATCH`, `DELETE` sur `/api/v1/lab/essences/{id}/` (Admin)
+*   **Réponse - 201 Created (POST)** :
+    ```json
+    {
+      "id": 4,
+      "marque": "Exclusif",
+      "nom": "Essence de Patchouli",
+      "slug": "exclusif-essence-de-patchouli-12345",
+      "categorie": "premium",
+      "code_reference": "ESS-PAT",
+      "description": "Note boisée",
+      "description_ia": "",
+      "fournisseur": "Hervé S.A.",
+      "origine_pays": "Cameroun",
+      "concentration_max": "15.00",
+      "couleur": "Marron",
+      "duree": "longue",
+      "intensite": "forte",
+      "genre_cible": "mixte",
+      "notes_tete": "Citron",
+      "notes_coeur": "Patchouli",
+      "notes_fond": "Santal",
+      "tags": [
+        {
+          "id": 1,
+          "nom": "Boisé",
+          "slug": "boise-famille-12345",
+          "type": "famille_olfactive"
+        }
+      ],
+      "famille_olfactive": ["Boisé"],
+      "humeurs_compatibles": [],
+      "occasions": [],
+      "saisons_compatibles": [],
+      "signes_astrologiques_compatibles": [],
+      "moments_journee": [],
+      "prix_par_ml": "500.00",
+      "actif": true,
+      "date_creation": "2026-06-06T12:00:00Z",
+      "date_modification": "2026-06-06T12:00:00Z"
+    }
+    ```
+*   **Détail, Modifier & Supprimer** : `GET`, `PUT`, `PATCH`, `DELETE` sur `/api/v1/lab/essences/{slug}/` (Admin)
 
 ### 6.3 Ingrédients de Base
 *   **URL** : `/api/v1/lab/ingredients/`

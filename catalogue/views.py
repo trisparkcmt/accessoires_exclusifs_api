@@ -23,7 +23,7 @@ from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Fl
 from .serializers import (
     AccessoireAdminDetailSerializer, AccessoireAdminListSerializer, AccessoirePublicDetailSerializer, AccessoirePublicListSerializer, AccessoireSimilaireSerializer, CategorieParfumSerializer, EssenceLaboDetailSerializer, EssenceLaboListSerializer, LotEssenceSerializer, ParfumAdminDetailSerializer, ParfumAdminListSerializer, ParfumPublicDetailSerializer, ParfumPublicListSerializer, ParfumSerializer, EssenceSerializer,
     AccessoireSerializer, FlaconSerializer, FlaconPublicSerializer, ParfumSimilaireSerializer, EssenceCreateFullSerializer,
-    IngredientSerializer, FavoriSerializer, ProduitFiniEssencePublicSerializer, ProduitFiniEssenceSerializer, TagSerializer, TypeAccessoireSerializer, TypeFlaconSerializer,
+    IngredientSerializer, FavoriSerializer, ProduitFiniEssencePublicSerializer, ProduitFiniEssenceSerializer, TagSelectSerializer, TagSerializer, TypeAccessoireSerializer, TypeFlaconSerializer,
 
 )
 from django.db.models import Case, When
@@ -1002,6 +1002,41 @@ class TagViewSet(viewsets.ModelViewSet):
     ordering_fields = ['nom', 'type', 'date_creation']
     ordering = ['nom']
     lookup_field = 'slug'
+
+class TagParfumSelectViewSet(viewsets.ModelViewSet):
+    allowed_types = ['famille_olfactive', 'humeur', 'saison', 'occasion']
+    serializer_class = TagSelectSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['type']
+    search_fields = ['nom', 'type']
+    ordering_fields = ['nom', 'type']
+    ordering = ['type', 'nom']
+    lookup_field = 'slug'
+
+    def get_queryset(self):
+        return Tag.objects.filter(
+            actif=True,
+            type__in=self.allowed_types
+        )
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['allowed_types'] = self.allowed_types
+        return context
+
+class TagEssenceSelectViewSet(viewsets.ModelViewSet):
+    serializer_class = TagSelectSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['type']
+    search_fields = ['nom', 'type']
+    ordering_fields = ['nom', 'type']
+    ordering = ['type', 'nom']
+    lookup_field = 'slug'
+
+    def get_queryset(self):
+        return Tag.objects.filter(actif=True)
 
 class CategorieParfumViewSet(viewsets.ModelViewSet):
     queryset = CategorieParfum.objects.filter(actif=True)

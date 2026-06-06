@@ -75,6 +75,21 @@ class TagSerializer(serializers.ModelSerializer):
         fields = ['id', 'nom', 'slug', 'type']
 
 
+class TagSelectSerializer(serializers.ModelSerializer):
+    libelle = serializers.CharField(source='nom', read_only=True)
+
+    class Meta:
+        model = Tag
+        fields = ['id', 'libelle', 'nom', 'slug', 'type']
+
+    def validate_type(self, value):
+        allowed_types = self.context.get('allowed_types')
+        if allowed_types and value not in allowed_types:
+            allowed = ', '.join(allowed_types)
+            raise serializers.ValidationError(f"Type de tag non autorisé ici. Types autorisés : {allowed}.")
+        return value
+
+
 
 # PARFUMS
 
@@ -205,6 +220,13 @@ class IngredientSerializer(serializers.ModelSerializer):
 # ============================================================
 class EssenceSerializer(serializers.ModelSerializer):
     tags = TagSerializer(many=True, read_only=True)
+    tag_ids = serializers.PrimaryKeyRelatedField(
+        source='tags',
+        many=True,
+        queryset=Tag.objects.all(),
+        required=False,
+        write_only=True
+    )
     famille_olfactive = serializers.ListField(child=serializers.CharField(), read_only=True)
     humeurs_compatibles = serializers.ListField(child=serializers.CharField(), read_only=True)
     occasions = serializers.ListField(child=serializers.CharField(), read_only=True)
@@ -220,11 +242,25 @@ class EssenceSerializer(serializers.ModelSerializer):
             'concentration_max', 'couleur', 'duree',
             'intensite', 'genre_cible',
             'notes_tete', 'notes_coeur', 'notes_fond',
-            'tags', 'famille_olfactive', 'humeurs_compatibles',
+            'tags', 'tag_ids', 'famille_olfactive', 'humeurs_compatibles',
             'occasions', 'saisons_compatibles',
             'signes_astrologiques_compatibles', 'moments_journee',
             'prix_par_ml', 'actif', 'date_creation', 'date_modification'
         ]
+
+    def create(self, validated_data):
+        tags = validated_data.pop('tags', [])
+        essence = super().create(validated_data)
+        if tags:
+            essence.tags.set(tags)
+        return essence
+
+    def update(self, instance, validated_data):
+        tags = validated_data.pop('tags', None)
+        essence = super().update(instance, validated_data)
+        if tags is not None:
+            essence.tags.set(tags)
+        return essence
 # ============================================================
 # ESSENCES : pour le labo et le catalogue
 # ============================================================
@@ -332,9 +368,12 @@ class EssenceCreateFullSerializer(EssenceSerializer):
     def create(self, validated_data):
         lot_data = validated_data.pop('initial_lot', None)
         prods_data = validated_data.pop('produits_finis', [])
+        tags = validated_data.pop('tags', [])
         
         with transaction.atomic():
             essence = Essence.objects.create(**validated_data)
+            if tags:
+                essence.tags.set(tags)
             if lot_data:
                 LotEssence.objects.create(essence=essence, stock_precedent_ml=0, **lot_data)
             for prod in prods_data:
@@ -358,15 +397,20 @@ class EssenceLaboSerializer(serializers.Serializer):
 # ACCESSOIRES
 # ============================================================
 class TypeAccessoireSerializer(serializers.ModelSerializer):
-    icone = serializers.SerializerMethodField()
+    icone = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model  = TypeAccessoire
-        fields = ['id', 'nom', 'slug', 'description', 'icone']
+        fields = [
+            'id', 'nom', 'slug', 'description', 'icone',
+            'actif', 'taux_reduction', 'date_creation'
+        ]
+        read_only_fields = ['date_creation']
 
-    @extend_schema_field(OpenApiTypes.URI)
-    def get_icone(self, obj):
-     return get_image_url(self.context.get('request'), obj.icone)
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['icone'] = get_image_url(self.context.get('request'), instance.icone)
+        return representation
 
 
 
@@ -375,7 +419,7 @@ class AccessoireSerializer(serializers.ModelSerializer):
     prix_actuel     = serializers.SerializerMethodField()
     taux_reduction  = serializers.SerializerMethodField()
     en_promotion    = serializers.SerializerMethodField()
-    image_principale = serializers.SerializerMethodField()
+    image_principale = serializers.ImageField(required=False, allow_null=True)
     produits_similaires = serializers.SerializerMethodField()
     is_favori = serializers.SerializerMethodField()
 
@@ -384,19 +428,22 @@ class AccessoireSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'nom', 'slug', 'reference_sku',
             'type_accessoire',
-            'description_courte',
+            'description_courte', 'description_longue',
             'matiere', 'couleur', 'taille',
-            'prix_unitaire', 'prix_actuel',
+            'prix_unitaire', 'prix_promotionnel', 'prix_actuel',
             'taux_reduction', 'en_promotion',
-            'stock_quantite', 'poids_grammes',
+            'stock_quantite', 'seuil_alerte_stock', 'poids_grammes',
             'image_principale', 'images_supplementaires',
-            'date_creation','produits_similaires','is_favori',
+            'actif', 'est_bestseller', 'est_hotseller',
+            'date_creation', 'date_modification', 'produits_similaires', 'is_favori',
         ]
+        read_only_fields = ['date_creation', 'date_modification']
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         if instance.type_accessoire:
             representation['type_accessoire'] = TypeAccessoireSerializer(instance.type_accessoire, context=self.context).data
+        representation['image_principale'] = get_image_url(self.context.get('request'), instance.image_principale)
         return representation
 
     @extend_schema_field(OpenApiTypes.STR)
@@ -414,10 +461,6 @@ class AccessoireSerializer(serializers.ModelSerializer):
     @extend_schema_field(OpenApiTypes.BOOL)
     def get_en_promotion(self, obj):
         return obj.prix_promotionnel is not None
-    
-    @extend_schema_field(OpenApiTypes.URI)
-    def get_image_principale(self, obj):
-        return get_image_url(self.context.get('request'), obj.image_principale)
     
     def get_produits_similaires(self, obj):
         from .utils import get_similar_products
@@ -458,20 +501,25 @@ class AccessoirePublicDetailSerializer(AccessoireSerializer):
 # FLACONS
 # ============================================================
 class TypeFlaconSerializer(serializers.ModelSerializer):
-    image = serializers.SerializerMethodField()
+    image = serializers.ImageField(required=False, allow_null=True)
     class Meta:
         model  = TypeFlacon
-        fields = ['id', 'nom', 'slug', 'description', 'image']
+        fields = [
+            'id', 'nom', 'slug', 'description', 'image',
+            'actif', 'taux_reduction', 'date_creation'
+        ]
+        read_only_fields = ['date_creation']
 
-    @extend_schema_field(OpenApiTypes.URI)
-    def get_image(self, obj):
-        return get_image_url(self.context.get('request'), obj.image)
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['image'] = get_image_url(self.context.get('request'), instance.image)
+        return representation
 
 
 class FlaconSerializer(serializers.ModelSerializer):
     type_flacon = serializers.PrimaryKeyRelatedField(queryset=TypeFlacon.objects.all())
     stock_suffisant = serializers.SerializerMethodField()
-    image_principale = serializers.SerializerMethodField() 
+    image_principale = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model  = Flacon
@@ -484,13 +532,15 @@ class FlaconSerializer(serializers.ModelSerializer):
             'prix_unitaire', 'stock_quantite',
             'seuil_alerte_stock', 'stock_suffisant',
             'image_principale', 'images_supplementaires',
-            'date_creation',
+            'actif', 'date_creation', 'date_modification',
         ]
+        read_only_fields = ['date_creation', 'date_modification']
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         if instance.type_flacon:
             representation['type_flacon'] = TypeFlaconSerializer(instance.type_flacon, context=self.context).data
+        representation['image_principale'] = get_image_url(self.context.get('request'), instance.image_principale)
         return representation
 
     @extend_schema_field(OpenApiTypes.BOOL)
@@ -501,10 +551,6 @@ class FlaconSerializer(serializers.ModelSerializer):
         """
         return obj.stock_quantite > obj.seuil_alerte_stock
     
-    @extend_schema_field(OpenApiTypes.URI)
-    def get_image_principale(self, obj):
-        return get_image_url(self.context.get('request'), obj.image_principale)
-
 class FlaconPublicSerializer(serializers.ModelSerializer):
     image_principale = serializers.SerializerMethodField()
 
