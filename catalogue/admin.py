@@ -352,7 +352,7 @@ class EssenceAdmin(admin.ModelAdmin):
         #     'fields': ('tags',)
         # }),
         ('Statut', {
-            'fields': ('actif', 'vendu_comme_produit_fini')
+            'fields': ('actif', )
         }),
         ('Dates', {
             'fields': ('date_creation', 'date_modification'),

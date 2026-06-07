@@ -21,18 +21,28 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-$du6=b@-a^c&sg#hj$ffnx+pyfquths_*9kvzx&gn^q$4-hdut')
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 
+if not SECRET_KEY:
+    if DEBUG:
+        # Dev: utiliser clé temporaire
+        SECRET_KEY = 'dev-insecure-key-change-in-production-min-50-chars-!!!!!!!'
+        import warnings
+        warnings.warn('Using insecure SECRET_KEY in development!')
+    else:
+        raise ValueError(
+            "DJANGO_SECRET_KEY environment variable must be set in production!"
+        )
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() == 'true'
+DEBUG = os.getenv('DJANGO_DEBUG', 'False')
 
 ALLOWED_HOSTS = [
-    "*",
+    "accessoires-exclusifs-api.onrender.com",
+    "accessoires-exclusifs.vercel.app",
     "127.0.0.1",
     "192.168.1.173",
     "0.0.0.0",
     "integral-logically-gator.ngrok-free.app",
-    "accessoires-exclusifs.vercel.app",
 ]
 RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
 if RENDER_EXTERNAL_HOSTNAME:
@@ -45,7 +55,7 @@ if VERCEL_API_DOMAIN:
     ALLOWED_HOSTS.append(VERCEL_API_DOMAIN)
 
 # Autoriser les requêtes POST/PUT depuis ngrok et Render (indispensable pour l'auth)
-CSRF_TRUSTED_ORIGINS = ["https://integral-logically-gator.ngrok-free.app"]
+CSRF_TRUSTED_ORIGINS = ["https://integral-logically-gator.ngrok-free.app","https://accessoires-exclusifs-api.onrender.com","https://accessoires-exclusifs.vercel.app"]
 if RENDER_EXTERNAL_HOSTNAME:
     CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
 if VERCEL_API_DOMAIN:
@@ -104,11 +114,36 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'allauth.account.middleware.AccountMiddleware',  # Requis par allauth
 ]
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-]
-CORS_ALLOW_ALL_ORIGINS = True
+
+
+
+if DEBUG:
+    # Dev local: Autoriser localhost uniquement
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8081",      # App mobile dev (Expo)
+        "http://192.168.1.173:3000",  # Dev machine local network
+    ]
+    CORS_ALLOW_ALL_ORIGINS = False
+else:
+    # Production: Whitelist explicite
+    CORS_ALLOW_ALL_ORIGINS = False
+    CORS_ALLOWED_ORIGINS = [
+        "https://accessoires-exclusifs.vercel.app",
+        "https://www.accessoires-exclusifs.vercel.app",
+    ]
+    
+    # Ajouter domaine personnalisé Render si utilisé
+    if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
+        CORS_ALLOWED_ORIGINS.append(f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}")
+
+
+
+
+
+
+
 
 ROOT_URLCONF = 'backend.urls'
 
@@ -327,7 +362,7 @@ SPECTACULAR_SETTINGS = {
 
 
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AQ.Ab8RN6Jjt8Hi4ZzG06xh0lRCRtXNVwtMyJHU96sSrJ88ANBHBw')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AQ.Ab8RN6Iq8YW3z9UjZr6hqbk0Y_kqub1urxxHsMwueAYngM8RRA')
 
 # Configuration Monetbil (Virement/Payout)
 MONETBIL_SERVICE_KEY = os.getenv('MONETBIL_SERVICE_KEY', 'NhlyzHMYo961mQZ3uCQEUX2xUGUaFhUm')
