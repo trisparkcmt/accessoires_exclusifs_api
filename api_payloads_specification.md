@@ -1592,3 +1592,426 @@ Ces deux endpoints importants **ne renvoient pas de JSON**. Ils génèrent des p
 *   **Comportement et rendu HTML** :
     *   **GET** : Valide le couple `uid`/`token`. Si invalide, affiche une page d'erreur. Si valide, affiche un formulaire de changement de mot de passe sécurisé à double saisie.
     *   **POST** : Réceptionne la soumission du formulaire, applique les validateurs de Django, met à jour le mot de passe de l'utilisateur, envoie un e-mail d'alerte de sécurité de changement de mot de passe, et affiche une page HTML de succès avec un bouton de redirection vers l'accueil.
+
+---
+
+## 9. MODULE NOTIFICATIONS
+
+### 9.1 Notifications Utilisateur (Admin Only) — `/api/v1/admin/notifications/`
+
+#### 9.1.1 Lister les notifications (Admin seulement)
+*   **URL** : `GET /api/v1/admin/notifications/`
+*   **Permissions** : **Admin seulement** (`IsAdminUser`)
+*   **Description** : Récupère toutes les notifications destinées à l'administrateur connecté (notifications personnelles ou globales admin).
+*   **Query Parameters** : Aucun
+*   **Payload d'entrée** : Aucun
+*   **Réponse - 200 OK** :
+    ```json
+    [
+      {
+        "id": 1,                                    // integer
+        "recipient": {                              // object | null
+          "id": 1,
+          "email": "admin@example.com",
+          "first_name": "Admin",
+          "last_name": "User"
+        },
+        "type": "prestataire_request",              // string (type de notification)
+        "title": "Nouvelle demande de partenariat", // string
+        "message": "Jean Martin souhaite devenir prestataire", // string
+        "url": "/admin/prestataires/requests/1/",  // string (URL d'action)
+        "is_global_admin": false,                   // boolean (notification globale?)
+        "is_read": false,                           // boolean
+        "metadata": {},                             // object (données supplémentaires)
+        "created_at": "2026-06-07T12:30:00Z"        // string (ISO 8601)
+      }
+    ]
+    ```
+
+---
+
+### 9.2 Notifications de Stock Catalogue — `/api/shop/notifications/`
+
+#### 9.2.1 Lister toutes les notifications de stock
+*   **URL** : `GET /api/shop/notifications/`
+*   **Permissions** : **Admin seulement** (`IsAdminOrReadOnly`)
+*   **Description** : Récupère toutes les alertes de stock du catalogue (Essences, Accessoires, Flacons). Inclut les lues et non-lues.
+*   **Query Parameters** :
+    | Paramètre | Type | Description |
+    |-----------|------|-------------|
+    | `type_produit` | string | Filtrer par type : `accessoire` \| `flacon` \| `lot_essence` |
+    | `est_lu` | boolean | `true` = lues, `false` = non-lues |
+    | `search` | string | Recherche dans `product_name` et `message` |
+    | `page` | integer | Numéro de page (défaut: 1, 50 résultats/page) |
+    | `ordering` | string | Tri: `-created_at` (défaut), `created_at`, `type_produit` |
+
+*   **Exemples d'URLs** :
+    ```
+    GET /api/shop/notifications/
+    GET /api/shop/notifications/?type_produit=accessoire
+    GET /api/shop/notifications/?est_lu=false
+    GET /api/shop/notifications/?type_produit=flacon&est_lu=false
+    GET /api/shop/notifications/?search=Essence+Fleur
+    GET /api/shop/notifications/?page=2
+    ```
+
+*   **Payload d'entrée** : Aucun
+*   **Réponse - 200 OK** :
+    ```json
+    {
+      "count": 5,                        // integer (total de notifications)
+      "next": "http://.../api/shop/notifications/?page=2",  // string | null
+      "previous": null,                  // string | null
+      "results": [
+        {
+          "id": 42,                                      // integer
+          "type_produit": "accessoire",                  // string ("accessoire" | "flacon" | "lot_essence")
+          "product_id": 7,                               // integer
+          "product_name": "Bouteille de Parfum 30ml",   // string (nom du produit)
+          "message": "⚠️ Alerte stock: Bouteille de Parfum 30ml a atteint le seuil d'alerte (stock: 1, seuil: 3)", // string
+          "stock_actuel": 1,                             // number (quantité ou ml actuel)
+          "seuil_alerte": 3,                             // number (seuil configuré)
+          "est_lu": false,                               // boolean (lue ou non)
+          "est_encore_en_alerte": true,                  // boolean (propriété calculée)
+          "metadata": {                                  // object (données supplémentaires)
+            "type_accessoire": "Emballage",
+            "sku": "ACC-001"
+          },
+          "created_at": "2026-06-07T12:30:00Z",         // string (ISO 8601)
+          "updated_at": "2026-06-07T12:30:00Z"          // string (ISO 8601)
+        }
+      ]
+    }
+    ```
+
+#### 9.2.2 Récupérer une notification spécifique
+*   **URL** : `GET /api/shop/notifications/{id}/`
+*   **Permissions** : Admin seulement
+*   **Path Parameters** :
+    | Paramètre | Type | Description |
+    |-----------|------|-------------|
+    | `id` | integer | ID de la notification |
+
+*   **Payload d'entrée** : Aucun
+*   **Réponse - 200 OK** :
+    ```json
+    {
+      "id": 42,
+      "type_produit": "accessoire",
+      "product_id": 7,
+      "product_name": "Bouteille de Parfum 30ml",
+      "message": "⚠️ Alerte stock: Bouteille de Parfum 30ml a atteint le seuil d'alerte (stock: 1, seuil: 3)",
+      "stock_actuel": 1,
+      "seuil_alerte": 3,
+      "est_lu": false,
+      "est_encore_en_alerte": true,
+      "metadata": { "type_accessoire": "Emballage", "sku": "ACC-001" },
+      "created_at": "2026-06-07T12:30:00Z",
+      "updated_at": "2026-06-07T12:30:00Z"
+    }
+    ```
+
+#### 9.2.3 Marquer une notification comme lue
+*   **URL** : `PATCH /api/shop/notifications/{id}/`
+*   **Permissions** : Admin seulement
+*   **Path Parameters** :
+    | Paramètre | Type | Description |
+    |-----------|------|-------------|
+    | `id` | integer | ID de la notification |
+
+*   **Payload d'entrée** :
+    ```json
+    {
+      "est_lu": true  // [REQUIS] boolean
+    }
+    ```
+
+*   **Réponse - 200 OK** :
+    ```json
+    {
+      "est_lu": true
+    }
+    ```
+
+#### 9.2.4 Lister seulement les notifications non-lues
+*   **URL** : `GET /api/shop/notifications/non_lues/`
+*   **Permissions** : Admin seulement
+*   **Description** : Récupère **uniquement** les notifications avec `est_lu=false`.
+*   **Query Parameters** :
+    | Paramètre | Type | Description |
+    |-----------|------|-------------|
+    | `type_produit` | string | Filtrer par type (optionnel) |
+    | `search` | string | Recherche (optionnel) |
+    | `page` | integer | Numéro de page |
+
+*   **Exemples d'URLs** :
+    ```
+    GET /api/shop/notifications/non_lues/
+    GET /api/shop/notifications/non_lues/?type_produit=flacon
+    GET /api/shop/notifications/non_lues/?page=1
+    ```
+
+*   **Payload d'entrée** : Aucun
+*   **Réponse - 200 OK** :
+    ```json
+    {
+      "count": 3,
+      "next": null,
+      "previous": null,
+      "results": [
+        {
+          "id": 42,
+          "type_produit": "accessoire",
+          "product_id": 7,
+          "product_name": "Bouteille de Parfum 30ml",
+          "message": "⚠️ Alerte stock: ...",
+          "stock_actuel": 1,
+          "seuil_alerte": 3,
+          "est_lu": false,
+          "est_encore_en_alerte": true,
+          "metadata": { "type_accessoire": "Emballage", "sku": "ACC-001" },
+          "created_at": "2026-06-07T12:30:00Z",
+          "updated_at": "2026-06-07T12:30:00Z"
+        }
+      ]
+    }
+    ```
+
+#### 9.2.5 Marquer toutes les notifications comme lues
+*   **URL** : `PATCH /api/shop/notifications/marquer_tous_comme_lus/`
+*   **Permissions** : Admin seulement
+*   **Description** : Marque **toutes** les notifications non-lues (`est_lu=false`) comme lues.
+*   **Payload d'entrée** : Aucun
+*   **Réponse - 200 OK** :
+    ```json
+    {
+      "updated": 5,                           // integer (nombre mis à jour)
+      "message": "5 notifications marquées comme lues"  // string
+    }
+    ```
+
+#### 9.2.6 Récupérer les statistiques des notifications
+*   **URL** : `GET /api/shop/notifications/stats/`
+*   **Permissions** : Admin seulement
+*   **Description** : Récupère les statistiques d'alertes par type de produit et statut de lecture.
+*   **Payload d'entrée** : Aucun
+*   **Réponse - 200 OK** :
+    ```json
+    {
+      "total": 15,           // integer (nombre total de notifications)
+      "non_lues": 5,         // integer (nombre de notifications non-lues)
+      "lues": 10,            // integer (nombre de notifications lues)
+      "par_type_produit": [  // array (comptage par type)
+        {
+          "type_produit": "accessoire",  // string
+          "count": 7                      // integer
+        },
+        {
+          "type_produit": "flacon",
+          "count": 5
+        },
+        {
+          "type_produit": "lot_essence",
+          "count": 3
+        }
+      ]
+    }
+    ```
+
+---
+
+### 9.3 Triggers Automatiques (Backend)
+
+#### Création Automatique de NotificationCatalogue
+
+Les notifications de stock sont créées **automatiquement** via Django Signals quand un produit baisse de stock et atteint son seuil d'alerte. Aucune action frontend n'est nécessaire.
+
+**Conditions de création** :
+
+| Produit | Champ Stock | Champ Seuil | Alerte si |
+|---------|------------|-----------|----------|
+| **Accessoire** | `stock_quantite` | `seuil_alerte_stock` (défaut: 3) | `stock_quantite <= seuil_alerte_stock` |
+| **Flacon** | `stock_quantite` | `seuil_alerte_stock` (défaut: 5) | `stock_quantite <= seuil_alerte_stock` |
+| **LotEssence** | `stock_ml` | `seuil_alerte_ml` | `stock_ml <= seuil_alerte_ml` (si configuré) |
+
+**Exemple** :
+```python
+# Admin change le stock d'un Accessoire via l'admin Django
+accessoire = Accessoire.objects.get(id=7)
+accessoire.stock_quantite = 1  # < seuil de 3
+accessoire.save()
+
+# Un signal Django se déclenche automatiquement
+# → NotificationCatalogue créée avec message "⚠️ Alerte stock: ..."
+```
+
+---
+
+## 10. INTÉGRATION FRONTEND NEXT.JS
+
+### 10.1 Hook React pour les Notifications
+
+```javascript
+// hooks/useNotifications.js
+import { useState, useEffect } from 'react';
+
+export function useNotifications(pollInterval = 30000) {
+  const [notifications, setNotifications] = useState([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    non_lues: 0,
+    lues: 0,
+    par_type_produit: []
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    async function fetchNotifications() {
+      try {
+        setLoading(true);
+        
+        // Récupérer les notifications non-lues
+        const res = await fetch('/api/shop/notifications/?est_lu=false');
+        if (!res.ok) throw new Error('Failed to fetch notifications');
+        const data = await res.json();
+        setNotifications(data.results || []);
+
+        // Récupérer les statistiques
+        const statsRes = await fetch('/api/shop/notifications/stats/');
+        if (!statsRes.ok) throw new Error('Failed to fetch stats');
+        const statsData = await statsRes.json();
+        setStats(statsData);
+        
+        setError(null);
+      } catch (err) {
+        console.error('Erreur notifications:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchNotifications();
+    const timer = setInterval(fetchNotifications, pollInterval);
+    return () => clearInterval(timer);
+  }, [pollInterval]);
+
+  const getNotificationsByType = (type) => 
+    notifications.filter(n => n.type_produit === type);
+
+  const getCountByType = (type) => {
+    const item = stats.par_type_produit?.find(t => t.type_produit === type);
+    return item?.count || 0;
+  };
+
+  const markAsRead = async (notificationId) => {
+    try {
+      const res = await fetch(`/api/shop/notifications/${notificationId}/`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ est_lu: true })
+      });
+      if (!res.ok) throw new Error('Failed to mark as read');
+      
+      // Refetch notifications
+      const listRes = await fetch('/api/shop/notifications/?est_lu=false');
+      const data = await listRes.json();
+      setNotifications(data.results || []);
+    } catch (err) {
+      console.error('Erreur:', err);
+    }
+  };
+
+  const markAllAsRead = async () => {
+    try {
+      const res = await fetch('/api/shop/notifications/marquer_tous_comme_lus/', {
+        method: 'PATCH'
+      });
+      if (!res.ok) throw new Error('Failed');
+      
+      // Reset state
+      setNotifications([]);
+      setStats(prev => ({ ...prev, non_lues: 0 }));
+    } catch (err) {
+      console.error('Erreur:', err);
+    }
+  };
+
+  return {
+    notifications,
+    stats,
+    loading,
+    error,
+    getNotificationsByType,
+    getCountByType,
+    markAsRead,
+    markAllAsRead
+  };
+}
+```
+
+### 10.2 Exemples de Requêtes cURL
+
+**Lister toutes les notifications** :
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "http://localhost:8000/api/shop/notifications/"
+```
+
+**Filtrer par type non-lues** :
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "http://localhost:8000/api/shop/notifications/?type_produit=accessoire&est_lu=false"
+```
+
+**Récupérer les statistiques** :
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "http://localhost:8000/api/shop/notifications/stats/"
+```
+
+**Marquer une notification comme lue** :
+```bash
+curl -X PATCH \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"est_lu": true}' \
+  "http://localhost:8000/api/shop/notifications/42/"
+```
+
+**Marquer toutes les non-lues comme lues** :
+```bash
+curl -X PATCH \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  "http://localhost:8000/api/shop/notifications/marquer_tous_comme_lus/"
+```
+
+---
+
+### 10.3 Codes de Statut HTTP
+
+| Code | Statut | Cas d'usage |
+|------|--------|-----------|
+| **200** | OK | Requête réussie |
+| **400** | Bad Request | Paramètre invalide ou payload malformé |
+| **401** | Unauthorized | Token JWT expiré ou absent |
+| **403** | Forbidden | Utilisateur non-admin tentant d'accéder |
+| **404** | Not Found | Notification inexistante |
+| **500** | Server Error | Erreur interne du serveur |
+
+---
+
+### 10.4 Sécurité & Authentification
+
+**Toutes les endpoints de notifications** (utilisateur ET catalogue) nécessitent :
+1. ✅ Token JWT valide dans l'en-tête `Authorization: Bearer {token}`
+2. ✅ Rôle administrateur (`is_staff=True` ou `is_superuser=True`)
+3. ❌ Les clients/prestataires/livreurs NE peuvent PAS accéder
+
+**Exemple d'erreur 403 (accès refusé)** :
+```json
+{
+  "detail": "Vous n'avez pas la permission d'effectuer cette action."
+}
+```

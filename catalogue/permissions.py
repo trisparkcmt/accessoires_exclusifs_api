@@ -12,3 +12,12 @@ class IsAdminOrReadOnly(permissions.BasePermission):
 
         # Pour les autres méthodes (écriture), l'utilisateur doit être admin
         return bool(request.user and request.user.is_staff)
+
+
+class IsAdmin(permissions.BasePermission):
+    """
+    Permission stricte: Admin seulement.
+    Aucun accès public, même en lecture.
+    """
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_staff)

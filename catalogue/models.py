@@ -657,3 +657,52 @@ class Flacon(models.Model):
             random_suffix = ''.join(random.choices(string.digits, k=5))
             self.slug = f"{slugify(f'{self.nom}-{self.contenance_ml}')}-{random_suffix}"
         super().save(*args, **kwargs)
+
+
+# ============================================================
+# NOTIFICATIONS DE CATALOGUE
+# ============================================================
+class NotificationCatalogue(models.Model):
+    """Notification générée quand un produit atteint son seuil d'alerte stock."""
+    
+    TYPE_CHOICES = [
+        ('essence', 'Essence'),
+        ('accessoire', 'Accessoire'),
+        ('flacon', 'Flacon'),
+        ('lot_essence', 'Lot Essence'),
+    ]
+    
+    # Type de produit et ID du produit
+    type_produit = models.CharField(max_length=50, choices=TYPE_CHOICES)
+    product_id = models.PositiveIntegerField()
+    product_name = models.CharField(max_length=255, help_text="Nom du produit au moment de l'alerte")
+    
+    # Détails de l'alerte
+    message = models.TextField()
+    stock_actuel = models.DecimalField(max_digits=12, decimal_places=2)
+    seuil_alerte = models.DecimalField(max_digits=12, decimal_places=2)
+    est_lu = models.BooleanField(default=False)
+    
+    # Métadonnées
+    metadata = models.JSONField(default=dict, blank=True, help_text="Données supplémentaires (ex: URL du produit)")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'notification_catalogue'
+        verbose_name = 'Notification Catalogue'
+        verbose_name_plural = 'Notifications Catalogue'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['type_produit', 'product_id']),
+            models.Index(fields=['-created_at']),
+            models.Index(fields=['est_lu']),
+        ]
+    
+    def __str__(self):
+        return f"[{self.type_produit}] {self.product_name} - {self.created_at.strftime('%Y-%m-%d %H:%M')}"
+    
+    @property
+    def est_encore_en_alerte(self):
+        """Vérifie si le produit est toujours en alerte (stock toujours ≤ seuil)."""
+        return self.stock_actuel <= self.seuil_alerte

@@ -1,7 +1,7 @@
 # catalogue/urls.py
 from rest_framework.routers import DefaultRouter
 
-from .views import EssenceLaboViewSet, IngredientViewSet, LotEssenceViewSet, ParfumViewSet, EssenceViewSet, AccessoireViewSet, FlaconViewSet, FavoriViewSet, ProduitFiniEssenceViewSet, TagEssenceSelectViewSet, TagParfumSelectViewSet, TagViewSet
+from .views import EssenceLaboViewSet, IngredientViewSet, LotEssenceViewSet, ParfumViewSet, EssenceViewSet, AccessoireViewSet, FlaconViewSet, FavoriViewSet, ProduitFiniEssenceViewSet, TagEssenceSelectViewSet, TagParfumSelectViewSet, TagViewSet, NotificationCatalogueViewSet
 from .views import CategorieParfumViewSet, TypeAccessoireViewSet, TypeFlaconViewSet
 
 # ============================================================
@@ -20,6 +20,7 @@ shop_router.register(r'categories-parfum', CategorieParfumViewSet, basename='cat
 shop_router.register(r'types-accessoire', TypeAccessoireViewSet, basename='typeaccessoire')
 shop_router.register(r'types-flacon', TypeFlaconViewSet, basename='typeflacon')
 shop_router.register(r'produits-essence', ProduitFiniEssenceViewSet, basename='produitessence')
+shop_router.register(r'notifications', NotificationCatalogueViewSet, basename='notificationcatalogue')
 # ============================================================
 # ROUTER LAB — /api/lab/...
 # Essences

@@ -5,6 +5,7 @@ from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from django.db.models import Sum
+from django.db import models
 from django.utils import timezone
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -17,14 +18,13 @@ from drf_spectacular.utils import (
 from drf_spectacular.types import OpenApiTypes
 from rest_framework.permissions import IsAuthenticated
 from orders.models import CommandeLigneAccessoire
-from .permissions import IsAdminOrReadOnly
+from .permissions import IsAdminOrReadOnly, IsAdmin
 
-from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Flacon, Favori, Ingredient, ProduitFiniEssence, Tag, TypeAccessoire, TypeFlacon
+from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Flacon, Favori, Ingredient, ProduitFiniEssence, Tag, TypeAccessoire, TypeFlacon, NotificationCatalogue
 from .serializers import (
     AccessoireAdminDetailSerializer, AccessoireAdminListSerializer, AccessoirePublicDetailSerializer, AccessoirePublicListSerializer, AccessoireSimilaireSerializer, CategorieParfumSerializer, EssenceLaboDetailSerializer, EssenceLaboListSerializer, LotEssenceSerializer, ParfumAdminDetailSerializer, ParfumAdminListSerializer, ParfumPublicDetailSerializer, ParfumPublicListSerializer, ParfumSerializer, EssenceSerializer,
     AccessoireSerializer, FlaconSerializer, FlaconPublicSerializer, ParfumSimilaireSerializer, EssenceCreateFullSerializer,
-    IngredientSerializer, FavoriSerializer, ProduitFiniEssencePublicSerializer, ProduitFiniEssenceSerializer, TagSelectSerializer, TagSerializer, TypeAccessoireSerializer, TypeFlaconSerializer,
-
+    IngredientSerializer, FavoriSerializer, ProduitFiniEssencePublicSerializer, ProduitFiniEssenceSerializer, TagSelectSerializer, TagSerializer, TypeAccessoireSerializer, TypeFlaconSerializer, NotificationCatalogueSerializer, NotificationCatalogueUpdateSerializer,
 )
 from django.db.models import Case, When
 from .filters import (
@@ -1070,3 +1070,89 @@ class TypeFlaconViewSet(viewsets.ModelViewSet):
     search_fields = ['nom', 'description']
     ordering_fields = ['nom', 'date_creation']
     ordering = ['nom']
+
+
+# ============================================================
+# NOTIFICATIONS CATALOGUE
+# ============================================================
+@extend_schema_view(
+    list=extend_schema(
+        summary="Liste des notifications de stock",
+        description="""
+Retourne la liste paginée des notifications de catalogue (alertes de stock).
+
+**Filtres disponibles** :
+- `type_produit`: essense | accessoire | flacon | lot_essence
+- `est_lu`: true | false (notifications lues ou non lues)
+
+**Pagination** : 50 résultats par page. Utilisez `?page=2` pour naviguer.
+        """,
+    ),
+    retrieve=extend_schema(
+        summary="Détail d'une notification",
+    ),
+    partial_update=extend_schema(
+        summary="Marquer une notification comme lue",
+        description="PATCH /api/catalogue/notifications/{id}/ avec {\"est_lu\": true}",
+    ),
+)
+class NotificationCatalogueViewSet(viewsets.ModelViewSet):
+    """
+    API pour gérer les notifications de catalogue (alertes de stock).
+    
+    Les notifications sont créées automatiquement via Django Signals quand un produit
+    atteint son seuil d'alerte.
+    
+    Endpoints:
+    - GET /api/catalogue/notifications/ — Liste avec filtres
+    - GET /api/catalogue/notifications/{id}/ — Détail d'une notification
+    - PATCH /api/catalogue/notifications/{id}/ — Marquer comme lue
+    """
+    queryset = NotificationCatalogue.objects.all()
+    serializer_class = NotificationCatalogueSerializer
+    permission_classes = [IsAdmin]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['type_produit', 'est_lu']
+    search_fields = ['product_name', 'message']
+    ordering_fields = ['created_at', 'type_produit']
+    ordering = ['-created_at']
+    pagination_class = StandardPagination
+    
+    def get_serializer_class(self):
+        if self.action in ['partial_update', 'update']:
+            return NotificationCatalogueUpdateSerializer
+        return NotificationCatalogueSerializer
+    
+    @action(detail=False, methods=['patch'])
+    def marquer_tous_comme_lus(self, request):
+        """Marquer toutes les notifications non-lues comme lues."""
+        updated = NotificationCatalogue.objects.filter(est_lu=False).update(est_lu=True)
+        return Response({'updated': updated, 'message': f'{updated} notifications marquées comme lues'})
+    
+    @action(detail=False, methods=['get'])
+    def non_lues(self, request):
+        """Retourne uniquement les notifications non-lues."""
+        notifications = self.get_queryset().filter(est_lu=False)
+        page = self.paginate_queryset(notifications)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(notifications, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        """Retourne les statistiques des notifications."""
+        total = NotificationCatalogue.objects.count()
+        non_lues = NotificationCatalogue.objects.filter(est_lu=False).count()
+        par_type = (NotificationCatalogue.objects
+                   .values('type_produit')
+                   .annotate(count=models.Count('id'))
+                   .order_by('type_produit'))
+        
+        return Response({
+            'total': total,
+            'non_lues': non_lues,
+            'lues': total - non_lues,
+            'par_type_produit': list(par_type)
+        })
