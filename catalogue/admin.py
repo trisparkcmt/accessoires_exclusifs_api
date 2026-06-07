@@ -5,7 +5,7 @@ from django.utils.safestring import mark_safe
 from .models import (
     Favori, Tag, TagParfum, TagEssence,
     CategorieParfum, Parfum, Essence, Ingredient,
-    TypeAccessoire, Accessoire, TypeFlacon, Flacon
+    TypeAccessoire, Accessoire, TypeFlacon, Flacon, NotificationCatalogue
 )
 
 
@@ -352,7 +352,10 @@ class EssenceAdmin(admin.ModelAdmin):
         #     'fields': ('tags',)
         # }),
         ('Statut', {
+
             'fields': ('actif', )
+
+           
         }),
         ('Dates', {
             'fields': ('date_creation', 'date_modification'),
@@ -624,3 +627,68 @@ class FlaconAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('type_flacon')
+
+
+# ============================================================
+# NOTIFICATIONS CATALOGUE
+# ============================================================
+@admin.register(NotificationCatalogue)
+class NotificationCatalogueAdmin(admin.ModelAdmin):
+    list_display = (
+        'id', 'type_produit', 'product_name', 'stock_actuel_vs_seuil', 
+        'est_lu_badge', 'created_at'
+    )
+    list_filter = ('type_produit', 'est_lu', 'created_at')
+    search_fields = ('product_name', 'message')
+    readonly_fields = ('created_at', 'updated_at', 'est_encore_en_alerte')
+    list_per_page = 50
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        ('Produit', {
+            'fields': ('type_produit', 'product_id', 'product_name')
+        }),
+        ('Stock', {
+            'fields': ('stock_actuel', 'seuil_alerte', 'est_encore_en_alerte')
+        }),
+        ('Message', {
+            'fields': ('message',)
+        }),
+        ('Statut', {
+            'fields': ('est_lu',)
+        }),
+        ('Métadonnées', {
+            'fields': ('metadata',),
+            'classes': ('collapse',)
+        }),
+        ('Dates', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    actions = ['marquer_comme_lu', 'marquer_comme_non_lu']
+    
+    @admin.display(description="Alerte")
+    def stock_actuel_vs_seuil(self, obj):
+        color = 'red' if obj.est_encore_en_alerte else 'green'
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}/{}</span>',
+            color,
+            obj.stock_actuel,
+            obj.seuil_alerte
+        )
+    
+    @admin.display(description="Lue", boolean=True)
+    def est_lu_badge(self, obj):
+        return obj.est_lu
+    
+    @admin.action(description="Marquer comme lue")
+    def marquer_comme_lu(self, request, queryset):
+        updated = queryset.update(est_lu=True)
+        self.message_user(request, f"{updated} notification(s) marquée(s) comme lue(s).")
+    
+    @admin.action(description="Marquer comme non-lue")
+    def marquer_comme_non_lu(self, request, queryset):
+        updated = queryset.update(est_lu=False)
+        self.message_user(request, f"{updated} notification(s) marquée(s) comme non-lue(s).")

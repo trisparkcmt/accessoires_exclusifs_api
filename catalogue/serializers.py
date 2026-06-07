@@ -6,7 +6,7 @@ from drf_spectacular.types import OpenApiTypes
 from django.db import transaction
 from .utils import get_similar_products
 
-from .models import CategorieParfum, LotEssence, ProduitFiniEssence, Tag, Parfum, Essence, Accessoire, Flacon, TypeAccessoire, TypeFlacon, Favori, Ingredient
+from .models import CategorieParfum, LotEssence, ProduitFiniEssence, Tag, Parfum, Essence, Accessoire, Flacon, TypeAccessoire, TypeFlacon, Favori, Ingredient, NotificationCatalogue
 
 
 # catalogue/serializers.py (ajouter après les imports existants)
@@ -619,3 +619,33 @@ class CategorieParfumSerializer(serializers.ModelSerializer):
         model = CategorieParfum
         fields = ['id', 'nom', 'slug', 'description', 'image', 'ordre_affichage', 'actif', 'taux_reduction', 'date_creation']
         read_only_fields = ['date_creation']
+
+
+# ============================================================
+# NOTIFICATIONS CATALOGUE
+# ============================================================
+class NotificationCatalogueSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationCatalogue
+        fields = [
+            'id',
+            'type_produit',
+            'product_id',
+            'product_name',
+            'message',
+            'stock_actuel',
+            'seuil_alerte',
+            'est_lu',
+            'est_encore_en_alerte',
+            'metadata',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'est_encore_en_alerte']
+
+
+class NotificationCatalogueUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour marquer une notification comme lue."""
+    class Meta:
+        model = NotificationCatalogue
+        fields = ['est_lu']

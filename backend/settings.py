@@ -23,6 +23,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 
+
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = os.getenv('DJANGO_DEBUG', 'False')
+
+
 if not SECRET_KEY:
     if DEBUG:
         # Dev: utiliser clé temporaire
@@ -33,8 +38,7 @@ if not SECRET_KEY:
         raise ValueError(
             "DJANGO_SECRET_KEY environment variable must be set in production!"
         )
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DJANGO_DEBUG', 'False')
+
 
 ALLOWED_HOSTS = [
     "accessoires-exclusifs-api.onrender.com",
