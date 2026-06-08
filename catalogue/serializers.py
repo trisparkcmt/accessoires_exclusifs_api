@@ -102,14 +102,19 @@ class ParfumSerializer(serializers.ModelSerializer):
     prix_actuel         = serializers.SerializerMethodField()
     taux_reduction      = serializers.SerializerMethodField()
     en_promotion        = serializers.SerializerMethodField()
-    image_principale    = serializers.SerializerMethodField() 
+    image_principale    = serializers.ImageField(required=False, allow_null=True)
+    image_supp_1        = serializers.ImageField(required=False, allow_null=True)
+    image_supp_2        = serializers.ImageField(required=False, allow_null=True)
+    image_supp_3        = serializers.ImageField(required=False, allow_null=True)
+    image_supp_4        = serializers.ImageField(required=False, allow_null=True)
+    images_supplementaires = serializers.SerializerMethodField(read_only=True)
     produits_similaires = serializers.SerializerMethodField()
     is_favori = serializers.SerializerMethodField()
 
     class Meta:
         model  = Parfum
         fields = [
-            'id', 'nom', 'slug', 'reference_sku',
+            'id', 'marque','nom', 'slug', 'reference_sku',
             'description_courte', 'contenance_ml',
             'prix_unitaire', 'prix_actuel',
             'taux_reduction', 'en_promotion',
@@ -118,13 +123,17 @@ class ParfumSerializer(serializers.ModelSerializer):
             'tags', 'famille_olfactive', 'humeurs_compatibles',
             'occasions', 'saisons_compatibles',
             'est_nouveau', 'est_bestseller',
-            'image_principale', 'images_supplementaires', 'stock_quantite',
+            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'images_supplementaires', 'stock_quantite',
             'date_creation','produits_similaires', 'is_favori', 'categorie'
         ]
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         representation['tags'] = TagSerializer(instance.tags.all(), many=True).data
+        representation['image_principale'] = get_image_url(self.context.get('request'), instance.image_principale)
+        for i in range(1, 5):
+            img_field = f'image_supp_{i}'
+            representation[img_field] = get_image_url(self.context.get('request'), getattr(instance, img_field))
         return representation
 
     @extend_schema_field(OpenApiTypes.STR)
@@ -132,9 +141,8 @@ class ParfumSerializer(serializers.ModelSerializer):
         """
         Retourne le prix final en str formatée '25000.00'.
         Priorité : prix_promotionnel > prix_unitaire.
-        Le signal a déjà calculé prix_promotionnel si une réduction catégorie existe.
         """
-        prix = obj.prix_promotionnel if obj.prix_promotionnel else obj.prix_unitaire
+        prix = obj.prix_actuel
         return formater_prix(prix)
 
     @extend_schema_field(OpenApiTypes.FLOAT)
@@ -143,18 +151,25 @@ class ParfumSerializer(serializers.ModelSerializer):
         Calcule le taux affiché au client.
         Retourne None si aucune réduction n'est appliquée.
         """
-        if not obj.prix_promotionnel:
+        promo = obj.prix_promotionnel_effectif
+        if not promo:
             return None
-        taux = (1 - obj.prix_promotionnel / obj.prix_unitaire) * 100
+        taux = (1 - promo / obj.prix_unitaire) * 100
         return round(float(taux), 1)
 
     @extend_schema_field(OpenApiTypes.BOOL)
     def get_en_promotion(self, obj):
-        return obj.prix_promotionnel is not None
+        return obj.prix_promotionnel_effectif is not None
     
-    @extend_schema_field(OpenApiTypes.URI)
-    def get_image_principale(self, obj):
-        return get_image_url(self.context.get('request'), obj.image_principale)
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_images_supplementaires(self, obj):
+        request = self.context.get('request')
+        images_supp = []
+        for i in range(1, 5):
+            img = getattr(obj, f'image_supp_{i}')
+            if img:
+                images_supp.append(get_image_url(request, img))
+        return images_supp
     
     def get_produits_similaires(self, obj):
         from .utils import get_similar_products
@@ -191,7 +206,7 @@ class ParfumAdminDetailSerializer(ParfumSerializer):
 class ParfumPublicListSerializer(ParfumSerializer):
     """Public : liste (sans produits similaires, champs réduits)"""
     class Meta(ParfumSerializer.Meta):
-        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('produits_similaires', 'reference_sku', 'images_supplementaires', 'stock_quantite', 'taux_reduction','description_courte'
+        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('produits_similaires', 'reference_sku', 'images_supplementaires', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'stock_quantite', 'taux_reduction','description_courte',
             'notes_tete', 'notes_coeur', 'notes_fond',
             'tags', 'famille_olfactive', 'humeurs_compatibles',
             'occasions', 'saisons_compatibles',)]
@@ -199,7 +214,7 @@ class ParfumPublicListSerializer(ParfumSerializer):
 class ParfumPublicDetailSerializer(ParfumSerializer):
     """Public : détail (avec produits similaires)"""
     class Meta(ParfumSerializer.Meta):
-        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('reference_sku', 'images_supplementaires', 'stock_quantite', 'taux_reduction')]
+        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('reference_sku', 'images_supplementaires', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'stock_quantite', 'taux_reduction')]
     
 # ============================================================
 # INGREDIENTS
@@ -209,9 +224,8 @@ class IngredientSerializer(serializers.ModelSerializer):
         model  = Ingredient
         fields = [
             'id', 'nom', 'slug', 'description',
-            'prix_par_ml', 'stock_ml', 'actif',
+            'prix_par_ml', 'stock_ml', 'seuil_alerte_ml', 'actif',
             'date_creation',
-
         ]
 
 
@@ -420,20 +434,25 @@ class AccessoireSerializer(serializers.ModelSerializer):
     taux_reduction  = serializers.SerializerMethodField()
     en_promotion    = serializers.SerializerMethodField()
     image_principale = serializers.ImageField(required=False, allow_null=True)
+    image_supp_1     = serializers.ImageField(required=False, allow_null=True)
+    image_supp_2     = serializers.ImageField(required=False, allow_null=True)
+    image_supp_3     = serializers.ImageField(required=False, allow_null=True)
+    image_supp_4     = serializers.ImageField(required=False, allow_null=True)
+    images_supplementaires = serializers.SerializerMethodField(read_only=True)
     produits_similaires = serializers.SerializerMethodField()
     is_favori = serializers.SerializerMethodField()
 
     class Meta:
         model  = Accessoire
         fields = [
-            'id', 'nom', 'slug', 'reference_sku',
+            'id', 'marque', 'nom', 'slug', 'reference_sku',
             'type_accessoire',
             'description_courte', 'description_longue',
             'matiere', 'couleur', 'taille',
             'prix_unitaire', 'prix_promotionnel', 'prix_actuel',
             'taux_reduction', 'en_promotion',
             'stock_quantite', 'seuil_alerte_stock', 'poids_grammes',
-            'image_principale', 'images_supplementaires',
+            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'images_supplementaires',
             'actif', 'est_bestseller', 'est_hotseller',
             'date_creation', 'date_modification', 'produits_similaires', 'is_favori',
         ]
@@ -444,23 +463,37 @@ class AccessoireSerializer(serializers.ModelSerializer):
         if instance.type_accessoire:
             representation['type_accessoire'] = TypeAccessoireSerializer(instance.type_accessoire, context=self.context).data
         representation['image_principale'] = get_image_url(self.context.get('request'), instance.image_principale)
+        for i in range(1, 5):
+            img_field = f'image_supp_{i}'
+            representation[img_field] = get_image_url(self.context.get('request'), getattr(instance, img_field))
         return representation
 
     @extend_schema_field(OpenApiTypes.STR)
     def get_prix_actuel(self, obj):
-        prix = obj.prix_promotionnel if obj.prix_promotionnel else obj.prix_unitaire
+        prix = obj.prix_actuel
         return formater_prix(prix)
 
     @extend_schema_field(OpenApiTypes.FLOAT)
     def get_taux_reduction(self, obj):
-        if not obj.prix_promotionnel:
+        promo = obj.prix_promotionnel_effectif
+        if not promo:
             return None
-        taux = (1 - obj.prix_promotionnel / obj.prix_unitaire) * 100
+        taux = (1 - promo / obj.prix_unitaire) * 100
         return round(float(taux), 1)
 
     @extend_schema_field(OpenApiTypes.BOOL)
     def get_en_promotion(self, obj):
-        return obj.prix_promotionnel is not None
+        return obj.prix_promotionnel_effectif is not None
+    
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_images_supplementaires(self, obj):
+        request = self.context.get('request')
+        images_supp = []
+        for i in range(1, 5):
+            img = getattr(obj, f'image_supp_{i}')
+            if img:
+                images_supp.append(get_image_url(request, img))
+        return images_supp
     
     def get_produits_similaires(self, obj):
         from .utils import get_similar_products
@@ -491,11 +524,11 @@ class AccessoireAdminDetailSerializer(AccessoireSerializer):
 class AccessoirePublicListSerializer(AccessoireSerializer):
     class Meta(AccessoireSerializer.Meta):
        fields = [f for f in AccessoireSerializer.Meta.fields if f not in ('description_courte',
-            'matiere', 'couleur', 'taille','poids_grammes','produits_similaires', 'reference_sku', 'images_supplementaires','taux_reduction')] 
+            'matiere', 'couleur', 'taille','poids_grammes','produits_similaires', 'reference_sku', 'images_supplementaires', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4','taux_reduction')] 
 
 class AccessoirePublicDetailSerializer(AccessoireSerializer):
     class Meta(AccessoireSerializer.Meta):
-        fields = [f for f in AccessoireSerializer.Meta.fields if f not in ('reference_sku', 'images_supplementaires', 'stock_quantite', 'taux_reduction')]
+        fields = [f for f in AccessoireSerializer.Meta.fields if f not in ('reference_sku', 'images_supplementaires', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'stock_quantite', 'taux_reduction')]
 
 # ============================================================
 # FLACONS
@@ -520,6 +553,11 @@ class FlaconSerializer(serializers.ModelSerializer):
     type_flacon = serializers.PrimaryKeyRelatedField(queryset=TypeFlacon.objects.all())
     stock_suffisant = serializers.SerializerMethodField()
     image_principale = serializers.ImageField(required=False, allow_null=True)
+    image_supp_1     = serializers.ImageField(required=False, allow_null=True)
+    image_supp_2     = serializers.ImageField(required=False, allow_null=True)
+    image_supp_3     = serializers.ImageField(required=False, allow_null=True)
+    image_supp_4     = serializers.ImageField(required=False, allow_null=True)
+    images_supplementaires = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model  = Flacon
@@ -531,7 +569,7 @@ class FlaconSerializer(serializers.ModelSerializer):
             'hauteur_cm', 'largeur_cm', 'poids_grammes',
             'prix_unitaire', 'stock_quantite',
             'seuil_alerte_stock', 'stock_suffisant',
-            'image_principale', 'images_supplementaires',
+            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'images_supplementaires',
             'actif', 'date_creation', 'date_modification',
         ]
         read_only_fields = ['date_creation', 'date_modification']
@@ -541,7 +579,20 @@ class FlaconSerializer(serializers.ModelSerializer):
         if instance.type_flacon:
             representation['type_flacon'] = TypeFlaconSerializer(instance.type_flacon, context=self.context).data
         representation['image_principale'] = get_image_url(self.context.get('request'), instance.image_principale)
+        for i in range(1, 5):
+            img_field = f'image_supp_{i}'
+            representation[img_field] = get_image_url(self.context.get('request'), getattr(instance, img_field))
         return representation
+
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_images_supplementaires(self, obj):
+        request = self.context.get('request')
+        images_supp = []
+        for i in range(1, 5):
+            img = getattr(obj, f'image_supp_{i}')
+            if img:
+                images_supp.append(get_image_url(request, img))
+        return images_supp
 
     @extend_schema_field(OpenApiTypes.BOOL)
     def get_stock_suffisant(self, obj) -> bool:

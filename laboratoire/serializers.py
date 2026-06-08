@@ -13,7 +13,7 @@ class EssenceLabSerializer(serializers.ModelSerializer):
 class IngredientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Ingredient
-        fields = ['id', 'nom', 'description', 'prix_par_ml']
+        fields = ['id', 'nom', 'description', 'prix_par_ml', 'stock_ml', 'seuil_alerte_ml']
         read_only_fields = fields
 
 class FlaconLabSerializer(serializers.ModelSerializer):

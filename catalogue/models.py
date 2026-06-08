@@ -192,7 +192,7 @@ class Parfum(models.Model):
     slug = models.SlugField(max_length=220, unique=True, blank=True)
     marque = models.CharField(max_length=200 ,blank=True)
     duree = models.CharField(max_length=200 ,blank=True)
-    reference_sku = models.CharField(max_length=100, unique=True)
+    reference_sku = models.CharField(max_length=100, unique=True, null=True, blank=True)
     description_courte = models.CharField(max_length=500, blank=True)
     description_longue = models.TextField(blank=True)
     
@@ -215,7 +215,10 @@ class Parfum(models.Model):
         help_text="Image principale du parfum (jpg, png, webp — max 2Mo)"
     )
 
-    images_supplementaires = models.JSONField(default=list, blank=True,  help_text="URLs des images supplémentaires (géré via l'upload multiple)")
+    image_supp_1 = models.ImageField(upload_to=upload_to_parfum_galerie, blank=True, null=True, help_text="Image supplémentaire 1")
+    image_supp_2 = models.ImageField(upload_to=upload_to_parfum_galerie, blank=True, null=True, help_text="Image supplémentaire 2")
+    image_supp_3 = models.ImageField(upload_to=upload_to_parfum_galerie, blank=True, null=True, help_text="Image supplémentaire 3")
+    image_supp_4 = models.ImageField(upload_to=upload_to_parfum_galerie, blank=True, null=True, help_text="Image supplémentaire 4")
     
     # Tags (ManyToMany via la table de liaison)
     tags = models.ManyToManyField(Tag, through='TagParfum', related_name='parfums', blank=True)
@@ -252,8 +255,20 @@ class Parfum(models.Model):
         super().save(*args, **kwargs)
 
     @property
+    def prix_promotionnel_effectif(self):
+        if not self.actif:
+            return None
+        if self.prix_promotionnel is not None:
+            return self.prix_promotionnel
+        if self.categorie and self.categorie.taux_reduction > 0:
+            reduction = Decimal(str(self.categorie.taux_reduction)) / Decimal('100')
+            return (self.prix_unitaire * (1 - reduction)).quantize(Decimal('0.01'))
+        return None
+
+    @property
     def prix_actuel(self):
-        return self.prix_promotionnel if self.prix_promotionnel else self.prix_unitaire
+        promo = self.prix_promotionnel_effectif
+        return promo if promo is not None else self.prix_unitaire
     
     # Méthodes pour récupérer les tags par type
     def get_tags_by_type(self, tag_type):
@@ -288,6 +303,7 @@ class Ingredient(models.Model):
 
     prix_par_ml = models.DecimalField(max_digits=10, decimal_places=2)
     stock_ml = models.DecimalField(max_digits=10, decimal_places=3, default=0)
+    seuil_alerte_ml = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, default=0, help_text="Alerte si stock <= seuil")
     actif = models.BooleanField(default=True)
     date_creation = models.DateTimeField(auto_now_add=True)
 
@@ -536,7 +552,7 @@ class Accessoire(models.Model):
     nom = models.CharField(max_length=200)
     marque = models.CharField(max_length=200, blank=True)
     slug = models.SlugField(max_length=220, unique=True, blank=True)
-    reference_sku = models.CharField(max_length=100, unique=True)
+    reference_sku = models.CharField(max_length=100, unique=True, null=True, blank=True)
     description_courte = models.CharField(max_length=500, blank=True)
     description_longue = models.TextField(blank=True)
     matiere = models.CharField(max_length=100, blank=True)
@@ -552,7 +568,10 @@ class Accessoire(models.Model):
         help_text="Image principale de l'accessoire"
     )
 
-    images_supplementaires = models.JSONField(default=list, blank=True)
+    image_supp_1 = models.ImageField(upload_to=upload_to_accessoire_galerie, blank=True, null=True, help_text="Image supplémentaire 1")
+    image_supp_2 = models.ImageField(upload_to=upload_to_accessoire_galerie, blank=True, null=True, help_text="Image supplémentaire 2")
+    image_supp_3 = models.ImageField(upload_to=upload_to_accessoire_galerie, blank=True, null=True, help_text="Image supplémentaire 3")
+    image_supp_4 = models.ImageField(upload_to=upload_to_accessoire_galerie, blank=True, null=True, help_text="Image supplémentaire 4")
     poids_grammes = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     actif = models.BooleanField(default=True)
     date_creation = models.DateTimeField(auto_now_add=True)
@@ -575,8 +594,20 @@ class Accessoire(models.Model):
         super().save(*args, **kwargs)
 
     @property
+    def prix_promotionnel_effectif(self):
+        if not self.actif:
+            return None
+        if self.prix_promotionnel is not None:
+            return self.prix_promotionnel
+        if self.type_accessoire and self.type_accessoire.taux_reduction > 0:
+            reduction = Decimal(str(self.type_accessoire.taux_reduction)) / Decimal('100')
+            return (self.prix_unitaire * (1 - reduction)).quantize(Decimal('0.01'))
+        return None
+
+    @property
     def prix_actuel(self):
-        return self.prix_promotionnel if self.prix_promotionnel else self.prix_unitaire
+        promo = self.prix_promotionnel_effectif
+        return promo if promo is not None else self.prix_unitaire
 
 
 # ============================================================
@@ -623,7 +654,7 @@ class Flacon(models.Model):
     type_flacon = models.ForeignKey(TypeFlacon, on_delete=models.SET_NULL, null=True, related_name='flacons')
     nom = models.CharField(max_length=200)
     slug = models.SlugField(max_length=220, unique=True, null=True, blank=True)
-    reference_sku = models.CharField(max_length=100, unique=True)
+    reference_sku = models.CharField(max_length=100, unique=True, null=True, blank=True)
     contenance_ml = models.IntegerField(help_text="30, 50, 75, 100, 150 ml")
     matiere = models.CharField(max_length=100, blank=True)
     couleur = models.CharField(max_length=50, blank=True)
@@ -636,7 +667,10 @@ class Flacon(models.Model):
         help_text="Image principale du flacon"
     )
 
-    images_supplementaires = models.JSONField(default=list, blank=True)
+    image_supp_1 = models.ImageField(upload_to=upload_to_flacon_galerie, blank=True, null=True, help_text="Image supplémentaire 1")
+    image_supp_2 = models.ImageField(upload_to=upload_to_flacon_galerie, blank=True, null=True, help_text="Image supplémentaire 2")
+    image_supp_3 = models.ImageField(upload_to=upload_to_flacon_galerie, blank=True, null=True, help_text="Image supplémentaire 3")
+    image_supp_4 = models.ImageField(upload_to=upload_to_flacon_galerie, blank=True, null=True, help_text="Image supplémentaire 4")
     prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
     stock_quantite = models.IntegerField(default=0)
     seuil_alerte_stock = models.IntegerField(default=5, help_text="En dessous de ce seuil la commande est bloquée")
@@ -670,6 +704,7 @@ class NotificationCatalogue(models.Model):
         ('accessoire', 'Accessoire'),
         ('flacon', 'Flacon'),
         ('lot_essence', 'Lot Essence'),
+        ('ingredient', 'Ingrédient'),
     ]
     
     # Type de produit et ID du produit
