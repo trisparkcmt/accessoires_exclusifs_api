@@ -23,9 +23,10 @@ from .serializers import (
     UserSerializer, PrestataireSerializer, PrestataireApplicationSerializer,
     PrestataireValidationSerializer, MeSerializer, MeUpdateSerializer,
     NotificationSerializer, PayoutTransactionSerializer, PayoutRequestSerializer,
-    LivreurSerializer, LivreurUpdateSerializer, LivreurCommandeSerializer
+    LivreurSerializer, LivreurUpdateSerializer, LivreurCommandeSerializer,
+    ServeusesSerializer, ServeusesUpdateSerializer
 )
-from .models import Prestataire, User, Notification, PayoutTransaction, CommissionLog, Livreur
+from .models import Prestataire, User, Notification, PayoutTransaction, CommissionLog, Livreur, Serveuse
 from orders.models import Commande
 from .throttles import (
     ChangeEmailThrottle,
@@ -1701,3 +1702,96 @@ def admin_deliveries_monitor(request):
         
     serializer = LivreurCommandeSerializer(commandes, many=True)
     return Response(serializer.data)
+
+
+# ============================================================
+# GESTION DES SERVEUSES (Admin Only)
+# ============================================================
+
+@api_view(['GET'])
+@permission_classes([IsAdminUser])
+def admin_serveuses_list(request):
+    """
+    Liste complète de toutes les serveuses avec filtrage par statut (admin only).
+    """
+    serveuses = Serveuse.objects.all().order_by('-date_creation')
+    
+    statut = request.query_params.get('statut')
+    if statut:
+        serveuses = serveuses.filter(statut=statut)
+        
+    paginator = AdminPagination()
+    page = paginator.paginate_queryset(serveuses, request)
+    if page is not None:
+        serializer = ServeusesSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+        
+    serializer = ServeusesSerializer(serveuses, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAdminUser])
+def admin_promote_to_serveuse(request):
+    """
+    Crée un profil Serveuse à partir d'un Client existant via son ID utilisateur (user_id).
+    Réservé à l'admin uniquement.
+    """
+    user_id = request.data.get('user_id')
+    if not user_id:
+        return Response({"detail": "Le paramètre user_id est requis."}, status=status.HTTP_400_BAD_REQUEST)
+        
+    user = get_object_or_404(User, pk=user_id)
+    try:
+        client = user.client
+    except AttributeError:
+        return Response({"detail": "Cet utilisateur n'a pas de profil Client associé."}, status=status.HTTP_400_BAD_REQUEST)
+        
+    if hasattr(client, 'serveuse'):
+        return Response({"detail": "Cet utilisateur est déjà enregistré comme serveuse."}, status=status.HTTP_400_BAD_REQUEST)
+        
+    serveuse = Serveuse.objects.create(client=client, statut='disponible')
+    serializer = ServeusesSerializer(serveuse)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAdminUser])
+def admin_update_serveuse(request, pk):
+    """
+    Modifie le profil ou le statut d'une serveuse (admin only).
+    """
+    serveuse = get_object_or_404(Serveuse, pk=pk)
+    serializer = ServeusesUpdateSerializer(serveuse, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAdminUser])
+def admin_delete_serveuse(request, pk):
+    """
+    Supprime une serveuse (admin only).
+    """
+    serveuse = get_object_or_404(Serveuse, pk=pk)
+    serveuse_nom = f"{serveuse.nom} {serveuse.prenom}"
+    serveuse.delete()
+    return Response({"detail": f"Serveuse {serveuse_nom} supprimée avec succès."}, status=status.HTTP_204_NO_CONTENT)
+
+
+# ============================================================
+# GESTION DES LIVREURS - ENDPOINT DELETE
+# ============================================================
+
+@api_view(['DELETE'])
+@permission_classes([IsAdminUser])
+def admin_delete_livreur(request, pk):
+    """
+    Supprime un livreur (admin only).
+    """
+    livreur = get_object_or_404(Livreur, pk=pk)
+    livreur_nom = f"{livreur.nom} {livreur.prenom}"
+    livreur.delete()
+    return Response({"detail": f"Livreur {livreur_nom} supprimé avec succès."}, status=status.HTTP_204_NO_CONTENT)

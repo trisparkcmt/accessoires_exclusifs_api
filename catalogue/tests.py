@@ -153,20 +153,20 @@ class ReductionCategorieParfumTest(TestCase):
         self.categorie.save()
         self.parfum_a.refresh_from_db()
         self.parfum_b.refresh_from_db()
-        self.assertEqual(self.parfum_a.prix_promotionnel, Decimal('20000.00'))
-        self.assertEqual(self.parfum_b.prix_promotionnel, Decimal('32000.00'))
+        self.assertEqual(self.parfum_a.prix_promotionnel_effectif, Decimal('20000.00'))
+        self.assertEqual(self.parfum_b.prix_promotionnel_effectif, Decimal('32000.00'))
 
     def test_prix_manuel_prioritaire(self):
         self.categorie.taux_reduction = Decimal('20')
         self.categorie.save()
         self.parfum_manuel.refresh_from_db()
-        self.assertEqual(self.parfum_manuel.prix_promotionnel, Decimal('14000'))
+        self.assertEqual(self.parfum_manuel.prix_promotionnel_effectif, Decimal('14000'))
 
     def test_parfum_inactif_non_touche(self):
         self.categorie.taux_reduction = Decimal('20')
         self.categorie.save()
         self.parfum_inactif.refresh_from_db()
-        self.assertIsNone(self.parfum_inactif.prix_promotionnel)
+        self.assertIsNone(self.parfum_inactif.prix_promotionnel_effectif)
 
     def test_reduction_retiree_quand_taux_zero(self):
         self.categorie.taux_reduction = Decimal('20')
@@ -174,7 +174,7 @@ class ReductionCategorieParfumTest(TestCase):
         self.categorie.taux_reduction = Decimal('0')
         self.categorie.save()
         self.parfum_a.refresh_from_db()
-        self.assertIsNone(self.parfum_a.prix_promotionnel)
+        self.assertIsNone(self.parfum_a.prix_promotionnel_effectif)
 
     def test_prix_manuel_conserve_quand_taux_zero(self):
         self.categorie.taux_reduction = Decimal('20')
@@ -182,7 +182,7 @@ class ReductionCategorieParfumTest(TestCase):
         self.categorie.taux_reduction = Decimal('0')
         self.categorie.save()
         self.parfum_manuel.refresh_from_db()
-        self.assertEqual(self.parfum_manuel.prix_promotionnel, Decimal('14000'))
+        self.assertEqual(self.parfum_manuel.prix_promotionnel_effectif, Decimal('14000'))
 
     def test_changement_de_taux_recalcule(self):
         self.categorie.taux_reduction = Decimal('20')
@@ -190,17 +190,17 @@ class ReductionCategorieParfumTest(TestCase):
         self.categorie.taux_reduction = Decimal('30')
         self.categorie.save()
         self.parfum_a.refresh_from_db()
-        self.assertEqual(self.parfum_a.prix_promotionnel, Decimal('17500.00'))
+        self.assertEqual(self.parfum_a.prix_promotionnel_effectif, Decimal('17500.00'))
 
     def test_meme_taux_ne_declenche_pas_signal(self):
         self.categorie.taux_reduction = Decimal('20')
         self.categorie.save()
         self.parfum_a.refresh_from_db()
-        prix_avant = self.parfum_a.prix_promotionnel
+        prix_avant = self.parfum_a.prix_promotionnel_effectif
         self.categorie.taux_reduction = Decimal('20')
         self.categorie.save()
         self.parfum_a.refresh_from_db()
-        self.assertEqual(self.parfum_a.prix_promotionnel, prix_avant)
+        self.assertEqual(self.parfum_a.prix_promotionnel_effectif, prix_avant)
 
 
 class ReductionTypeAccessoireTest(TestCase):
@@ -231,14 +231,14 @@ class ReductionTypeAccessoireTest(TestCase):
         self.type_diffuseur.save()
         self.accessoire_a.refresh_from_db()
         self.accessoire_b.refresh_from_db()
-        self.assertEqual(self.accessoire_a.prix_promotionnel, Decimal('10200.00'))
-        self.assertEqual(self.accessoire_b.prix_promotionnel, Decimal('15300.00'))
+        self.assertEqual(self.accessoire_a.prix_promotionnel_effectif, Decimal('10200.00'))
+        self.assertEqual(self.accessoire_b.prix_promotionnel_effectif, Decimal('15300.00'))
 
     def test_prix_manuel_accessoire_prioritaire(self):
         self.type_diffuseur.taux_reduction = Decimal('15')
         self.type_diffuseur.save()
         self.accessoire_manuel.refresh_from_db()
-        self.assertEqual(self.accessoire_manuel.prix_promotionnel, Decimal('20000'))
+        self.assertEqual(self.accessoire_manuel.prix_promotionnel_effectif, Decimal('20000'))
 
     def test_reduction_retiree_accessoire(self):
         self.type_diffuseur.taux_reduction = Decimal('15')
@@ -246,7 +246,7 @@ class ReductionTypeAccessoireTest(TestCase):
         self.type_diffuseur.taux_reduction = Decimal('0')
         self.type_diffuseur.save()
         self.accessoire_a.refresh_from_db()
-        self.assertIsNone(self.accessoire_a.prix_promotionnel)
+        self.assertIsNone(self.accessoire_a.prix_promotionnel_effectif)
 
     def test_prix_manuel_accessoire_conserve_apres_zero(self):
         self.type_diffuseur.taux_reduction = Decimal('15')
@@ -254,7 +254,7 @@ class ReductionTypeAccessoireTest(TestCase):
         self.type_diffuseur.taux_reduction = Decimal('0')
         self.type_diffuseur.save()
         self.accessoire_manuel.refresh_from_db()
-        self.assertEqual(self.accessoire_manuel.prix_promotionnel, Decimal('20000'))
+        self.assertEqual(self.accessoire_manuel.prix_promotionnel_effectif, Decimal('20000'))
 
 
 # ============================================================

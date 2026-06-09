@@ -5,7 +5,7 @@ from django.urls import reverse
 from dj_rest_auth.serializers import LoginSerializer, PasswordChangeSerializer
 from dj_rest_auth.registration.serializers import RegisterSerializer
 from drf_spectacular.utils import extend_schema_serializer
-from .models import User, Client, Prestataire, CommissionLog, Notification, PayoutTransaction, Livreur
+from .models import User, Client, Prestataire, CommissionLog, Notification, PayoutTransaction, Livreur, Serveuse
 from catalogue.models import Favori
 from laboratoire.models import ParfumPersonnalise, ParfumPersonnaliseLigne
 from orders.models import (
@@ -646,3 +646,24 @@ class LivreurCommandeSerializer(serializers.ModelSerializer):
         user = obj.client.user
         full_name = f"{user.first_name} {user.last_name}".strip()
         return full_name or user.email
+
+
+class ServeusesSerializer(serializers.ModelSerializer):
+    """Serializer complet pour le profil Serveuse"""
+    user_details = UserSerializer(source='client.user', read_only=True)
+    
+    class Meta:
+        model = Serveuse
+        fields = [
+            'id', 'user_details', 'statut', 
+            'nombre_services', 'note_moyenne', 'date_embauche', 'date_creation'
+        ]
+        read_only_fields = ['nombre_services', 'date_creation']
+
+
+class ServeusesUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour modifier le statut de la serveuse depuis l'admin"""
+    class Meta:
+        model = Serveuse
+        fields = ['statut']
+

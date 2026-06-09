@@ -214,7 +214,7 @@ class ParfumPublicListSerializer(ParfumSerializer):
 class ParfumPublicDetailSerializer(ParfumSerializer):
     """Public : détail (avec produits similaires)"""
     class Meta(ParfumSerializer.Meta):
-        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('reference_sku', 'images_supplementaires', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'stock_quantite', 'taux_reduction')]
+        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('reference_sku', 'images_supplementaires', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'stock_quantite')]
     
 # ============================================================
 # INGREDIENTS
@@ -528,7 +528,7 @@ class AccessoirePublicListSerializer(AccessoireSerializer):
 
 class AccessoirePublicDetailSerializer(AccessoireSerializer):
     class Meta(AccessoireSerializer.Meta):
-        fields = [f for f in AccessoireSerializer.Meta.fields if f not in ('reference_sku', 'images_supplementaires', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'stock_quantite', 'taux_reduction')]
+        fields = [f for f in AccessoireSerializer.Meta.fields if f not in ('reference_sku', 'images_supplementaires', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'stock_quantite')]
 
 # ============================================================
 # FLACONS

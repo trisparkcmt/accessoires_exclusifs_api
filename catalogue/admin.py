@@ -204,13 +204,13 @@ class CategorieParfumAdmin(admin.ModelAdmin):
 @admin.register(Parfum)
 class ParfumAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 'apercu_image_col', 'nom', 'categorie',
+        'id', 'apercu_image_col', 'nom', 'marque', 'categorie',
         'contenance_ml', 'prix_unitaire', 'prix_promotionnel',
         'badge_taux', 'statut_stock', 'actif',
         'est_nouveau', 'est_bestseller'
     )
     list_filter = (
-        'categorie', 'actif', 'est_nouveau', 'est_bestseller',
+        'marque', 'categorie', 'actif', 'est_nouveau', 'est_bestseller',
         'genre_cible', 'intensite',
         # ← Filtres par tags
         FamilleOlfactiveParfumFilter,
@@ -219,7 +219,7 @@ class ParfumAdmin(admin.ModelAdmin):
         OccasionParfumFilter,
         'date_creation',
     )
-    search_fields       = ('nom', 'slug', 'reference_sku', 'description_courte')
+    search_fields       = ('marque', 'nom', 'slug', 'reference_sku', 'description_courte')
     readonly_fields     = ('date_creation', 'date_modification')
     prepopulated_fields = {'slug': ('nom',)}
     list_editable       = ('prix_unitaire', 'prix_promotionnel', 'actif')
@@ -290,14 +290,14 @@ from .models import (
 # ============================================================
 @admin.register(Ingredient)
 class IngredientAdmin(admin.ModelAdmin):
-    list_display = ('id', 'nom', 'prix_par_ml', 'stock_ml', 'actif', 'date_creation')
+    list_display = ('id', 'nom', 'prix_par_ml', 'stock_ml', 'seuil_alerte_ml', 'actif', 'date_creation')
     list_filter = ('actif', 'date_creation')
     search_fields = ('nom', 'description')
     readonly_fields = ('date_creation',)
 
     fieldsets = (
         ('Informations générales', {
-            'fields': ('nom', 'description', 'prix_par_ml', 'stock_ml')
+            'fields': ('nom', 'description', 'prix_par_ml', 'stock_ml', 'seuil_alerte_ml')
         }),
         ('Statut', {
             'fields': ('actif',)
@@ -491,12 +491,12 @@ class TypeAccessoireAdmin(admin.ModelAdmin):
 @admin.register(Accessoire)
 class AccessoireAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 'apercu_image_col', 'nom', 'type_accessoire',
+        'id', 'apercu_image_col', 'nom', 'marque', 'type_accessoire',
         'matiere', 'prix_unitaire', 'prix_promotionnel',
         'badge_taux', 'statut_stock', 'actif'
     )
-    list_filter         = ('type_accessoire', 'matiere', 'couleur', 'actif', 'date_creation')
-    search_fields       = ('nom', 'slug', 'reference_sku', 'description_courte')
+    list_filter         = ('marque', 'type_accessoire', 'matiere', 'couleur', 'actif', 'date_creation')
+    search_fields       = ('marque', 'nom', 'slug', 'reference_sku', 'description_courte')
     readonly_fields     = ('date_creation', 'date_modification')
     prepopulated_fields = {'slug': ('nom',)}
     list_editable       = ('prix_unitaire', 'prix_promotionnel', 'actif')
@@ -516,7 +516,7 @@ class AccessoireAdmin(admin.ModelAdmin):
             'fields': ('prix_unitaire', 'prix_promotionnel', 'stock_quantite', 'seuil_alerte_stock')
         }),
         ('Images', {
-            'fields': ('image_principale', 'images_supplementaires')
+            'fields': ('image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')
         }),
         ('Statut', {
             'fields': ('actif',)
@@ -606,7 +606,7 @@ class FlaconAdmin(admin.ModelAdmin):
             'fields': ('prix_unitaire', 'stock_quantite', 'seuil_alerte_stock')
         }),
         ('Images', {
-            'fields': ('image_principale', 'images_supplementaires')
+            'fields': ('image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')
         }),
         ('Statut', {
             'fields': ('actif',)

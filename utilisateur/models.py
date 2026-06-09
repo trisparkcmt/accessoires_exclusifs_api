@@ -68,6 +68,8 @@ class User(AbstractUser):
         
         # On vérifie les relations OneToOne
         if hasattr(self, 'client'):
+            if hasattr(self.client, 'serveuse'):
+                return "serveuse"
             if hasattr(self.client, 'prestataire'):
                 return "prestataire"
             if hasattr(self.client, 'livreur'):
@@ -156,6 +158,45 @@ class Livreur(models.Model):
     
     class Meta:
         db_table = 'livreur'
+    
+    @property
+    def user(self):
+        return self.client.user
+    
+    @property
+    def nom(self):
+        return self.user.last_name
+    
+    @property
+    def prenom(self):
+        return self.user.first_name
+    
+    @property
+    def telephone(self):
+        return self.user.telephone
+    
+    @property
+    def email(self):
+        return self.user.email
+    
+    def __str__(self):
+        return f"{self.nom} {self.prenom} - {self.telephone}"
+
+
+class Serveuse(models.Model):
+    """Serveuse = Client + spécificités"""
+    STATUT_CHOICES = [('disponible', 'Disponible'), ('en_service', 'En service'), ('inactif', 'Inactif'), ('suspendu', 'Suspendu')]
+    
+    client = models.OneToOneField(Client, on_delete=models.CASCADE, related_name='serveuse')
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='disponible')
+    note_moyenne = models.DecimalField(max_digits=3, decimal_places=2, default=0)
+    nombre_services = models.IntegerField(default=0)
+    date_embauche = models.DateField(null=True, blank=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'serveuse'
     
     @property
     def user(self):

@@ -12,7 +12,9 @@ from utilisateur.views import (
     # Livreur & Admin Delivery views
     livreur_dashboard, livreur_commandes_list, livreur_update_delivery_status,
     admin_livreurs_list, admin_promote_to_livreur, admin_update_livreur,
-    admin_assign_delivery, admin_deliveries_monitor,
+    admin_assign_delivery, admin_deliveries_monitor, admin_delete_livreur,
+    # Serveuse & Admin Serveuse views
+    admin_serveuses_list, admin_promote_to_serveuse, admin_update_serveuse, admin_delete_serveuse,
     # Connexion personnalisée
     WebLoginView, MobileLoginView, DeprecatedLoginView,
     ThrottledPasswordResetView, ThrottledRegisterView,
@@ -70,6 +72,13 @@ urlpatterns = [
     path('admin/livreurs/', admin_livreurs_list, name='admin-livreurs-list'),
     path('admin/livreurs/promote/', admin_promote_to_livreur, name='admin-promote-to-livreur'),
     path('admin/livreurs/<int:pk>/', admin_update_livreur, name='admin-update-livreur'),
+    path('admin/livreurs/<int:pk>/delete/', admin_delete_livreur, name='admin-delete-livreur'),
     path('admin/commandes/<int:pk>/affecter-livreur/', admin_assign_delivery, name='admin-assign-delivery'),
     path('admin/livraisons/', admin_deliveries_monitor, name='admin-deliveries-monitor'),
+    
+    # Admin Serveuse Endpoints
+    path('admin/serveuses/', admin_serveuses_list, name='admin-serveuses-list'),
+    path('admin/serveuses/promote/', admin_promote_to_serveuse, name='admin-promote-to-serveuse'),
+    path('admin/serveuses/<int:pk>/', admin_update_serveuse, name='admin-update-serveuse'),
+    path('admin/serveuses/<int:pk>/delete/', admin_delete_serveuse, name='admin-delete-serveuse'),
 ]

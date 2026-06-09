@@ -32,6 +32,7 @@ class ParfumFilter(django_filters.FilterSet):
     occasion          = django_filters.CharFilter(method='filter_occasion')
 
     # --- Autres filtres ---
+    marque        = django_filters.CharFilter(field_name='marque', lookup_expr='icontains')
     genre         = django_filters.CharFilter(field_name='genre_cible')
     intensite     = django_filters.CharFilter(field_name='intensite')
     contenance_ml = django_filters.NumberFilter(field_name='contenance_ml')
@@ -54,7 +55,7 @@ class ParfumFilter(django_filters.FilterSet):
 
     class Meta:
         model  = Parfum
-        fields = ['genre', 'intensite', 'contenance_ml', 'prix_min', 'prix_max']
+        fields = ['marque', 'genre', 'intensite', 'contenance_ml', 'prix_min', 'prix_max']
 
 
 # ============================================================
@@ -106,6 +107,7 @@ class EssenceFilter(django_filters.FilterSet):
 # ============================================================
 class AccessoireFilter(django_filters.FilterSet):
 
+    marque          = django_filters.CharFilter(field_name='marque', lookup_expr='icontains')
     type_accessoire = django_filters.NumberFilter(field_name='type_accessoire__id')
     type_nom        = django_filters.CharFilter(
         field_name='type_accessoire__nom',
@@ -125,7 +127,7 @@ class AccessoireFilter(django_filters.FilterSet):
 
     class Meta:
         model  = Accessoire
-        fields = ['type_accessoire', 'couleur', 'matiere', 'taille']
+        fields = ['marque', 'type_accessoire', 'couleur', 'matiere', 'taille']
 
 
 # ============================================================

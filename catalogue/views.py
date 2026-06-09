@@ -4,6 +4,7 @@ from rest_framework import viewsets
 from rest_framework.permissions import AllowAny
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.db.models import Sum
 from django.db import models
 from django.utils import timezone
@@ -218,8 +219,9 @@ class ParfumViewSet(viewsets.ModelViewSet):
     pagination_class   = StandardPagination
     permission_classes = [IsAdminOrReadOnly]
     filter_backends    = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = ParfumFilter
-    search_fields      = ['nom', 'description_courte', 'notes_tete', 'notes_coeur', 'notes_fond']
+    search_fields      = ['marque', 'nom', 'description_courte', 'notes_tete', 'notes_coeur', 'notes_fond']
     ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'contenance_ml']
     ordering           = ['?']
     lookup_field       = 'slug'
@@ -752,8 +754,9 @@ class AccessoireViewSet(viewsets.ModelViewSet):
     pagination_class   = StandardPagination
     permission_classes = [IsAdminOrReadOnly]
     filter_backends    = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = AccessoireFilter
-    search_fields      = ['nom', 'description_courte', 'matiere', 'couleur']
+    search_fields      = ['marque', 'nom', 'description_courte', 'matiere', 'couleur']
     ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'poids_grammes']
     # L'attribut 'ordering' par défaut est maintenant géré dynamiquement dans get_queryset
     ordering           = [] 
@@ -961,6 +964,7 @@ class FlaconViewSet(viewsets.ModelViewSet):
     pagination_class   = StandardPagination
     permission_classes = [IsAdminOrReadOnly]
     filter_backends    = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = FlaconFilter
     search_fields      = ['nom', 'matiere', 'couleur']
     ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'contenance_ml', 'stock_quantite']
@@ -1042,6 +1046,7 @@ class CategorieParfumViewSet(viewsets.ModelViewSet):
     queryset = CategorieParfum.objects.filter(actif=True)
     serializer_class = CategorieParfumSerializer
     permission_classes = [IsAdminOrReadOnly]
+    parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     search_fields = ['nom', 'description']
     ordering_fields = ['nom', 'ordre_affichage', 'date_creation']
