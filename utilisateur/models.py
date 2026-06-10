@@ -309,3 +309,22 @@ def create_client_profile(sender, instance, created, **kwargs):
     """Crée automatiquement un profil Client lors de la création d'un User"""
     if created:
         Client.objects.create(user=instance)
+
+
+class Depense(models.Model):
+    titre = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    montant = models.DecimalField(max_digits=12, decimal_places=2)
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='depenses')
+    date_depense = models.DateField(auto_now_add=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'depense'
+        ordering = ['-date_creation']
+        verbose_name = 'Dépense'
+        verbose_name_plural = 'Dépenses'
+
+    def __str__(self):
+        return f"{self.titre} - {self.montant} FCFA"

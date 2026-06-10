@@ -308,10 +308,12 @@
                     { "taille_ml": 30, "prix": "15000.00", "stock_disponible": 10 }
                 ]
             };
+        } else if (name.includes('notification')) {
+            return { "est_lu": true };
         } else if (name.includes('inscription')) {
             const timestamp = Date.now();
             const randomPhone = `+23769${Math.floor(Math.random() * 10000000).toString().padStart(7, '0')}`;
-            return { "email": `user${timestamp}@example.com`, "telephone": randomPhone, "password1": "password123", "password2": "password123", "first_name": "Random", "last_name": "User" };
+            return { "email": `user${timestamp}@example.com`, "telephone": randomPhone, "password": "password123", "password_confirm": "password123", "first_name": "Random", "last_name": "User" };
         } else if (name.includes('tag')) {
             return {
                 "nom": `Tag ${randSuffix}`,
@@ -378,7 +380,14 @@
         { name: "Laboratoire – Détail essence (labo)", url: "/lab/labo/essences/{slug}/detail/", method: "GET", needId: true, idType: "slug" },
         { name: "Ingrédients – Liste", url: "/lab/ingredients/", method: "GET" },
         { name: "Ingrédients – Créer (admin)", url: "/lab/ingredients/", method: "POST", needAuth: true },
-        { name: "Ingrédients – Patch (admin)", url: "/lab/ingredients/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true }
+        { name: "Ingrédients – Patch (admin)", url: "/lab/ingredients/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
+        { name: "Notifications – Liste (admin)", url: "/shop/notifications/", method: "GET", needAuth: true },
+        { name: "Notifications – Non lues (admin)", url: "/shop/notifications/non_lues/", method: "GET", needAuth: true },
+        { name: "Notifications – Stats (admin)", url: "/shop/notifications/stats/", method: "GET", needAuth: true },
+        { name: "Notifications – Tout marquer lu (admin)", url: "/shop/notifications/marquer_tous_comme_lus/", method: "PATCH", needAuth: true },
+        { name: "Notifications – Marquer lu (admin)", url: "/shop/notifications/{id}/", method: "PATCH", needId: true, idType: "id", needAuth: true },
+        { name: "Tags Parfum (select) – Liste", url: "/shop/tags-parfum/", method: "GET" },
+        { name: "Tags Essence (select) – Liste", url: "/shop/tags-essence/", method: "GET" }
     ];
 
     const endpointSelect = document.getElementById('endpointSelect');
@@ -516,7 +525,7 @@
         }
 
         const registerUrl = `${baseUrl}/auth/registration/`;
-        const payload = { email, telephone, first_name, last_name, password1, password2 };
+        const payload = { email, telephone, first_name, last_name, password: password1, password_confirm: password2 };
 
         try {
             registerResponseDiv.innerHTML = '🔄 Inscription en cours...';

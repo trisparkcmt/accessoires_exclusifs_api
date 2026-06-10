@@ -247,7 +247,7 @@ class ParfumAdmin(admin.ModelAdmin):
             'fields': ('prix_unitaire', 'prix_promotionnel', 'stock_quantite', 'seuil_alerte_stock')
         }),
         ('Images', {
-            'fields': ('image_principale', 'images_supplementaires')
+            'fields': ('image_principale', 'image_supp_1',"image_supp_2","image_supp_3", 'image_supp_4')
         }),
         ('Statut', {
             'fields': ('actif', 'est_nouveau', 'est_bestseller')

@@ -742,5 +742,139 @@ class LivreurEndpointsTest(APITestCase):
         self.assertIn('results', response.data)
         self.assertEqual(len(response.data['results']), 1)
 
+    def test_admin_create_livreur_from_scratch(self):
+        self.client.force_authenticate(user=self.admin)
+        
+        payload = {
+            'email': 'new_livreur_scratch@example.com',
+            'telephone': '+237600000021',
+            'password': 'LivreurPassword123!',
+            'first_name': 'LivreurFirst',
+            'last_name': 'LivreurLast',
+            'genre': 'homme',
+            'photo': 'http://example.com/photo.png'
+        }
+        
+        response = self.client.post('/api/v1/auth/admin/livreurs/promote/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['statut'], 'disponible')
+        
+        # Verify database entities
+        user = User.objects.get(email='new_livreur_scratch@example.com')
+        self.assertEqual(user.first_name, 'LivreurFirst')
+        self.assertEqual(user.last_name, 'LivreurLast')
+        self.assertEqual(user.telephone, '+237600000021')
+        self.assertTrue(hasattr(user, 'client'))
+        self.assertTrue(hasattr(user.client, 'livreur'))
+        self.assertEqual(user.client.livreur.photo, 'http://example.com/photo.png')
+
+
+from utilisateur.models import Serveuse
+
+class ServeuseEndpointsTest(APITestCase):
+    def setUp(self):
+        # Admin user
+        self.admin = User.objects.create_superuser(
+            username='admin_serveuse_test',
+            email='admin_serveuse@example.com',
+            password='AdminPassword123!',
+            telephone='+237600000012'
+        )
+
+        # Standard client user
+        self.client_user = User.objects.create_user(
+            username='client_serveuse_test',
+            email='client_serveuse@example.com',
+            password='UserPassword123!',
+            telephone='+237600000013'
+        )
+        
+        # Serveuse user (active)
+        self.serveuse_user = User.objects.create_user(
+            username='serveuse_test',
+            email='serveuse@example.com',
+            password='ServeusePassword123!',
+            telephone='+237600000014'
+        )
+        self.serveuse = Serveuse.objects.create(
+            client=self.serveuse_user.client,
+            statut='disponible'
+        )
+
+    def test_access_restrictions(self):
+        # 1. Unauthenticated client
+        response = self.client.get('/api/v1/auth/admin/serveuses/')
+        self.assertEqual(response.status_code, 401)
+
+        # 2. Standard client user on admin endpoints
+        self.client.force_authenticate(user=self.client_user)
+        response = self.client.get('/api/v1/auth/admin/serveuses/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_serveuses_management_promote(self):
+        self.client.force_authenticate(user=self.admin)
+
+        # List all serveuses
+        response = self.client.get('/api/v1/auth/admin/serveuses/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('results', response.data)
+        # We created one serveuse in setUp
+        self.assertEqual(len(response.data['results']), 1)
+
+        # Promote another client user to serveuse
+        new_client_user = User.objects.create_user(
+            username='new_client_to_promote_serveuse',
+            email='new_client_serveuse@example.com',
+            password='Password123!',
+            telephone='+237600000019'
+        )
+        response = self.client.post(
+            '/api/v1/auth/admin/serveuses/promote/',
+            {'user_id': new_client_user.pk},
+            format='json'
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Serveuse.objects.filter(client=new_client_user.client).exists())
+
+        # Update serveuse status
+        response = self.client.patch(
+            f'/api/v1/auth/admin/serveuses/{self.serveuse.pk}/',
+            {'statut': 'suspendu'},
+            format='json'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.serveuse.refresh_from_db()
+        self.assertEqual(self.serveuse.statut, 'suspendu')
+
+        # Delete serveuse
+        response = self.client.delete(f'/api/v1/auth/admin/serveuses/{self.serveuse.pk}/delete/')
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Serveuse.objects.filter(pk=self.serveuse.pk).exists())
+
+    def test_admin_create_serveuse_from_scratch(self):
+        self.client.force_authenticate(user=self.admin)
+        
+        payload = {
+            'email': 'new_serveuse_scratch@example.com',
+            'telephone': '+237600000022',
+            'password': 'ServeusePassword123!',
+            'first_name': 'ServeuseFirst',
+            'last_name': 'ServeuseLast',
+            'genre': 'femme'
+        }
+        
+        response = self.client.post('/api/v1/auth/admin/serveuses/promote/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['statut'], 'disponible')
+        
+        # Verify database entities
+        user = User.objects.get(email='new_serveuse_scratch@example.com')
+        self.assertEqual(user.first_name, 'ServeuseFirst')
+        self.assertEqual(user.last_name, 'ServeuseLast')
+        self.assertEqual(user.telephone, '+237600000022')
+        self.assertTrue(hasattr(user, 'client'))
+        self.assertTrue(hasattr(user.client, 'serveuse'))
+
+
 
 

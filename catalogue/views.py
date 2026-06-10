@@ -21,7 +21,7 @@ from rest_framework.permissions import IsAuthenticated
 from orders.models import CommandeLigneAccessoire
 from .permissions import IsAdminOrReadOnly, IsAdmin
 
-from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Flacon, Favori, Ingredient, ProduitFiniEssence, Tag, TypeAccessoire, TypeFlacon, NotificationCatalogue
+from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Flacon, Favori, Ingredient, ProduitFiniEssence, Tag, TypeAccessoire, TypeFlacon, NotificationCatalogue, MouvementStock
 from .serializers import (
     AccessoireAdminDetailSerializer, AccessoireAdminListSerializer, AccessoirePublicDetailSerializer, AccessoirePublicListSerializer, AccessoireSimilaireSerializer, CategorieParfumSerializer, EssenceLaboDetailSerializer, EssenceLaboListSerializer, LotEssenceSerializer, ParfumAdminDetailSerializer, ParfumAdminListSerializer, ParfumPublicDetailSerializer, ParfumPublicListSerializer, ParfumSerializer, EssenceSerializer,
     AccessoireSerializer, FlaconSerializer, FlaconPublicSerializer, ParfumSimilaireSerializer, EssenceCreateFullSerializer,
@@ -1161,3 +1161,29 @@ class NotificationCatalogueViewSet(viewsets.ModelViewSet):
             'lues': total - non_lues,
             'par_type_produit': list(par_type)
         })
+
+
+# ============================================================
+# MOUVEMENTS DE STOCK (lecture seule – admin uniquement)
+# ============================================================
+from .serializers import MouvementStockSerializer
+from utilisateur.permissions import IsAdminOrServeuse
+
+
+class MouvementStockViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Lecture seule des mouvements de stock.
+    Accessible uniquement aux admins (is_staff).
+    Les mouvements sont créés automatiquement via les signaux Django
+    lors de toute modification d'un champ de stock.
+    """
+    serializer_class = MouvementStockSerializer
+    permission_classes = [IsAdmin]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_fields = ['type_produit', 'utilisateur']
+    search_fields = ['nom_produit']
+    ordering_fields = ['date_ajout', 'quantite_avant', 'quantite_apres', 'quantite_ajoutee']
+    ordering = ['-date_ajout']
+
+    def get_queryset(self):
+        return MouvementStock.objects.select_related('utilisateur').all()

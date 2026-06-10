@@ -5,7 +5,7 @@ from django.urls import reverse
 from dj_rest_auth.serializers import LoginSerializer, PasswordChangeSerializer
 from dj_rest_auth.registration.serializers import RegisterSerializer
 from drf_spectacular.utils import extend_schema_serializer
-from .models import User, Client, Prestataire, CommissionLog, Notification, PayoutTransaction, Livreur, Serveuse
+from .models import User, Client, Prestataire, CommissionLog, Notification, PayoutTransaction, Livreur, Serveuse, Depense
 from catalogue.models import Favori
 from laboratoire.models import ParfumPersonnalise, ParfumPersonnaliseLigne
 from orders.models import (
@@ -271,13 +271,36 @@ class PrestataireValidationSerializer(serializers.ModelSerializer):
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer pour les données de base de l'utilisateur"""
+    roles = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'role']
-        read_only_fields = ['role']
+        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'role', 'roles']
+        read_only_fields = ['role', 'roles']
         extra_kwargs = {
             'email': {'read_only': True},
         }
+
+    def get_roles(self, obj):
+        """
+        Retourne la liste de tous les rôles actifs de l'utilisateur.
+        Un même utilisateur peut être à la fois client, prestataire, livreur et/ou serveuse.
+        Le frontend utilise cette liste pour décider quel(s) dashboard(s) afficher.
+        """
+        roles = []
+        if obj.is_superuser or obj.is_staff:
+            roles.append('admin')
+        # Tout utilisateur ayant un profil Client est au moins 'client'
+        if hasattr(obj, 'client'):
+            roles.append('client')
+            client = obj.client
+            if hasattr(client, 'prestataire'):
+                roles.append('prestataire')
+            if hasattr(client, 'livreur'):
+                roles.append('livreur')
+            if hasattr(client, 'serveuse'):
+                roles.append('serveuse')
+        return roles
 
 
 class MeUpdateSerializer(serializers.ModelSerializer):
@@ -467,6 +490,7 @@ class MeCommandeSerializer(serializers.ModelSerializer):
 
 class MeSerializer(serializers.ModelSerializer):
     user = UserSerializer(source='*', read_only=True)
+    roles = serializers.SerializerMethodField()
     client = serializers.SerializerMethodField()
     preferences = serializers.SerializerMethodField()
     favoris = serializers.SerializerMethodField()
@@ -475,7 +499,26 @@ class MeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['user', 'client', 'preferences', 'favoris', 'parfums_personnalises', 'commandes']
+        fields = ['user', 'roles', 'client', 'preferences', 'favoris', 'parfums_personnalises', 'commandes']
+
+    def get_roles(self, obj):
+        """
+        Retourne la liste de tous les rôles actifs de l'utilisateur.
+        Dupliqué ici pour accès direct au niveau racine de la réponse (sans passer par 'user').
+        """
+        roles = []
+        if obj.is_superuser or obj.is_staff:
+            roles.append('admin')
+        if hasattr(obj, 'client'):
+            roles.append('client')
+            client = obj.client
+            if hasattr(client, 'prestataire'):
+                roles.append('prestataire')
+            if hasattr(client, 'livreur'):
+                roles.append('livreur')
+            if hasattr(client, 'serveuse'):
+                roles.append('serveuse')
+        return roles
 
     def _get_client(self, obj):
         return getattr(obj, 'client', None)
@@ -666,4 +709,18 @@ class ServeusesUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Serveuse
         fields = ['statut']
+
+
+class DepenseSerializer(serializers.ModelSerializer):
+    cree_par_details = UserSerializer(source='cree_par', read_only=True)
+
+    class Meta:
+        model = Depense
+        fields = [
+            'id', 'titre', 'description', 'montant', 
+            'cree_par', 'cree_par_details', 'date_depense',
+            'date_creation', 'date_modification'
+        ]
+        read_only_fields = ['cree_par', 'date_creation', 'date_modification']
+
 

@@ -8,6 +8,7 @@ from django.conf import settings
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
+from .permissions import IsAdminOnly, IsAdminOrServeuseReadOnly, IsAdminOrServeuse, DepensePermission
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
@@ -24,9 +25,9 @@ from .serializers import (
     PrestataireValidationSerializer, MeSerializer, MeUpdateSerializer,
     NotificationSerializer, PayoutTransactionSerializer, PayoutRequestSerializer,
     LivreurSerializer, LivreurUpdateSerializer, LivreurCommandeSerializer,
-    ServeusesSerializer, ServeusesUpdateSerializer
+    ServeusesSerializer, ServeusesUpdateSerializer, DepenseSerializer
 )
-from .models import Prestataire, User, Notification, PayoutTransaction, CommissionLog, Livreur, Serveuse
+from .models import Prestataire, User, Notification, PayoutTransaction, CommissionLog, Livreur, Serveuse, Client, Depense
 from orders.models import Commande
 from .throttles import (
     ChangeEmailThrottle,
@@ -815,7 +816,7 @@ def manage_me(request):
     if request.method == 'GET':
         user = (
             User.objects
-            .select_related('client')
+            .select_related('client', 'client__prestataire', 'client__livreur', 'client__serveuse')
             .prefetch_related(
                 'client__favoris__parfum__tags',
                 'client__favoris__accessoire',
@@ -925,7 +926,7 @@ def apply_prestataire(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOrServeuseReadOnly])
 def list_prestataire_requests(request):
     """
     Liste toutes les demandes en attente (Réservé à l'Admin).
@@ -935,7 +936,7 @@ def list_prestataire_requests(request):
     return Response(serializer.data)
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOrServeuseReadOnly])
 def detail_prestataire_request(request, pk):
     """Récupère les informations détaillées d'une demande prestataire."""
     prestataire = get_object_or_404(Prestataire, pk=pk)
@@ -943,7 +944,7 @@ def detail_prestataire_request(request, pk):
     return Response(serializer.data)
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOrServeuse])
 def admin_notifications(request):
     """Liste des notifications destinées à l'admin connecté."""
     notifications = Notification.objects.filter(
@@ -957,7 +958,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.utils.html import strip_tags
 
 @api_view(['PATCH'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOnly])
 def validate_prestataire(request, pk):
     """
     Endpoint pour valider un prestataire (Réservé à l'Admin).
@@ -1150,7 +1151,7 @@ from .serializers import AdminUserSerializer, AdminPrestataireUpdateSerializer, 
 # ============================================================
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOrServeuseReadOnly])
 def admin_users_list(request):
     """Liste paginée et recherchable de tous les utilisateurs"""
     search_query = request.query_params.get('search', '')
@@ -1170,7 +1171,7 @@ def admin_users_list(request):
     return paginator.get_paginated_response(serializer.data)
 
 @api_view(['PATCH'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOnly])
 def admin_user_toggle_status(request, pk):
     """Bloquer ou débloquer un utilisateur (is_active)"""
     user = get_object_or_404(User, pk=pk)
@@ -1183,7 +1184,7 @@ def admin_user_toggle_status(request, pk):
     return Response({"detail": f"Utilisateur {status_str} avec succès.", "is_active": user.is_active})
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOrServeuseReadOnly])
 def admin_prestataires_list(request):
     """Liste de tous les prestataires avec filtrage par statut"""
     statut = request.query_params.get('statut')
@@ -1196,7 +1197,7 @@ def admin_prestataires_list(request):
     return Response(serializer.data)
 
 @api_view(['PATCH'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOnly])
 def admin_prestataire_update(request, pk):
     """Modifier le taux de commission ou le statut d'un prestataire actif"""
     prestataire = get_object_or_404(Prestataire, pk=pk)
@@ -1208,7 +1209,7 @@ def admin_prestataire_update(request, pk):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOrServeuse])
 def admin_global_stats(request):
     """Statistiques financières pour le dashboard admin"""
     from django.db.models import Sum
@@ -1248,7 +1249,7 @@ def clean_cameroon_phone(phone):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOnly])
 def admin_prestataire_payout(request, pk):
     """
     Initiation d'un virement mobile money vers un prestataire par l'administrateur
@@ -1427,7 +1428,7 @@ def monetbil_payout_webhook(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOrServeuseReadOnly])
 def admin_payouts_list(request):
     """
     Liste de tous les virements (payouts) initiés par l'admin avec pagination
@@ -1592,7 +1593,7 @@ def livreur_update_delivery_status(request, pk):
 # ============================================================
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOrServeuseReadOnly])
 def admin_livreurs_list(request):
     """
     Liste complète de tous les livreurs (pour affectation ou gestion admin).
@@ -1614,31 +1615,69 @@ def admin_livreurs_list(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOnly])
 def admin_promote_to_livreur(request):
     """
-    Crée un profil Livreur à partir d'un Client existant via son ID utilisateur (user_id).
+    Crée un profil Livreur à partir d'un Client existant (via user_id) ou à partir de zéro.
     """
     user_id = request.data.get('user_id')
-    if not user_id:
-        return Response({"detail": "Le paramètre user_id est requis."}, status=status.HTTP_400_BAD_REQUEST)
+    photo = request.data.get('photo', '')
+    date_embauche = request.data.get('date_embauche')
+    
+    if user_id:
+        # Promotion d'un client existant
+        user = get_object_or_404(User, pk=user_id)
+        try:
+            client = user.client
+        except AttributeError:
+            return Response({"detail": "Cet utilisateur n'a pas de profil Client associé."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        if hasattr(client, 'livreur'):
+            return Response({"detail": "Cet utilisateur est déjà enregistré comme livreur."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        livreur = Livreur.objects.create(client=client, statut='disponible', photo=photo, date_embauche=date_embauche)
+    else:
+        # Création à partir de zéro
+        email = request.data.get('email')
+        telephone = request.data.get('telephone')
+        password = request.data.get('password')
+        first_name = request.data.get('first_name', '')
+        last_name = request.data.get('last_name', '')
+        genre = request.data.get('genre', '')
         
-    user = get_object_or_404(User, pk=user_id)
-    try:
+        if not email or not telephone or not password:
+            return Response(
+                {"detail": "Veuillez fournir un user_id pour un client existant, ou l'email, le téléphone et le mot de passe pour le créer de zéro."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        if User.objects.filter(email=email).exists():
+            return Response({"detail": "Un utilisateur avec cet email existe déjà."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        if User.objects.filter(telephone=telephone).exists():
+            return Response({"detail": "Un utilisateur avec ce numéro de téléphone existe déjà."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        user = User.objects.create_user(
+            email=email,
+            username=email.split('@')[0],
+            telephone=telephone,
+            password=password,
+            first_name=first_name,
+            last_name=last_name
+        )
         client = user.client
-    except AttributeError:
-        return Response({"detail": "Cet utilisateur n'a pas de profil Client associé."}, status=status.HTTP_400_BAD_REQUEST)
-        
-    if hasattr(client, 'livreur'):
-        return Response({"detail": "Cet utilisateur est déjà enregistré comme livreur."}, status=status.HTTP_400_BAD_REQUEST)
-        
-    livreur = Livreur.objects.create(client=client, statut='disponible')
+        if genre:
+            client.genre = genre
+            client.save()
+            
+        # On lie maintenant le livreur au client existant
+        livreur = Livreur.objects.create(client=client, statut='disponible', photo=photo, date_embauche=date_embauche)        
     serializer = LivreurSerializer(livreur)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['PATCH'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOnly])
 def admin_update_livreur(request, pk):
     """
     Modifie le profil ou le statut d'un livreur.
@@ -1652,7 +1691,7 @@ def admin_update_livreur(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOrServeuse])
 def admin_assign_delivery(request, pk):
     """
     Assigne une commande à un livreur actif.
@@ -1679,7 +1718,7 @@ def admin_assign_delivery(request, pk):
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOrServeuse])
 def admin_deliveries_monitor(request):
     """
     Suivi global de toutes les livraisons pour l'administrateur.
@@ -1709,7 +1748,7 @@ def admin_deliveries_monitor(request):
 # ============================================================
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOnly])
 def admin_serveuses_list(request):
     """
     Liste complète de toutes les serveuses avec filtrage par statut (admin only).
@@ -1731,32 +1770,64 @@ def admin_serveuses_list(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOnly])
 def admin_promote_to_serveuse(request):
     """
-    Crée un profil Serveuse à partir d'un Client existant via son ID utilisateur (user_id).
-    Réservé à l'admin uniquement.
+    Crée un profil Serveuse à partir d'un Client existant (via user_id) ou à partir de zéro.
     """
     user_id = request.data.get('user_id')
-    if not user_id:
-        return Response({"detail": "Le paramètre user_id est requis."}, status=status.HTTP_400_BAD_REQUEST)
+    date_embauche = request.data.get('date_embauche')
+    
+    if user_id:
+        # Promotion d'un client existant
+        user = get_object_or_404(User, pk=user_id)
+        try:
+            client = user.client
+        except AttributeError:
+            return Response({"detail": "Cet utilisateur n'a pas de profil Client associé."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        if hasattr(client, 'serveuse'):
+            return Response({"detail": "Cet utilisateur est déjà enregistré comme serveuse."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        serveuse = Serveuse.objects.create(client=client, statut='disponible', date_embauche=date_embauche)
+    else:
+        # Création à partir de zéro
+        email = request.data.get('email')
+        telephone = request.data.get('telephone')
+        password = request.data.get('password')
+        first_name = request.data.get('first_name', '')
+        last_name = request.data.get('last_name', '')
+        genre = request.data.get('genre', '')
         
-    user = get_object_or_404(User, pk=user_id)
-    try:
-        client = user.client
-    except AttributeError:
-        return Response({"detail": "Cet utilisateur n'a pas de profil Client associé."}, status=status.HTTP_400_BAD_REQUEST)
+        if not email or not telephone or not password:
+            return Response(
+                {"detail": "Veuillez fournir un user_id pour un client existant, ou l'email, le téléphone et le mot de passe pour le créer de zéro."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        if User.objects.filter(email=email).exists():
+            return Response({"detail": "Un utilisateur avec cet email existe déjà."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        if User.objects.filter(telephone=telephone).exists():
+            return Response({"detail": "Un utilisateur avec ce numéro de téléphone existe déjà."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        user = User.objects.create_user(
+            email=email,
+            username=email.split('@')[0],
+            telephone=telephone,
+            password=password,
+            first_name=first_name,
+            last_name=last_name
+        )
+        client = Client.objects.create(user=user, genre=genre)
+        serveuse = Serveuse.objects.create(client=client, statut='disponible', date_embauche=date_embauche)
         
-    if hasattr(client, 'serveuse'):
-        return Response({"detail": "Cet utilisateur est déjà enregistré comme serveuse."}, status=status.HTTP_400_BAD_REQUEST)
-        
-    serveuse = Serveuse.objects.create(client=client, statut='disponible')
     serializer = ServeusesSerializer(serveuse)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['PATCH'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOnly])
 def admin_update_serveuse(request, pk):
     """
     Modifie le profil ou le statut d'une serveuse (admin only).
@@ -1770,7 +1841,7 @@ def admin_update_serveuse(request, pk):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOnly])
 def admin_delete_serveuse(request, pk):
     """
     Supprime une serveuse (admin only).
@@ -1786,7 +1857,7 @@ def admin_delete_serveuse(request, pk):
 # ============================================================
 
 @api_view(['DELETE'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsAdminOnly])
 def admin_delete_livreur(request, pk):
     """
     Supprime un livreur (admin only).
@@ -1795,3 +1866,34 @@ def admin_delete_livreur(request, pk):
     livreur_nom = f"{livreur.nom} {livreur.prenom}"
     livreur.delete()
     return Response({"detail": f"Livreur {livreur_nom} supprimé avec succès."}, status=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+#  Dépenses – CRUD admin & serveuse
+# ---------------------------------------------------------------------------
+from rest_framework import viewsets, filters
+from django_filters.rest_framework import DjangoFilterBackend
+
+
+class DepenseViewSet(viewsets.ModelViewSet):
+    """
+    CRUD complet sur les dépenses.
+    Accessible aux admins ET aux serveuses (droits identiques).
+    La serveuse créatrice est automatiquement enregistrée.
+    """
+    serializer_class = DepenseSerializer
+    permission_classes = [DepensePermission]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['categorie', 'statut', 'date_depense']
+    search_fields = ['libelle', 'description', 'fournisseur']
+    ordering_fields = ['date_depense', 'montant', 'created_at']
+    ordering = ['-date_depense']
+
+    def get_queryset(self):
+        return Depense.objects.select_related('created_by').all()
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save(updated_by=self.request.user)

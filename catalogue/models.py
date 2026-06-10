@@ -741,3 +741,25 @@ class NotificationCatalogue(models.Model):
     def est_encore_en_alerte(self):
         """Vérifie si le produit est toujours en alerte (stock toujours ≤ seuil)."""
         return self.stock_actuel <= self.seuil_alerte
+
+
+class MouvementStock(models.Model):
+    utilisateur = models.ForeignKey('utilisateur.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='mouvements_stock')
+    type_produit = models.CharField(max_length=50, help_text="parfum, essence, accessoire, flacon, produit_fini_essence, ingredient")
+    produit_id = models.PositiveIntegerField()
+    nom_produit = models.CharField(max_length=255)
+    quantite_avant = models.DecimalField(max_digits=12, decimal_places=3)
+    quantite_apres = models.DecimalField(max_digits=12, decimal_places=3)
+    quantite_ajoutee = models.DecimalField(max_digits=12, decimal_places=3)
+    date_ajout = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'mouvement_stock'
+        ordering = ['-date_ajout']
+        verbose_name = 'Mouvement de stock'
+        verbose_name_plural = 'Mouvements de stock'
+
+    def __str__(self):
+        user_str = self.utilisateur.email if self.utilisateur else "Système"
+        return f"{self.date_ajout.strftime('%Y-%m-%d %H:%M')} - {user_str} a ajouté {self.quantite_ajoutee} à {self.nom_produit} ({self.type_produit})"
+

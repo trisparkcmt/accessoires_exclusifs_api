@@ -6,7 +6,7 @@ from drf_spectacular.types import OpenApiTypes
 from django.db import transaction
 from .utils import get_similar_products
 
-from .models import CategorieParfum, LotEssence, ProduitFiniEssence, Tag, Parfum, Essence, Accessoire, Flacon, TypeAccessoire, TypeFlacon, Favori, Ingredient, NotificationCatalogue
+from .models import CategorieParfum, LotEssence, ProduitFiniEssence, Tag, Parfum, Essence, Accessoire, Flacon, TypeAccessoire, TypeFlacon, Favori, Ingredient, NotificationCatalogue, MouvementStock
 
 
 # catalogue/serializers.py (ajouter après les imports existants)
@@ -123,8 +123,8 @@ class ParfumSerializer(serializers.ModelSerializer):
             'tags', 'famille_olfactive', 'humeurs_compatibles',
             'occasions', 'saisons_compatibles',
             'est_nouveau', 'est_bestseller',
-            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'images_supplementaires', 'stock_quantite',
-            'date_creation','produits_similaires', 'is_favori', 'categorie'
+            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',  'stock_quantite',
+            'date_creation','produits_similaires', 'is_favori', 'categorie','prix_promotionnel'
         ]
 
     def to_representation(self, instance):
@@ -206,7 +206,7 @@ class ParfumAdminDetailSerializer(ParfumSerializer):
 class ParfumPublicListSerializer(ParfumSerializer):
     """Public : liste (sans produits similaires, champs réduits)"""
     class Meta(ParfumSerializer.Meta):
-        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('produits_similaires', 'reference_sku', 'images_supplementaires', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'stock_quantite', 'taux_reduction','description_courte',
+        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('produits_similaires', 'reference_sku',  'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'stock_quantite', 'taux_reduction','description_courte',
             'notes_tete', 'notes_coeur', 'notes_fond',
             'tags', 'famille_olfactive', 'humeurs_compatibles',
             'occasions', 'saisons_compatibles',)]
@@ -214,7 +214,7 @@ class ParfumPublicListSerializer(ParfumSerializer):
 class ParfumPublicDetailSerializer(ParfumSerializer):
     """Public : détail (avec produits similaires)"""
     class Meta(ParfumSerializer.Meta):
-        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('reference_sku', 'images_supplementaires', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'stock_quantite')]
+        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('reference_sku',  'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'stock_quantite')]
     
 # ============================================================
 # INGREDIENTS
@@ -452,7 +452,7 @@ class AccessoireSerializer(serializers.ModelSerializer):
             'prix_unitaire', 'prix_promotionnel', 'prix_actuel',
             'taux_reduction', 'en_promotion',
             'stock_quantite', 'seuil_alerte_stock', 'poids_grammes',
-            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'images_supplementaires',
+            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 
             'actif', 'est_bestseller', 'est_hotseller',
             'date_creation', 'date_modification', 'produits_similaires', 'is_favori',
         ]
@@ -524,11 +524,11 @@ class AccessoireAdminDetailSerializer(AccessoireSerializer):
 class AccessoirePublicListSerializer(AccessoireSerializer):
     class Meta(AccessoireSerializer.Meta):
        fields = [f for f in AccessoireSerializer.Meta.fields if f not in ('description_courte',
-            'matiere', 'couleur', 'taille','poids_grammes','produits_similaires', 'reference_sku', 'images_supplementaires', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4','taux_reduction')] 
+            'matiere', 'couleur', 'taille','poids_grammes','produits_similaires', 'reference_sku',  'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4','taux_reduction')] 
 
 class AccessoirePublicDetailSerializer(AccessoireSerializer):
     class Meta(AccessoireSerializer.Meta):
-        fields = [f for f in AccessoireSerializer.Meta.fields if f not in ('reference_sku', 'images_supplementaires', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'stock_quantite')]
+        fields = [f for f in AccessoireSerializer.Meta.fields if f not in ('reference_sku',  'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'stock_quantite')]
 
 # ============================================================
 # FLACONS
@@ -569,7 +569,7 @@ class FlaconSerializer(serializers.ModelSerializer):
             'hauteur_cm', 'largeur_cm', 'poids_grammes',
             'prix_unitaire', 'stock_quantite',
             'seuil_alerte_stock', 'stock_suffisant',
-            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'images_supplementaires',
+            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 
             'actif', 'date_creation', 'date_modification',
         ]
         read_only_fields = ['date_creation', 'date_modification']
@@ -700,3 +700,23 @@ class NotificationCatalogueUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = NotificationCatalogue
         fields = ['est_lu']
+
+
+class MouvementStockSerializer(serializers.ModelSerializer):
+    utilisateur_details = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MouvementStock
+        fields = [
+            'id', 'utilisateur', 'utilisateur_details', 'type_produit',
+            'produit_id', 'nom_produit', 'quantite_avant',
+            'quantite_apres', 'quantite_ajoutee', 'date_ajout'
+        ]
+        read_only_fields = fields
+
+    def get_utilisateur_details(self, obj):
+        if obj.utilisateur:
+            from utilisateur.serializers import UserSerializer
+            return UserSerializer(obj.utilisateur, context=self.context).data
+        return None
+

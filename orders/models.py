@@ -103,8 +103,7 @@ class PanierLigneAccessoire(models.Model):
 class Commande(models.Model):
     STATUT_CHOICES = [
         ('en_attente', 'En attente'),
-        
-        ('livrée', 'Livrée'),
+        ('validé', 'validé'),
         ('annulée', 'Annulée'),
         ('remboursée', 'Remboursée'),
     ]
