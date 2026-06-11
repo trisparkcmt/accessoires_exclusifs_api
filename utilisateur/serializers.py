@@ -275,8 +275,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'role', 'roles']
-        read_only_fields = ['role', 'roles']
+        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'roles']
+        read_only_fields = ['roles']
         extra_kwargs = {
             'email': {'read_only': True},
         }
@@ -289,7 +289,7 @@ class UserSerializer(serializers.ModelSerializer):
         """
         roles = []
         if obj.is_superuser or obj.is_staff:
-            roles.append('admin')
+            roles.append('superadmin')
         # Tout utilisateur ayant un profil Client est au moins 'client'
         if hasattr(obj, 'client'):
             roles.append('client')
@@ -489,7 +489,11 @@ class MeCommandeSerializer(serializers.ModelSerializer):
 
 
 class MeSerializer(serializers.ModelSerializer):
-    user = UserSerializer(source='*', read_only=True)
+    id = serializers.IntegerField(read_only=True)
+    email = serializers.EmailField(read_only=True)
+    telephone = serializers.CharField(read_only=True)
+    first_name = serializers.CharField(read_only=True)
+    last_name = serializers.CharField(read_only=True)
     roles = serializers.SerializerMethodField()
     client = serializers.SerializerMethodField()
     preferences = serializers.SerializerMethodField()
@@ -499,16 +503,15 @@ class MeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['user', 'roles', 'client', 'preferences', 'favoris', 'parfums_personnalises', 'commandes']
+        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'roles', 'client', 'preferences', 'favoris', 'parfums_personnalises', 'commandes']
 
     def get_roles(self, obj):
         """
         Retourne la liste de tous les rôles actifs de l'utilisateur.
-        Dupliqué ici pour accès direct au niveau racine de la réponse (sans passer par 'user').
         """
         roles = []
         if obj.is_superuser or obj.is_staff:
-            roles.append('admin')
+            roles.append('superadmin')
         if hasattr(obj, 'client'):
             roles.append('client')
             client = obj.client
@@ -694,11 +697,11 @@ class LivreurCommandeSerializer(serializers.ModelSerializer):
 class ServeusesSerializer(serializers.ModelSerializer):
     """Serializer complet pour le profil Serveuse"""
     user_details = UserSerializer(source='client.user', read_only=True)
-    
+
     class Meta:
         model = Serveuse
         fields = [
-            'id', 'user_details', 'statut', 
+            'id', 'user_details', 'actif',
             'nombre_services', 'note_moyenne', 'date_embauche', 'date_creation'
         ]
         read_only_fields = ['nombre_services', 'date_creation']
@@ -708,7 +711,7 @@ class ServeusesUpdateSerializer(serializers.ModelSerializer):
     """Serializer pour modifier le statut de la serveuse depuis l'admin"""
     class Meta:
         model = Serveuse
-        fields = ['statut']
+        fields = ['actif']
 
 
 class DepenseSerializer(serializers.ModelSerializer):

@@ -1163,11 +1163,11 @@ class NotificationCatalogueViewSet(viewsets.ModelViewSet):
         })
 
 
+
 # ============================================================
 # MOUVEMENTS DE STOCK (lecture seule – admin uniquement)
 # ============================================================
 from .serializers import MouvementStockSerializer
-from utilisateur.permissions import IsAdminOrServeuse
 
 
 class MouvementStockViewSet(viewsets.ReadOnlyModelViewSet):

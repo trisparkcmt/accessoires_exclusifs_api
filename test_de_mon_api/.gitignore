@@ -1,0 +1,24 @@
+# Fichiers de résultats et logs (ignorés dans git)
+test_results.json
+*.log
+.DS_Store
+
+# Fichiers de configuration locaux
+.env
+.env.local
+config.local.json
+
+# IDE et outils
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Tokens JWT temporaires (pour la sécurité)
+*.token
+*.jwt

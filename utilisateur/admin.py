@@ -368,11 +368,11 @@ class LivreurAdmin(admin.ModelAdmin):
 @admin.register(Serveuse)
 class ServeuseAdmin(admin.ModelAdmin):
     form = ServeuseAdminForm
-    list_display = ('id', 'get_nom', 'get_prenom', 'get_telephone', 'statut', 'note_moyenne', 'nombre_services')
-    list_filter = ('statut', 'date_embauche')
+    list_display = ('id', 'get_nom', 'get_prenom', 'get_telephone', 'actif', 'note_moyenne', 'nombre_services')
+    list_filter = ('actif', 'date_embauche')
     search_fields = ('client__user__last_name', 'client__user__first_name', 'client__user__telephone', 'client__user__email')
     readonly_fields = ('date_creation', 'date_modification', 'note_moyenne', 'nombre_services')
-    
+
     def get_fieldsets(self, request, obj=None):
         if obj:
             return (
@@ -383,7 +383,7 @@ class ServeuseAdmin(admin.ModelAdmin):
                     'fields': ('date_embauche',)
                 }),
                 ('Statistiques', {
-                    'fields': ('statut', 'note_moyenne', 'nombre_services')
+                    'fields': ('actif', 'note_moyenne', 'nombre_services')
                 }),
                 ('Dates', {
                     'fields': ('date_creation', 'date_modification'),
@@ -402,7 +402,7 @@ class ServeuseAdmin(admin.ModelAdmin):
                 'fields': ('date_embauche',)
             }),
             ('Statistiques', {
-                'fields': ('statut',)
+                'fields': ('actif',)
             }),
         )
     

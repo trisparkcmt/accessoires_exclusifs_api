@@ -107,7 +107,6 @@ class ParfumSerializer(serializers.ModelSerializer):
     image_supp_2        = serializers.ImageField(required=False, allow_null=True)
     image_supp_3        = serializers.ImageField(required=False, allow_null=True)
     image_supp_4        = serializers.ImageField(required=False, allow_null=True)
-    images_supplementaires = serializers.SerializerMethodField(read_only=True)
     produits_similaires = serializers.SerializerMethodField()
     is_favori = serializers.SerializerMethodField()
 
@@ -160,17 +159,7 @@ class ParfumSerializer(serializers.ModelSerializer):
     @extend_schema_field(OpenApiTypes.BOOL)
     def get_en_promotion(self, obj):
         return obj.prix_promotionnel_effectif is not None
-    
-    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
-    def get_images_supplementaires(self, obj):
-        request = self.context.get('request')
-        images_supp = []
-        for i in range(1, 5):
-            img = getattr(obj, f'image_supp_{i}')
-            if img:
-                images_supp.append(get_image_url(request, img))
-        return images_supp
-    
+
     def get_produits_similaires(self, obj):
         from .utils import get_similar_products
         from .models import Parfum
@@ -438,7 +427,6 @@ class AccessoireSerializer(serializers.ModelSerializer):
     image_supp_2     = serializers.ImageField(required=False, allow_null=True)
     image_supp_3     = serializers.ImageField(required=False, allow_null=True)
     image_supp_4     = serializers.ImageField(required=False, allow_null=True)
-    images_supplementaires = serializers.SerializerMethodField(read_only=True)
     produits_similaires = serializers.SerializerMethodField()
     is_favori = serializers.SerializerMethodField()
 
@@ -452,7 +440,7 @@ class AccessoireSerializer(serializers.ModelSerializer):
             'prix_unitaire', 'prix_promotionnel', 'prix_actuel',
             'taux_reduction', 'en_promotion',
             'stock_quantite', 'seuil_alerte_stock', 'poids_grammes',
-            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 
+            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',
             'actif', 'est_bestseller', 'est_hotseller',
             'date_creation', 'date_modification', 'produits_similaires', 'is_favori',
         ]
@@ -484,23 +472,13 @@ class AccessoireSerializer(serializers.ModelSerializer):
     @extend_schema_field(OpenApiTypes.BOOL)
     def get_en_promotion(self, obj):
         return obj.prix_promotionnel_effectif is not None
-    
-    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
-    def get_images_supplementaires(self, obj):
-        request = self.context.get('request')
-        images_supp = []
-        for i in range(1, 5):
-            img = getattr(obj, f'image_supp_{i}')
-            if img:
-                images_supp.append(get_image_url(request, img))
-        return images_supp
-    
+
     def get_produits_similaires(self, obj):
         from .utils import get_similar_products
         similaires = get_similar_products(obj, Accessoire, limit=4)
         return AccessoireSimilaireSerializer(similaires, many=True, context=self.context).data
-    
-    def get_is_favori(self, obj): 
+
+    def get_is_favori(self, obj):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
             try:
@@ -557,7 +535,6 @@ class FlaconSerializer(serializers.ModelSerializer):
     image_supp_2     = serializers.ImageField(required=False, allow_null=True)
     image_supp_3     = serializers.ImageField(required=False, allow_null=True)
     image_supp_4     = serializers.ImageField(required=False, allow_null=True)
-    images_supplementaires = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model  = Flacon
@@ -569,7 +546,7 @@ class FlaconSerializer(serializers.ModelSerializer):
             'hauteur_cm', 'largeur_cm', 'poids_grammes',
             'prix_unitaire', 'stock_quantite',
             'seuil_alerte_stock', 'stock_suffisant',
-            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 
+            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',
             'actif', 'date_creation', 'date_modification',
         ]
         read_only_fields = ['date_creation', 'date_modification']
@@ -584,15 +561,6 @@ class FlaconSerializer(serializers.ModelSerializer):
             representation[img_field] = get_image_url(self.context.get('request'), getattr(instance, img_field))
         return representation
 
-    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
-    def get_images_supplementaires(self, obj):
-        request = self.context.get('request')
-        images_supp = []
-        for i in range(1, 5):
-            img = getattr(obj, f'image_supp_{i}')
-            if img:
-                images_supp.append(get_image_url(request, img))
-        return images_supp
 
     @extend_schema_field(OpenApiTypes.BOOL)
     def get_stock_suffisant(self, obj) -> bool:

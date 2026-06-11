@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Test Suite - Boutique de Parfums</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <span class="logo-icon">🧪</span>
+                <h2>Parfum Lab API</h2>
+            </div>
+            
+            <nav class="nav-menu">
+                <button class="nav-btn active" data-target="accueil-panel">
+                    <span class="btn-icon">🏠</span> Accueil
+                </button>
+                <button class="nav-btn" data-target="auth-panel">
+                    <span class="btn-icon">🔑</span> Authentification
+                </button>
+                <button class="nav-btn" data-target="shop-panel">
+                    <span class="btn-icon">🛍️</span> Boutique / Catalogue
+                </button>
+                <button class="nav-btn" data-target="lab-panel">
+                    <span class="btn-icon">🔬</span> Lab DIY & Recommandation
+                </button>
+                <button class="nav-btn" data-target="livreur-panel">
+                    <span class="btn-icon">🛵</span> Espace Livreur
+                </button>
+                <button class="nav-btn" data-target="quick-tests-panel">
+                    <span class="btn-icon">⚡</span> Tests pratiques
+                </button>
+                <button class="nav-btn" data-target="endpoint-panel">
+                    <span class="btn-icon">📡</span> Tous les endpoints
+                </button>
+                <button class="nav-btn" data-target="admin-panel">
+                    <span class="btn-icon">🛠️</span> Administration
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="auth-status-indicator">
+                    <span class="status-dot offline" id="auth-status-dot"></span>
+                    <span id="auth-status-text">Non connecté</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Config Bar -->
+            <header class="top-bar">
+                <div class="config-group">
+                    <label for="api-base-url">Base API URL :</label>
+                    <input type="text" id="api-base-url" value="http://127.0.0.1:8000" placeholder="ex: http://127.0.0.1:8000">
+                    <button class="btn btn-secondary btn-sm" id="btn-url-127">127.0.0.1</button>
+                    <button class="btn btn-secondary btn-sm" id="btn-url-local">localhost</button>
+                    <button class="btn btn-secondary btn-sm" id="btn-url-ngrok">Ngrok</button>
+                    <span class="server-status-badge status-checking" id="server-status-badge">🔄 Vérification...</span>
+                </div>
+                <div class="token-group">
+                    <label for="jwt-token">Jeton JWT :</label>
+                    <input type="text" id="jwt-token" placeholder="Aucun jeton enregistré" readonly>
+                    <button class="btn btn-secondary btn-sm" id="btn-clear-token">Effacer</button>
+                </div>
+            </header>
+
+            <div class="panel-viewport">
+                <!-- Accueil Panel -->
+                <section class="panel active" id="accueil-panel">
+                    <div class="panel-header">
+                        <h1>Bienvenue dans le banc de test API</h1>
+                        <p class="subtitle">Interface simple pour interagir avec tous les endpoints de la Boutique de Parfums et du Laboratoire DIY.</p>
+                    </div>
+
+                    <div class="card welcome-card">
+                        <h3>ℹ️ Guide de démarrage</h3>
+                        <p>Cette application de test communique avec votre API Django en temps réel. Suivez ces étapes pour tester vos fonctionnalités :</p>
+                        <ol>
+                            <li>Assurez-vous que votre backend Django est démarré sur l'URL indiquée ci-dessus.</li>
+                            <li>Alimentez la base de données ou créez un utilisateur dans l'onglet <strong>Authentification</strong>.</li>
+                            <li>Une fois connecté, le jeton JWT sera automatiquement stocké et ajouté aux en-têtes de toutes vos requêtes.</li>
+                            <li>Explorez les onglets <strong>Boutique</strong>, <strong>Laboratoire</strong>, et les modules métiers <strong>Livreur</strong> et <strong>Admin</strong>.</li>
+                        </ol>
+                    </div>
+
+                    <div class="grid-2col">
+                        <div class="card">
+                            <h3>🔍 Diagnostic Rapide</h3>
+                            <p>Tester le statut général de l'API et vérifier si elle répond correctement aux requêtes CORS.</p>
+                            <div class="btn-group">
+                                <button class="btn btn-primary" id="btn-check-api">Ping l'API (Racine)</button>
+                                <button class="btn btn-secondary" id="btn-check-schema">Charger le Schema OpenAPI</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>🔑 Raccourcis de Comptes</h3>
+                            <p>Vous pouvez vous connecter à un utilisateur existant pour basculer rapidement entre les rôles de test.</p>
+                            <div class="shortcuts-grid">
+                                <button class="btn btn-shortcut" data-email="admin@example.com" data-password="AdminPassword123!">Admin</button>
+                                <button class="btn btn-shortcut" data-email="livreur@example.com" data-password="UserPassword123!">Livreur</button>
+                                <button class="btn btn-shortcut" data-email="prestataire@example.com" data-password="UserPassword123!">Prestataire</button>
+                                <button class="btn btn-shortcut" data-email="client@example.com" data-password="UserPassword123!">Client Standard</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Authentification Panel -->
+                <section class="panel" id="auth-panel">
+                    <div class="panel-header">
+                        <h1>Gestion des Utilisateurs & Authentification</h1>
+                        <p class="subtitle">Endpoints `/api/v1/auth/` (Connexion, Inscription, Profil Utilisateur)</p>
+                    </div>
+
+                    <div class="grid-2col">
+                        <!-- Connexion & Inscription -->
+                        <div class="form-container">
+                            <div class="tabs-sub">
+                                <button class="tab-sub-btn active" data-sub="login-sub">Connexion</button>
+                                <button class="tab-sub-btn" data-sub="register-sub">Inscription</button>
+                            </div>
+
+                            <div class="sub-panel active" id="login-sub">
+                                <h3>Connexion classique</h3>
+                                <form id="form-login">
+                                    <div class="form-field">
+                                        <label for="login-email">Email ou Téléphone *</label>
+                                        <input type="text" id="login-email" required placeholder="email@exemple.com ou +237...">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="login-password">Mot de passe *</label>
+                                        <input type="password" id="login-password" required placeholder="••••••••">
+                                    </div>
+                                    <button type="submit" class="btn btn-primary btn-block">Se connecter</button>
+                                </form>
+
+                                <hr class="divider">
+
+                                <h3>Connexion / Inscription Google</h3>
+                                <div class="google-auth-box">
+                                    <div class="form-field">
+                                        <label for="google-client-id">Google Client ID *</label>
+                                        <input type="text" id="google-client-id" placeholder="xxxx.apps.googleusercontent.com">
+                                    </div>
+                                    <button type="button" class="btn btn-success btn-block" id="btn-google-auto-login">Démarrer Google puis connecter</button>
+                                    <p class="text-muted google-auth-note">Ce bouton ouvre le popup Google, récupère un access_token, puis appelle automatiquement /api/v1/auth/google/.</p>
+                                </div>
+                                <form id="form-google-login" class="mt-3">
+                                    <div class="form-field">
+                                        <label for="google-access-token">Access token Google *</label>
+                                        <textarea id="google-access-token" rows="4" required placeholder="Token OAuth Google obtenu côté frontend"></textarea>
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="google-id-token">ID token Google (optionnel)</label>
+                                        <textarea id="google-id-token" rows="3" placeholder="JWT Google si disponible"></textarea>
+                                    </div>
+                                    <button type="submit" class="btn btn-secondary btn-block">Tester Google avec token manuel</button>
+                                </form>
+                            </div>
+
+                            <div class="sub-panel" id="register-sub">
+                                <h3>Créer un compte</h3>
+                                <p class="text-muted">Champs requis par le backend : email, password, password_confirm. Les autres champs sont optionnels.</p>
+                                <form id="form-register">
+                                    <div class="form-field">
+                                        <label for="reg-email">Adresse Email *</label>
+                                        <input type="email" id="reg-email" required placeholder="nom@exemple.com">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="reg-password">Mot de passe *</label>
+                                        <input type="password" id="reg-password" required placeholder="Champ envoyé: password">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="reg-password-confirm">Confirmer le mot de passe *</label>
+                                        <input type="password" id="reg-password-confirm" required placeholder="Champ envoyé: password_confirm">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="reg-first-name">Prénom (optionnel)</label>
+                                        <input type="text" id="reg-first-name" placeholder="Prénom">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="reg-last-name">Nom (optionnel)</label>
+                                        <input type="text" id="reg-last-name" placeholder="Nom">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="reg-telephone">Téléphone (optionnel)</label>
+                                        <input type="text" id="reg-telephone" placeholder="+237xxxxxxxxx">
+                                    </div>
+                                    <button type="submit" class="btn btn-success btn-block">Créer le compte avec ces données</button>
+                                    <button type="button" class="btn btn-secondary btn-block mt-2" id="btn-random-register">🪄 Générer des données aléatoires</button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Mon Profil & Rôles -->
+                        <div class="card">
+                            <h3>👤 Session Utilisateur active (`/auth/me/`)</h3>
+                            <p>Récupère et met à jour le profil connecté.</p>
+                            <div class="btn-group">
+                                <button class="btn btn-primary" id="btn-get-me">Charger les infos de session (/me/)</button>
+                                <button class="btn btn-danger" id="btn-logout">Déconnexion</button>
+                            </div>
+                            
+                            <hr class="divider">
+                            
+                            <h4>Modifier l'adresse email</h4>
+                            <form id="form-change-email">
+                                <div class="form-field form-inline">
+                                    <input type="email" id="new-email" required placeholder="Nouvel email">
+                                    <button type="submit" class="btn btn-secondary">Mettre à jour</button>
+                                </div>
+                            </form>
+
+                            <hr class="divider">
+
+                            <h4>Modifier le profil</h4>
+                            <form id="form-update-profile">
+                                <div class="form-field">
+                                    <label for="profile-first-name">Prénom</label>
+                                    <input type="text" id="profile-first-name" placeholder="Prénom">
+                                </div>
+                                <div class="form-field">
+                                    <label for="profile-last-name">Nom</label>
+                                    <input type="text" id="profile-last-name" placeholder="Nom">
+                                </div>
+                                <div class="form-field">
+                                    <label for="profile-telephone">Téléphone</label>
+                                    <input type="text" id="profile-telephone" placeholder="+237...">
+                                </div>
+                                <div class="form-field">
+                                    <label for="profile-password">Mot de passe actuel (requis si modif téléphone)</label>
+                                    <input type="password" id="profile-password" placeholder="••••••••">
+                                </div>
+                                <button type="submit" class="btn btn-secondary btn-block">Mettre à jour le profil</button>
+                            </form>
+
+                            <hr class="divider">
+
+                            <h4>Devenir Prestataire de services</h4>
+                            <div class="prestataire-actions">
+                                <p class="text-muted">Envoyer une demande pour devenir prestataire.</p>
+                                <div class="btn-group">
+                                    <button class="btn btn-secondary btn-sm" id="btn-prestataire-apply">Postuler (/prestataire/apply/)</button>
+                                    <button class="btn btn-secondary btn-sm" id="btn-prestataire-dashboard">Espace Prestataire (/prestataire/dashboard/)</button>
+                                </div>
+                                <div class="btn-group mt-2">
+                                    <button class="btn btn-secondary btn-sm" id="btn-prestataire-historique">Historique Financier</button>
+                                    <button class="btn btn-secondary btn-sm" id="btn-prestataire-payouts">Demandes de Retraits</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Boutique Panel -->
+                <section class="panel" id="shop-panel">
+                    <div class="panel-header">
+                        <h1>Boutique & Catalogue de Produits</h1>
+                        <p class="subtitle">Endpoints `/api/v1/shop/` (Parfums, Accessoires, Flacons, Favoris)</p>
+                    </div>
+
+                    <div class="tabs-sub">
+                        <button class="tab-sub-btn active" data-sub="shop-parfums">🌹 Parfums</button>
+                        <button class="tab-sub-btn" data-sub="shop-accessoires">👜 Accessoires</button>
+                        <button class="tab-sub-btn" data-sub="shop-flacons">🧴 Flacons</button>
+                        <button class="tab-sub-btn" data-sub="shop-favoris">❤️ Favoris</button>
+                    </div>
+
+                    <!-- Parfums Tab -->
+                    <div class="sub-panel active" id="shop-parfums">
+                        <div class="shop-grid-layout">
+                            <div class="filter-sidebar">
+                                <h3>Filtres de recherche</h3>
+                                <form id="form-filter-parfums">
+                                    <div class="form-field">
+                                        <label for="p-search">Recherche textuelle</label>
+                                        <input type="text" id="p-search" placeholder="Nom, notes olfactives...">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="p-genre">Genre cible</label>
+                                        <select id="p-genre">
+                                            <option value="">Tous</option>
+                                            <option value="homme">Homme</option>
+                                            <option value="femme">Femme</option>
+                                            <option value="mixte">Mixte</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="p-famille">Famille olfactive</label>
+                                        <input type="text" id="p-famille" placeholder="Floral, Boisé...">
+                                    </div>
+                                    <div class="form-field">
+                                        <label>Prix (FCFA)</label>
+                                        <div class="range-inputs">
+                                            <input type="number" id="p-prix-min" placeholder="Min">
+                                            <input type="number" id="p-prix-max" placeholder="Max">
+                                        </div>
+                                    </div>
+                                    <div class="form-field">
+                                        <label><input type="checkbox" id="p-bestseller"> Bestsellers</label>
+                                        <label><input type="checkbox" id="p-nouveau"> Nouveautés</label>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary btn-block">Appliquer les filtres</button>
+                                </form>
+                                <div class="or-separator">OU</div>
+                                <div class="form-field">
+                                    <label for="p-slug">Détails d'un parfum (par slug)</label>
+                                    <div class="form-inline">
+                                        <input type="text" id="p-slug" placeholder="royal-oud">
+                                        <button class="btn btn-secondary" id="btn-get-parfum">Obtenir</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="shop-results-container">
+                                <div class="results-header">
+                                    <h3>Liste des parfums</h3>
+                                    <button class="btn btn-secondary btn-sm" id="btn-list-parfums">Tout lister (sans filtre)</button>
+                                </div>
+                                <div class="catalog-list" id="parfums-list-output">
+                                    <p class="text-muted">Aucune requête envoyée pour l'instant.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Accessoires Tab -->
+                    <div class="sub-panel" id="shop-accessoires">
+                        <div class="shop-grid-layout">
+                            <div class="filter-sidebar">
+                                <h3>Filtres Accessoires</h3>
+                                <form id="form-filter-accessoires">
+                                    <div class="form-field">
+                                        <label for="a-search">Recherche</label>
+                                        <input type="text" id="a-search" placeholder="Matière, couleur, nom...">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="a-matiere">Matière</label>
+                                        <input type="text" id="a-matiere" placeholder="Bois, verre...">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="a-couleur">Couleur</label>
+                                        <input type="text" id="a-couleur" placeholder="Noir, doré...">
+                                    </div>
+                                    <button type="submit" class="btn btn-primary btn-block">Filtrer</button>
+                                </form>
+                                <div class="or-separator">OU</div>
+                                <div class="form-field">
+                                    <label for="a-slug">Détail accessoire (par slug)</label>
+                                    <div class="form-inline">
+                                        <input type="text" id="a-slug" placeholder="coffret-luxe">
+                                        <button class="btn btn-secondary" id="btn-get-accessoire">Obtenir</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="shop-results-container">
+                                <div class="results-header">
+                                    <h3>Liste des accessoires</h3>
+                                    <button class="btn btn-secondary btn-sm" id="btn-list-accessoires">Tout lister</button>
+                                </div>
+                                <div class="catalog-list" id="accessoires-list-output"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Flacons Tab -->
+                    <div class="sub-panel" id="shop-flacons">
+                        <div class="shop-grid-layout">
+                            <div class="filter-sidebar">
+                                <h3>Filtres Flacons</h3>
+                                <form id="form-filter-flacons">
+                                    <div class="form-field">
+                                        <label for="f-contenance">Contenance (ml)</label>
+                                        <input type="number" id="f-contenance" placeholder="50, 100...">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="f-matiere">Matière</label>
+                                        <input type="text" id="f-matiere" placeholder="Verre...">
+                                    </div>
+                                    <div class="form-field">
+                                        <label><input type="checkbox" id="f-en-stock" checked> Uniquement en stock</label>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary btn-block">Filtrer</button>
+                                </form>
+                                <div class="or-separator">OU</div>
+                                <div class="form-field">
+                                    <label for="f-id">Détail flacon (par ID)</label>
+                                    <div class="form-inline">
+                                        <input type="number" id="f-id" placeholder="1">
+                                        <button class="btn btn-secondary" id="btn-get-flacon">Obtenir</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="shop-results-container">
+                                <div class="results-header">
+                                    <h3>Liste des flacons</h3>
+                                    <button class="btn btn-secondary btn-sm" id="btn-list-flacons">Tout lister</button>
+                                </div>
+                                <div class="catalog-list" id="flacons-list-output"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Favoris Tab -->
+                    <div class="sub-panel" id="shop-favoris">
+                        <div class="shop-grid-layout">
+                            <div class="filter-sidebar">
+                                <h3>Gérer les favoris</h3>
+                                <p class="text-muted">Abonnez-vous ou retirez des parfums de votre liste de favoris.</p>
+                                <form id="form-add-favori">
+                                    <div class="form-field">
+                                        <label for="fav-product-type">Type de produit *</label>
+                                        <select id="fav-product-type" required>
+                                            <option value="parfum">Parfum</option>
+                                            <option value="accessoire">Accessoire</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="fav-product-slug">Slug du produit *</label>
+                                        <input type="text" id="fav-product-slug" required placeholder="ex: royal-oud">
+                                    </div>
+                                    <button type="submit" class="btn btn-success btn-block">Basculer le Favori (Toggle)</button>
+                                </form>
+                            </div>
+                            <div class="shop-results-container">
+                                <div class="results-header">
+                                    <h3>Mes Parfums Favoris</h3>
+                                    <button class="btn btn-primary btn-sm" id="btn-list-favoris">Charger les favoris</button>
+                                </div>
+                                <div class="catalog-list" id="favoris-list-output">
+                                    <p class="text-muted">Connectez-vous pour voir vos favoris.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Laboratoire DIY Panel -->
+                <section class="panel" id="lab-panel">
+                    <div class="panel-header">
+                        <h1>Laboratoire de Création DIY & IA</h1>
+                        <p class="subtitle">Endpoints `/api/v1/lab/` (Essences, Ingrédients, Créations Personnalisées, Recommandation IA)</p>
+                    </div>
+
+                    <div class="tabs-sub">
+                        <button class="tab-sub-btn active" data-sub="lab-essences">🧪 Essences & Ingrédients</button>
+                        <button class="tab-sub-btn" data-sub="lab-perso">🎨 Créations Sur-mesure</button>
+                        <button class="tab-sub-btn" data-sub="lab-ia">🤖 Conseiller IA Gemini</button>
+                    </div>
+
+                    <!-- Essences & Ingredients Tab -->
+                    <div class="sub-panel active" id="lab-essences">
+                        <div class="grid-2col">
+                            <div>
+                                <div class="results-header">
+                                    <h3>Essences de Base Actives</h3>
+                                    <button class="btn btn-secondary btn-sm" id="btn-list-essences">Charger les essences</button>
+                                </div>
+                                <div class="item-list-mini" id="essences-mini-list"></div>
+                            </div>
+                            <div>
+                                <div class="results-header">
+                                    <h3>Ingrédients du Laboratoire</h3>
+                                    <button class="btn btn-secondary btn-sm" id="btn-list-ingredients">Charger les ingrédients</button>
+                                </div>
+                                <div class="item-list-mini" id="ingredients-mini-list"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Créations Personnalisées Tab -->
+                    <div class="sub-panel" id="lab-perso">
+                        <div class="grid-2col">
+                            <div>
+                                <h3>🧪 Créer une Essence Personnalisée</h3>
+                                <form id="form-create-essence-perso">
+                                    <div class="form-field">
+                                        <label for="ep-nom">Nom de la création *</label>
+                                        <input type="text" id="ep-nom" required placeholder="Mon Essence d'été">
+                                    </div>
+                                    <div class="form-field">
+                                        <label>Lignes d'Ingrédients (ID ingrédient et pourcentage)</label>
+                                        <div class="ingredient-lines-inputs">
+                                            <div class="line-input form-inline">
+                                                <input type="number" class="ing-id" placeholder="ID Ingrédient" required>
+                                                <input type="number" class="ing-pct" placeholder="%" min="1" max="100" required>
+                                            </div>
+                                        </div>
+                                        <button type="button" class="btn btn-secondary btn-sm mt-2" id="btn-add-ing-line">+ Ajouter ingrédient</button>
+                                    </div>
+                                    <button type="submit" class="btn btn-success">Enregistrer l'essence personnalisée</button>
+                                </form>
+
+                                <hr class="divider">
+
+                                <h3>🌸 Créer un Parfum Personnalisé (Formule)</h3>
+                                <form id="form-create-parfum-perso">
+                                    <div class="form-field">
+                                        <label for="pp-nom">Nom du Parfum *</label>
+                                        <input type="text" id="pp-nom" required placeholder="Elixir Royal">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="pp-description">Description</label>
+                                        <textarea id="pp-description" rows="2" placeholder="Description olfactive..."></textarea>
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="pp-flacon">ID du Flacon *</label>
+                                        <input type="number" id="pp-flacon" required placeholder="ex: 1">
+                                    </div>
+                                    <div class="form-field">
+                                        <label>Composition d'Essences (Catalogue ou Personnalisées)</label>
+                                        <div class="essence-lines-inputs">
+                                            <div class="line-input form-inline">
+                                                <select class="ess-type">
+                                                    <option value="catalogue">Catalogue</option>
+                                                    <option value="personnalisee">Créée sur-mesure</option>
+                                                </select>
+                                                <input type="number" class="ess-id" placeholder="ID Essence" required>
+                                                <input type="number" class="ess-vol" placeholder="Vol (ml)" required>
+                                            </div>
+                                        </div>
+                                        <button type="button" class="btn btn-secondary btn-sm mt-2" id="btn-add-ess-line">+ Ajouter essence</button>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">Créer mon parfum</button>
+                                </form>
+                            </div>
+
+                            <div>
+                                <div class="results-header">
+                                    <h3>Mes Parfums Personnalisés</h3>
+                                    <button class="btn btn-primary btn-sm" id="btn-list-parfums-perso">Charger la liste</button>
+                                </div>
+                                <div class="catalog-list" id="parfums-perso-list-output"></div>
+
+                                <div class="results-header mt-4">
+                                    <h3>Mes Essences Personnalisées</h3>
+                                    <button class="btn btn-primary btn-sm" id="btn-list-essences-perso">Charger la liste</button>
+                                </div>
+                                <div class="catalog-list" id="essences-perso-list-output"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Gemini AI Tab -->
+                    <div class="sub-panel" id="lab-ia">
+                        <div class="ia-chat-container">
+                            <div class="ia-chat-header">
+                                <h3>💬 Recommandation Intelligente par IA</h3>
+                                <p class="text-muted">Décrivez le type d'odeur, d'ambiance ou de parfum que vous recherchez. L'IA analysera le catalogue pour vous composer la formule idéale.</p>
+                            </div>
+                            
+                            <form id="form-ia-prompt" class="ia-prompt-form">
+                                <textarea id="ia-prompt" required rows="3" placeholder="Décrivez votre envie (ex: 'Je cherche un parfum énergique, boisé et épicé avec des notes de tête d'agrumes pour les soirées d'été...')"></textarea>
+                                <button type="submit" class="btn btn-primary" id="btn-submit-ia">
+                                    <span>🪄 Consulter Gemini IA</span>
+                                </button>
+                            </form>
+
+                            <div class="ia-response-formatter" id="ia-visual-response">
+                                <div class="empty-state">
+                                    <p>Saisissez une description et cliquez sur "Consulter Gemini IA" pour voir les suggestions d'essences, d'ingrédients et de parfums correspondants.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Espace Livreur Panel -->
+                <section class="panel" id="livreur-panel">
+                    <div class="panel-header">
+                        <h1>Espace Livreur & Suivi des Commandes</h1>
+                        <p class="subtitle">Endpoints `/api/v1/auth/livreur/` (Dashboard, Liste des livraisons, Mise à jour de statut)</p>
+                    </div>
+
+                    <div class="grid-2col">
+                        <div class="card">
+                            <h3>🛵 Tableau de bord Livreur</h3>
+                            <button class="btn btn-primary btn-block" id="btn-livreur-dashboard">Charger les statistiques de livraison</button>
+                            <div class="stats-box mt-3" id="livreur-stats-output">
+                                <p class="text-muted text-center">Aucune statistique chargée.</p>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>📦 Mettre à jour le statut d'une livraison</h3>
+                            <form id="form-livreur-status">
+                                <div class="form-field">
+                                    <label for="liv-id">ID de la livraison (Commande) *</label>
+                                    <input type="number" id="liv-id" required placeholder="ex: 15">
+                                </div>
+                                <div class="form-field">
+                                    <label for="liv-action">Action *</label>
+                                    <select id="liv-action" required>
+                                        <option value="livrer">Livrer (Succès)</option>
+                                        <option value="echouer">Échouer (Échec)</option>
+                                    </select>
+                                </div>
+                                <div class="form-field" id="liv-motif-field" style="display: none;">
+                                    <label for="liv-motif">Motif de l'échec *</label>
+                                    <textarea id="liv-motif" placeholder="Raison de l'échec..."></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-success btn-block">Mettre à jour le statut</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="card mt-4">
+                        <div class="results-header">
+                            <h3>📋 Mes courses assignées</h3>
+                            <button class="btn btn-primary" id="btn-livreur-commandes">Lister mes livraisons actives</button>
+                        </div>
+                        <div class="table-responsive mt-3">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Client</th>
+                                        <th>Adresse de livraison</th>
+                                        <th>Prix Total</th>
+                                        <th>Statut</th>
+                                        <th>Date</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="livreur-commandes-table-body">
+                                    <tr>
+                                        <td colspan="7" class="text-center text-muted">Cliquez sur le bouton ci-dessus pour lister vos livraisons.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Tests pratiques Panel -->
+                <section class="panel" id="quick-tests-panel">
+                    <div class="panel-header">
+                        <h1>Tests pratiques par module</h1>
+                        <p class="subtitle">Pages et boutons generes depuis le schema OpenAPI pour tester rapidement les endpoints courants sans perdre l'onglet complet.</p>
+                    </div>
+
+                    <div class="card quick-tests-toolbar">
+                        <div>
+                            <h3>Chargement des endpoints</h3>
+                            <p class="text-muted">Utilise le meme backend que la barre Base API URL. En local, garde http://localhost:8000.</p>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-primary" id="btn-load-quick-tests">Charger les pages de test</button>
+                            <button class="btn btn-secondary" id="btn-open-full-endpoints">Ouvrir le testeur complet</button>
+                        </div>
+                    </div>
+
+                    <div class="tabs-sub quick-category-tabs" id="quick-category-tabs">
+                        <button class="tab-sub-btn active" type="button" data-category="all">Tout</button>
+                    </div>
+
+                    <div class="quick-tests-grid" id="quick-tests-grid">
+                        <div class="card empty-quick-tests">
+                            <h3>Aucune page chargee</h3>
+                            <p class="text-muted">Clique sur Charger les pages de test pour afficher les boutons par module.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Tous les endpoints Panel -->
+                <section class="panel" id="endpoint-panel">
+                    <div class="panel-header">
+                        <h1>Testeur complet des endpoints</h1>
+                        <p class="subtitle">Charge automatiquement le schema OpenAPI de Django et permet d'envoyer chaque requete avec le jeton JWT courant.</p>
+                    </div>
+
+                    <div class="endpoint-layout">
+                        <div class="card endpoint-list-card">
+                            <div class="results-header">
+                                <h3>Endpoints detectes</h3>
+                                <button class="btn btn-primary btn-sm" id="btn-load-endpoints">Charger / Actualiser</button>
+                            </div>
+                            <div class="form-field mt-3">
+                                <label for="endpoint-search">Rechercher</label>
+                                <input type="text" id="endpoint-search" placeholder="ex: login, parfums, admin...">
+                            </div>
+                            <div class="endpoint-list" id="endpoint-list">
+                                <p class="text-muted text-center">Clique sur Charger pour lire /api/schema/.</p>
+                            </div>
+                        </div>
+
+                        <div class="card endpoint-detail-card">
+                            <div class="results-header">
+                                <div>
+                                    <h3 id="endpoint-title">Aucun endpoint selectionne</h3>
+                                    <p class="text-muted endpoint-summary" id="endpoint-summary">Selectionne une route dans la liste pour preparer la requete.</p>
+                                </div>
+                                <span class="method-pill" id="endpoint-method-pill">--</span>
+                            </div>
+
+                            <form id="form-endpoint-tester" class="endpoint-form mt-3">
+                                <div class="grid-2col">
+                                    <div class="form-field">
+                                        <label for="endpoint-method">Methode</label>
+                                        <select id="endpoint-method">
+                                            <option>GET</option>
+                                            <option>POST</option>
+                                            <option>PUT</option>
+                                            <option>PATCH</option>
+                                            <option>DELETE</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="endpoint-path">Chemin</label>
+                                        <input type="text" id="endpoint-path" placeholder="/api/v1/...">
+                                    </div>
+                                </div>
+
+                                <div class="grid-2col">
+                                    <div class="form-field">
+                                        <label for="endpoint-path-values">Parametres de chemin JSON</label>
+                                        <textarea id="endpoint-path-values" rows="5" placeholder='{"id": 1, "pk": 1}'></textarea>
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="endpoint-query-values">Query params JSON</label>
+                                        <textarea id="endpoint-query-values" rows="5" placeholder='{"search": "ambre", "page": 1}'></textarea>
+                                    </div>
+                                </div>
+
+                                <div class="form-field">
+                                    <label for="endpoint-body">Body JSON</label>
+                                    <textarea id="endpoint-body" rows="10" placeholder='{"champ": "valeur"}'></textarea>
+                                </div>
+
+                                <div class="form-field">
+                                    <label for="endpoint-extra-headers">Headers supplementaires JSON</label>
+                                    <textarea id="endpoint-extra-headers" rows="4" placeholder='{"X-Test": "1"}'></textarea>
+                                </div>
+
+                                <div class="btn-group">
+                                    <button type="submit" class="btn btn-success">Envoyer la requete</button>
+                                    <button type="button" class="btn btn-secondary" id="btn-copy-endpoint-curl">Copier cURL</button>
+                                    <button type="button" class="btn btn-secondary" id="btn-reset-endpoint-form">Vider</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Administration Panel -->
+                <section class="panel" id="admin-panel">
+                    <div class="panel-header">
+                        <h1>Administration Globale du Système</h1>
+                        <p class="subtitle">Endpoints `/api/v1/auth/admin/` (Gestion des utilisateurs, des prestataires, des livreurs et des statistiques globales)</p>
+                    </div>
+
+                    <div class="tabs-sub">
+                        <button class="tab-sub-btn active" data-sub="admin-utilisateurs">👥 Utilisateurs</button>
+                        <button class="tab-sub-btn" data-sub="admin-prestataires">💼 Prestataires & Payouts</button>
+                        <button class="tab-sub-btn" data-sub="admin-livraisons">🚚 Livraisons & Livreurs</button>
+                        <button class="tab-sub-btn" data-sub="admin-notifications">🔔 Notifications</button>
+                        <button class="tab-sub-btn" data-sub="admin-prestataires-demandes">📄 Demandes Prestataires</button>
+                        <button class="tab-sub-btn" data-sub="admin-webhook-simulator">🔌 Simulateur Webhook</button>
+                    </div>
+
+                    <!-- Admin Utilisateurs Tab -->
+                    <div class="sub-panel active" id="admin-utilisateurs">
+                        <div class="grid-2col">
+                            <div class="card">
+                                <h3>🔒 Activer / Désactiver un utilisateur</h3>
+                                <form id="form-admin-toggle-user">
+                                    <div class="form-field">
+                                        <label for="adm-user-id">ID Utilisateur *</label>
+                                        <input type="number" id="adm-user-id" required placeholder="ex: 5">
+                                    </div>
+                                    <button type="submit" class="btn btn-danger btn-block">Bannir / Réactiver l'utilisateur</button>
+                                </form>
+                            </div>
+                            <div class="card">
+                                <h3>📊 Statistiques Générales du Système</h3>
+                                <button class="btn btn-primary btn-block" id="btn-admin-stats">Charger les statistiques système</button>
+                                <div id="admin-stats-output" class="stats-box mt-3">
+                                    <p class="text-muted text-center">Aucune statistique chargée.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card mt-4">
+                            <div class="results-header">
+                                <h3>👥 Liste de tous les utilisateurs</h3>
+                                <button class="btn btn-secondary" id="btn-admin-list-users">Charger les utilisateurs</button>
+                            </div>
+                            <div class="table-responsive mt-3">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Email</th>
+                                            <th>Téléphone</th>
+                                            <th>Rôle principal</th>
+                                            <th>Actif</th>
+                                            <th>Staff</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="admin-users-table-body">
+                                        <tr>
+                                            <td colspan="6" class="text-center text-muted">Cliquez sur Charger pour lister les utilisateurs.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Prestataires & Payouts Tab -->
+                    <div class="sub-panel" id="admin-prestataires">
+                        <div class="grid-2col">
+                            <div class="card">
+                                <h3>✅ Valider une demande de Prestataire</h3>
+                                <form id="form-admin-validate-prestataire">
+                                    <div class="form-field">
+                                        <label for="adm-pres-id">ID du Prestataire en attente *</label>
+                                        <input type="number" id="adm-pres-id" required placeholder="ex: 3">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="adm-pres-commission">Taux de commission (%) *</label>
+                                        <input type="number" id="adm-pres-commission" required placeholder="ex: 15" step="0.1">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="adm-pres-reduction">Réduction Client (%) *</label>
+                                        <input type="number" id="adm-pres-reduction" required placeholder="ex: 5" step="0.1">
+                                    </div>
+                                    <button type="submit" class="btn btn-success btn-block">Valider le prestataire (PATCH)</button>
+                                </form>
+                            </div>
+
+                            <div class="card">
+                                <h3>💸 Effectuer un virement (Payout)</h3>
+                                <form id="form-admin-payout">
+                                    <div class="form-field">
+                                        <label for="adm-payout-pres-id">ID du Prestataire *</label>
+                                        <input type="number" id="adm-payout-pres-id" required placeholder="ex: 2">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="adm-payout-amount">Montant à reverser (FCFA) *</label>
+                                        <input type="number" id="adm-payout-amount" required placeholder="ex: 5000">
+                                    </div>
+                                    <button type="submit" class="btn btn-primary btn-block">Lancer le Payout</button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <div class="grid-2col mt-4">
+                            <div class="card">
+                                <h3>⚙️ Modifier un Prestataire Existant</h3>
+                                <form id="form-admin-update-prestataire">
+                                    <div class="form-field">
+                                        <label for="adm-update-pres-id">ID du Prestataire *</label>
+                                        <input type="number" id="adm-update-pres-id" required placeholder="ex: 3">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="adm-update-pres-status">Statut</label>
+                                        <select id="adm-update-pres-status">
+                                            <option value="">-- Conserver le statut actuel --</option>
+                                            <option value="en_attente">En attente</option>
+                                            <option value="actif">Actif</option>
+                                            <option value="suspendu">Suspendu</option>
+                                            <option value="rejete">Rejeté</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="adm-update-pres-commission">Taux de commission (%)</label>
+                                        <input type="number" id="adm-update-pres-commission" placeholder="ex: 12" step="0.1">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="adm-update-pres-reduction">Réduction Client (%)</label>
+                                        <input type="number" id="adm-update-pres-reduction" placeholder="ex: 5" step="0.1">
+                                    </div>
+                                    <button type="submit" class="btn btn-warning btn-block">Mettre à jour le Prestataire (PATCH)</button>
+                                </form>
+                            </div>
+                            <div class="card">
+                                <h3>ℹ️ Rôles & Statuts</h3>
+                                <p>Un prestataire doit d'abord postuler. Son statut initial est <code>en_attente</code>. Une fois validé, il passe à <code>actif</code> et reçoit un code promo client.</p>
+                                <p>Vous pouvez suspendre ou rejeter un prestataire en utilisant le formulaire de modification de statut.</p>
+                            </div>
+                        </div>
+
+                        <div class="card mt-4">
+                            <div class="results-header">
+                                <h3>📋 Demandes de Prestataires en attente</h3>
+                                <button class="btn btn-secondary btn-sm" id="btn-admin-list-prestataires">Charger les prestataires</button>
+                            </div>
+                            <div class="table-responsive mt-3">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Utilisateur (Email)</th>
+                                            <th>Nom Boutique</th>
+                                            <th>Statut</th>
+                                            <th>Chiffre d'Affaires</th>
+                                            <th>Solde Retirable</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="admin-prestataires-table-body">
+                                        <tr>
+                                            <td colspan="6" class="text-center text-muted">Aucune donnée chargée.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="card mt-4">
+                            <div class="results-header">
+                                <h3>💸 Historique global de tous les Retraits (Payouts)</h3>
+                                <button class="btn btn-secondary btn-sm" id="btn-admin-list-payouts">Charger tous les Payouts</button>
+                            </div>
+                            <div class="table-responsive mt-3">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Réf Unique</th>
+                                            <th>Prestataire (Boutique)</th>
+                                            <th>Montant (FCFA)</th>
+                                            <th>Statut</th>
+                                            <th>Méthode</th>
+                                            <th>Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="admin-payouts-table-body">
+                                        <tr>
+                                            <td colspan="7" class="text-center text-muted">Aucune donnée chargée.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Livraisons & Livreurs Tab -->
+                    <div class="sub-panel" id="admin-livraisons">
+                        <div class="grid-2col">
+                            <div class="card">
+                                <h3>🏍️ Promouvoir un utilisateur en tant que Livreur</h3>
+                                <form id="form-admin-promote-livreur">
+                                    <div class="form-field">
+                                        <label for="adm-promote-user-id">ID Utilisateur à promouvoir *</label>
+                                        <input type="number" id="adm-promote-user-id" required placeholder="ex: 14">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="adm-promote-vehicule">Type de Véhicule</label>
+                                        <input type="text" id="adm-promote-vehicule" placeholder="ex: Moto Haojue, Vélo...">
+                                    </div>
+                                    <button type="submit" class="btn btn-success btn-block">Promouvoir en Livreur</button>
+                                </form>
+                            </div>
+
+                            <div class="card">
+                                <h3>📦 Assigner un Livreur à une Commande</h3>
+                                <form id="form-admin-assign-delivery">
+                                    <div class="form-field">
+                                        <label for="adm-assign-order-id">ID de la Commande *</label>
+                                        <input type="number" id="adm-assign-order-id" required placeholder="ex: 45">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="adm-assign-livreur-id">ID du Livreur *</label>
+                                        <input type="number" id="adm-assign-livreur-id" required placeholder="ex: 2">
+                                    </div>
+                                    <button type="submit" class="btn btn-primary btn-block">Assigner la livraison</button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <div class="card mt-4">
+                            <div class="results-header">
+                                <h3>🏍️ Liste des Livreurs actifs</h3>
+                                <button class="btn btn-secondary btn-sm" id="btn-admin-list-livreurs">Lister les livreurs</button>
+                            </div>
+                            <div class="table-responsive mt-3">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Livreur (Email)</th>
+                                            <th>Téléphone</th>
+                                            <th>Véhicule</th>
+                                            <th>Disponible</th>
+                                            <th>En livraison</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="admin-livreurs-table-body">
+                                        <tr>
+                                            <td colspan="6" class="text-center text-muted">Aucune donnée chargée.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="card mt-4">
+                            <div class="results-header">
+                                <h3>📋 Moniteur des livraisons en temps réel</h3>
+                                <button class="btn btn-primary btn-sm" id="btn-admin-monitor-deliveries">Charger le moniteur de livraison</button>
+                            </div>
+                            <div class="table-responsive mt-3">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Commande ID</th>
+                                            <th>Livreur</th>
+                                            <th>Client</th>
+                                            <th>Adresse</th>
+                                            <th>Statut de livraison</th>
+                                            <th>Date d'affectation</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="admin-deliveries-table-body">
+                                        <tr>
+                                            <td colspan="6" class="text-center text-muted">Aucune donnée chargée.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Notifications Tab -->
+                    <div class="sub-panel" id="admin-notifications">
+                        <div class="card">
+                            <div class="results-header">
+                                <h3>🔔 Notifications Administrateur</h3>
+                                <button class="btn btn-primary" id="btn-admin-list-notifications">Charger les notifications</button>
+                            </div>
+                            <div class="notifications-list mt-3" id="admin-notifications-list">
+                                <p class="text-muted text-center">Aucune notification chargée.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Demandes Prestataires Tab -->
+                    <div class="sub-panel" id="admin-prestataires-demandes">
+                        <div class="grid-2col">
+                            <div class="card">
+                                <div class="results-header">
+                                    <h3>📄 Demandes de Partenariats (En attente)</h3>
+                                    <button class="btn btn-primary" id="btn-admin-list-requests">Actualiser la liste</button>
+                                </div>
+                                <div class="table-responsive mt-3">
+                                    <table class="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>ID</th>
+                                                <th>Utilisateur</th>
+                                                <th>Boutique</th>
+                                                <th>Statut</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="admin-requests-table-body">
+                                            <tr>
+                                                <td colspan="4" class="text-center text-muted">Cliquez sur Actualiser.</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <div class="card">
+                                <h3>🔍 Détail d'une demande</h3>
+                                <form id="form-admin-get-request-detail">
+                                    <div class="form-field">
+                                        <label for="adm-req-detail-id">ID de la demande *</label>
+                                        <div class="form-inline">
+                                            <input type="number" id="adm-req-detail-id" required placeholder="ex: 3">
+                                            <button type="submit" class="btn btn-secondary">Charger</button>
+                                        </div>
+                                    </div>
+                                </form>
+                                <div class="detail-box mt-3" id="admin-request-detail-output" style="display: none; background: rgba(0,0,0,0.2); padding: 15px; border-radius: var(--radius); border: 1px solid var(--border);">
+                                    <h4 id="detail-req-boutique" style="color: var(--accent); margin-bottom: 8px;">Boutique</h4>
+                                    <p><strong>Utilisateur :</strong> <span id="detail-req-user">--</span></p>
+                                    <p><strong>Description :</strong> <span id="detail-req-desc">--</span></p>
+                                    <p><strong>Date demande :</strong> <span id="detail-req-date">--</span></p>
+                                    <p><strong>Statut :</strong> <span class="status-badge" id="detail-req-status">--</span></p>
+                                    <div class="btn-group mt-3">
+                                        <button class="btn btn-success btn-sm btn-quick-validate" id="btn-quick-validate-req">Valider cette demande</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Webhook Simulator Tab -->
+                    <div class="sub-panel" id="admin-webhook-simulator">
+                        <div class="card">
+                            <h3>🔌 Simulateur de Webhook Monetbil (Payout)</h3>
+                            <p class="text-muted mb-3">Permet de simuler la notification IPN de Monetbil pour valider ou rejeter un virement d'argent (Payout) initié. Astuce : vous pouvez cliquer sur une ligne dans l'historique des retraits ci-dessous pour copier automatiquement son numéro de référence unique.</p>
+                            <form id="form-webhook-simulator">
+                                <div class="grid-2col">
+                                    <div class="form-field">
+                                        <label for="web-processing-number">Référence de la transaction (processing_number) *</label>
+                                        <input type="text" id="web-processing-number" required placeholder="ex: TX-982420942">
+                                    </div>
+                                    <div class="form-field">
+                                        <label for="web-status">Statut de la transaction *</label>
+                                        <select id="web-status" required>
+                                            <option value="success">Success (Succès - valide le retrait)</option>
+                                            <option value="failed">Failed (Échec - recrédite le prestataire)</option>
+                                            <option value="cancelled">Cancelled (Annulé - recrédite le prestataire)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-field">
+                                    <label for="web-message">Message / Motif (message) (Optionnel)</label>
+                                    <input type="text" id="web-message" placeholder="ex: Payout executed successfully / Solde insuffisant">
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-block">Envoyer la notification Webhook (POST)</button>
+                            </form>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Global Console & Response Viewer -->
+            <section class="response-viewer">
+                <div class="viewer-header">
+                    <div class="header-left">
+                        <span class="pulse-icon">📟</span>
+                        <h3>Console de Réponse API</h3>
+                    </div>
+                    <div class="header-right" id="response-meta-info">
+                        <span class="badge" id="response-status">STATUS : --</span>
+                        <span class="badge" id="response-time">TEMPS : -- ms</span>
+                    </div>
+                </div>
+                <div class="viewer-tabs">
+                    <button class="viewer-tab active" type="button" data-response-tab="json">JSON réponse</button>
+                    <button class="viewer-tab" type="button" data-response-tab="request">Requête envoyée</button>
+                    <button class="viewer-tab" type="button" data-response-tab="interface">Interface</button>
+                </div>
+                <div class="viewer-body">
+                    <div class="response-tab-panel active" id="response-json-panel">
+                        <pre><code id="response-output-json">{ "info": "En attente d'une requête..." }</code></pre>
+                    </div>
+                    <div class="response-tab-panel" id="response-request-panel">
+                        <pre><code id="request-output-json">{ "info": "Aucune requête envoyée pour le moment." }</code></pre>
+                    </div>
+                    <div class="response-tab-panel" id="response-interface-panel">
+                        <div class="response-interface-empty">Execute une requete pour afficher une interface interactive.</div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Main JS file -->
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,400 @@
+{
+  "info": {
+    "name": "Accessoire Exclusif API - Test Suite",
+    "description": "Collection Postman pour tester tous les endpoints avec les différents rôles",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "superadmin_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "serveuse_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "prestataire_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "livreur_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "client_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1️⃣ AUTHENTIFICATION",
+      "description": "Endpoints de connexion",
+      "item": [
+        {
+          "name": "Login Superadmin",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  var jsonData = pm.response.json();",
+                  "  pm.environment.set('superadmin_token', jsonData.access);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\\n  \\\"email\\\": \\\"admin@test.com\\\",\\n  \\\"password\\\": \\\"AdminPassword123!\\\"\\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/mobile/login/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "mobile", "login", ""]
+            }
+          }
+        },
+        {
+          "name": "Login Serveuse",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  var jsonData = pm.response.json();",
+                  "  pm.environment.set('serveuse_token', jsonData.access);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\\n  \\\"email\\\": \\\"serveuse@test.com\\\",\\n  \\\"password\\\": \\\"ServeusePassword123!\\\"\\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/mobile/login/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "mobile", "login", ""]
+            }
+          }
+        },
+        {
+          "name": "Profil utilisateur connecté",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{superadmin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/me/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "me", ""]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2️⃣ ADMIN - SUPERADMIN ONLY",
+      "description": "Endpoints réservés au Superadmin",
+      "item": [
+        {
+          "name": "Stats Globales (Superadmin ONLY)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{superadmin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/admin/stats/global/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "admin", "stats", "global", ""]
+            }
+          }
+        },
+        {
+          "name": "Lister Utilisateurs (Superadmin ONLY)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{superadmin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/admin/users/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "admin", "users", ""]
+            }
+          }
+        },
+        {
+          "name": "Lister Serveuses (Superadmin ONLY)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{superadmin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/admin/serveuses/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "admin", "serveuses", ""]
+            }
+          }
+        },
+        {
+          "name": "Modifier Serveuse - Activer/Désactiver",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{superadmin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\\n  \\\"actif\\\": true\\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/admin/serveuses/1/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "admin", "serveuses", "1", ""]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3️⃣ SERVEUSE - PERMISSIONS SPÉCIALES",
+      "description": "Endpoints pour Serveuse (accès complet à certains, lecture seule pour autres)",
+      "item": [
+        {
+          "name": "Notifications (Superadmin + Serveuse)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{serveuse_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/admin/notifications/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "admin", "notifications", ""]
+            }
+          }
+        },
+        {
+          "name": "Paiements - Liste (Superadmin + Serveuse)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{serveuse_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/admin/payouts/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "admin", "payouts", ""]
+            }
+          }
+        },
+        {
+          "name": "Clients - LECTURE SEULE (Serveuse)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{serveuse_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/admin/users/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "admin", "users", ""]
+            }
+          }
+        },
+        {
+          "name": "Prestataires - LECTURE SEULE (Serveuse)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{serveuse_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/admin/prestataires/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "admin", "prestataires", ""]
+            }
+          }
+        },
+        {
+          "name": "Livreurs - LECTURE SEULE (Serveuse)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{serveuse_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/admin/livreurs/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "admin", "livreurs", ""]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4️⃣ TEST - ACCÈS REFUSÉ (403)",
+      "description": "Tests pour vérifier que les permissions sont bien appliquées",
+      "item": [
+        {
+          "name": "Serveuse -> Stats Globales (DOIT ÉCHOUER)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{serveuse_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/admin/stats/global/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "admin", "stats", "global", ""]
+            }
+          }
+        },
+        {
+          "name": "Serveuse -> Lister Serveuses (DOIT ÉCHOUER)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{serveuse_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/admin/serveuses/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "admin", "serveuses", ""]
+            }
+          }
+        },
+        {
+          "name": "Serveuse -> Modifier Client (DOIT ÉCHOUER)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{serveuse_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\\n  \\\"first_name\\\": \\\"Modified\\\"\\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/admin/users/1/",
+              "protocol": "http",
+              "host": ["127.0.0.1"],
+              "port": "8000",
+              "path": ["api", "v1", "auth", "admin", "users", "1", ""]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

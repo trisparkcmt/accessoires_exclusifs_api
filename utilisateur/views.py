@@ -8,7 +8,11 @@ from django.conf import settings
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
-from .permissions import IsAdminOnly, IsAdminOrServeuseReadOnly, IsAdminOrServeuse, DepensePermission
+from .permissions import (
+    IsSuperadmin, IsActiveSuperadmin, IsActiveServeuse, IsSuperadminOrActiveServeuse,
+    IsActivePrestataire, IsActiveLivreur, IsActiveClient, DepensePermission,
+    IsSuperadminOrServeuseReadOnly, IsSuperadminOnly
+)
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
@@ -926,7 +930,7 @@ def apply_prestataire(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
-@permission_classes([IsAdminOrServeuseReadOnly])
+@permission_classes([IsSuperadminOrServeuseReadOnly])
 def list_prestataire_requests(request):
     """
     Liste toutes les demandes en attente (Réservé à l'Admin).
@@ -936,7 +940,7 @@ def list_prestataire_requests(request):
     return Response(serializer.data)
 
 @api_view(['GET'])
-@permission_classes([IsAdminOrServeuseReadOnly])
+@permission_classes([IsSuperadminOrServeuseReadOnly])
 def detail_prestataire_request(request, pk):
     """Récupère les informations détaillées d'une demande prestataire."""
     prestataire = get_object_or_404(Prestataire, pk=pk)
@@ -944,7 +948,7 @@ def detail_prestataire_request(request, pk):
     return Response(serializer.data)
 
 @api_view(['GET'])
-@permission_classes([IsAdminOrServeuse])
+@permission_classes([IsSuperadminOrActiveServeuse])
 def admin_notifications(request):
     """Liste des notifications destinées à l'admin connecté."""
     notifications = Notification.objects.filter(
@@ -958,7 +962,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.utils.html import strip_tags
 
 @api_view(['PATCH'])
-@permission_classes([IsAdminOnly])
+@permission_classes([IsSuperadmin])
 def validate_prestataire(request, pk):
     """
     Endpoint pour valider un prestataire (Réservé à l'Admin).
@@ -1018,7 +1022,7 @@ def get_prestataire_for_request(request):
     - Sinon, on récupère le profil prestataire de l'utilisateur connecté s'il est actif.
     """
     user = request.user
-    if user.is_staff:
+    if user.is_superuser:
         prestataire_id = request.query_params.get('prestataire_id')
         if not prestataire_id:
             # Fallback si l'admin a son propre profil prestataire
@@ -1048,7 +1052,7 @@ def prestataire_dashboard(request):
     Affiche le solde, le code promo, les stats et l'historique récent.
     """
     user = request.user
-    if user.is_staff and not request.query_params.get('prestataire_id'):
+    if user.is_superuser and not request.query_params.get('prestataire_id'):
         from decimal import Decimal
         from django.db.models import Sum
         
@@ -1093,7 +1097,7 @@ def prestataire_finance_history(request):
     Supporte la pagination et le filtrage par type_operation.
     """
     user = request.user
-    if user.is_staff and not request.query_params.get('prestataire_id'):
+    if user.is_superuser and not request.query_params.get('prestataire_id'):
         logs = CommissionLog.objects.all().order_by('-date_operation')
     else:
         prestataire = get_prestataire_for_request(request)
@@ -1124,7 +1128,7 @@ def prestataire_payouts_list(request):
     Supporte la pagination.
     """
     user = request.user
-    if user.is_staff and not request.query_params.get('prestataire_id'):
+    if user.is_superuser and not request.query_params.get('prestataire_id'):
         payouts = PayoutTransaction.objects.all().order_by('-date_creation')
     else:
         prestataire = get_prestataire_for_request(request)
@@ -1151,7 +1155,7 @@ from .serializers import AdminUserSerializer, AdminPrestataireUpdateSerializer, 
 # ============================================================
 
 @api_view(['GET'])
-@permission_classes([IsAdminOrServeuseReadOnly])
+@permission_classes([IsSuperadminOrServeuseReadOnly])
 def admin_users_list(request):
     """Liste paginée et recherchable de tous les utilisateurs"""
     search_query = request.query_params.get('search', '')
@@ -1171,7 +1175,7 @@ def admin_users_list(request):
     return paginator.get_paginated_response(serializer.data)
 
 @api_view(['PATCH'])
-@permission_classes([IsAdminOnly])
+@permission_classes([IsSuperadmin])
 def admin_user_toggle_status(request, pk):
     """Bloquer ou débloquer un utilisateur (is_active)"""
     user = get_object_or_404(User, pk=pk)
@@ -1184,7 +1188,7 @@ def admin_user_toggle_status(request, pk):
     return Response({"detail": f"Utilisateur {status_str} avec succès.", "is_active": user.is_active})
 
 @api_view(['GET'])
-@permission_classes([IsAdminOrServeuseReadOnly])
+@permission_classes([IsSuperadminOrServeuseReadOnly])
 def admin_prestataires_list(request):
     """Liste de tous les prestataires avec filtrage par statut"""
     statut = request.query_params.get('statut')
@@ -1197,7 +1201,7 @@ def admin_prestataires_list(request):
     return Response(serializer.data)
 
 @api_view(['PATCH'])
-@permission_classes([IsAdminOnly])
+@permission_classes([IsSuperadmin])
 def admin_prestataire_update(request, pk):
     """Modifier le taux de commission ou le statut d'un prestataire actif"""
     prestataire = get_object_or_404(Prestataire, pk=pk)
@@ -1209,7 +1213,7 @@ def admin_prestataire_update(request, pk):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
-@permission_classes([IsAdminOrServeuse])
+@permission_classes([IsSuperadmin])
 def admin_global_stats(request):
     """Statistiques financières pour le dashboard admin"""
     from django.db.models import Sum
@@ -1249,7 +1253,7 @@ def clean_cameroon_phone(phone):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminOnly])
+@permission_classes([IsSuperadminOrActiveServeuse])
 def admin_prestataire_payout(request, pk):
     """
     Initiation d'un virement mobile money vers un prestataire par l'administrateur
@@ -1428,7 +1432,7 @@ def monetbil_payout_webhook(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminOrServeuseReadOnly])
+@permission_classes([IsSuperadminOrActiveServeuse])
 def admin_payouts_list(request):
     """
     Liste de tous les virements (payouts) initiés par l'admin avec pagination
@@ -1593,7 +1597,7 @@ def livreur_update_delivery_status(request, pk):
 # ============================================================
 
 @api_view(['GET'])
-@permission_classes([IsAdminOrServeuseReadOnly])
+@permission_classes([IsSuperadminOrServeuseReadOnly])
 def admin_livreurs_list(request):
     """
     Liste complète de tous les livreurs (pour affectation ou gestion admin).
@@ -1615,7 +1619,7 @@ def admin_livreurs_list(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminOnly])
+@permission_classes([IsSuperadmin])
 def admin_promote_to_livreur(request):
     """
     Crée un profil Livreur à partir d'un Client existant (via user_id) ou à partir de zéro.
@@ -1677,7 +1681,7 @@ def admin_promote_to_livreur(request):
 
 
 @api_view(['PATCH'])
-@permission_classes([IsAdminOnly])
+@permission_classes([IsSuperadmin])
 def admin_update_livreur(request, pk):
     """
     Modifie le profil ou le statut d'un livreur.
@@ -1691,7 +1695,7 @@ def admin_update_livreur(request, pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminOrServeuse])
+@permission_classes([IsSuperadminOrActiveServeuse])
 def admin_assign_delivery(request, pk):
     """
     Assigne une commande à un livreur actif.
@@ -1718,7 +1722,7 @@ def admin_assign_delivery(request, pk):
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminOrServeuse])
+@permission_classes([IsSuperadminOrActiveServeuse])
 def admin_deliveries_monitor(request):
     """
     Suivi global de toutes les livraisons pour l'administrateur.
@@ -1748,7 +1752,7 @@ def admin_deliveries_monitor(request):
 # ============================================================
 
 @api_view(['GET'])
-@permission_classes([IsAdminOnly])
+@permission_classes([IsSuperadmin])
 def admin_serveuses_list(request):
     """
     Liste complète de toutes les serveuses avec filtrage par statut (admin only).
@@ -1770,7 +1774,7 @@ def admin_serveuses_list(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAdminOnly])
+@permission_classes([IsSuperadmin])
 def admin_promote_to_serveuse(request):
     """
     Crée un profil Serveuse à partir d'un Client existant (via user_id) ou à partir de zéro.
@@ -1789,7 +1793,7 @@ def admin_promote_to_serveuse(request):
         if hasattr(client, 'serveuse'):
             return Response({"detail": "Cet utilisateur est déjà enregistré comme serveuse."}, status=status.HTTP_400_BAD_REQUEST)
             
-        serveuse = Serveuse.objects.create(client=client, statut='disponible', date_embauche=date_embauche)
+        serveuse = Serveuse.objects.create(client=client, actif=True, date_embauche=date_embauche)
     else:
         # Création à partir de zéro
         email = request.data.get('email')
@@ -1820,14 +1824,14 @@ def admin_promote_to_serveuse(request):
             last_name=last_name
         )
         client = Client.objects.create(user=user, genre=genre)
-        serveuse = Serveuse.objects.create(client=client, statut='disponible', date_embauche=date_embauche)
+        serveuse = Serveuse.objects.create(client=client, actif=True, date_embauche=date_embauche)
         
     serializer = ServeusesSerializer(serveuse)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['PATCH'])
-@permission_classes([IsAdminOnly])
+@permission_classes([IsSuperadmin])
 def admin_update_serveuse(request, pk):
     """
     Modifie le profil ou le statut d'une serveuse (admin only).
@@ -1841,7 +1845,7 @@ def admin_update_serveuse(request, pk):
 
 
 @api_view(['DELETE'])
-@permission_classes([IsAdminOnly])
+@permission_classes([IsSuperadmin])
 def admin_delete_serveuse(request, pk):
     """
     Supprime une serveuse (admin only).
@@ -1857,7 +1861,7 @@ def admin_delete_serveuse(request, pk):
 # ============================================================
 
 @api_view(['DELETE'])
-@permission_classes([IsAdminOnly])
+@permission_classes([IsSuperadmin])
 def admin_delete_livreur(request, pk):
     """
     Supprime un livreur (admin only).

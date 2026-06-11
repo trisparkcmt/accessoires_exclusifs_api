@@ -1,0 +1,2667 @@
+// API Test Suite - Core Logic
+
+document.addEventListener('DOMContentLoaded', () => {
+    // -------------------------------------------------------------------------
+    // 1. SELECTORS & CORE STATE
+    // -------------------------------------------------------------------------
+    const state = {
+        get apiBaseUrl() {
+            return document.getElementById('api-base-url').value.trim();
+        },
+        get token() {
+            return localStorage.getItem('jwt_access_token') || '';
+        },
+        set token(val) {
+            if (val) {
+                localStorage.setItem('jwt_access_token', val);
+                document.getElementById('jwt-token').value = val;
+            } else {
+                localStorage.removeItem('jwt_access_token');
+                document.getElementById('jwt-token').value = '';
+            }
+            updateAuthStatus();
+        },
+        get refreshToken() {
+            return localStorage.getItem('jwt_refresh_token') || '';
+        },
+        set refreshToken(val) {
+            if (val) {
+                localStorage.setItem('jwt_refresh_token', val);
+            } else {
+                localStorage.removeItem('jwt_refresh_token');
+            }
+        }
+    };
+
+    // Initialize tokens in UI
+    if (state.token) {
+        document.getElementById('jwt-token').value = state.token;
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. NAVIGATION (PANELS & SUB-TABS)
+    // -------------------------------------------------------------------------
+    // Main sidebar navigation
+    const navButtons = document.querySelectorAll('.nav-btn');
+    const panels = document.querySelectorAll('.panel');
+
+    navButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            navButtons.forEach(b => b.classList.remove('active'));
+            panels.forEach(p => p.classList.remove('active'));
+
+            btn.classList.add('active');
+            const targetId = btn.getAttribute('data-target');
+            const targetPanel = document.getElementById(targetId);
+            if (!targetPanel) {
+                console.warn(`Panel introuvable: ${targetId}`);
+                return;
+            }
+            targetPanel.classList.add('active');
+        });
+    });
+
+    // Sub-tabs navigation inside panels
+    const subTabButtons = document.querySelectorAll('.tab-sub-btn');
+    subTabButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const container = btn.parentElement;
+            const parentPanel = container.closest('.panel');
+            
+            // Toggle buttons in the same container
+            container.querySelectorAll('.tab-sub-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Toggle sub-panels inside this main panel
+            const targetSubId = btn.getAttribute('data-sub');
+            parentPanel.querySelectorAll('.sub-panel').forEach(sp => {
+                if (sp.id === targetSubId) {
+                    sp.classList.add('active');
+                } else {
+                    sp.classList.remove('active');
+                }
+            });
+        });
+    });
+
+    // -------------------------------------------------------------------------
+    // 3. API CLIENT HELPER (FETCH WRAPPER)
+    // -------------------------------------------------------------------------
+    let lastRequest = null;
+
+    function displayNetworkErrorBanner(url, message) {
+        const existing = document.getElementById('api-network-error-banner');
+        if (existing) existing.remove();
+
+        const panel = document.getElementById('response-json-panel');
+        if (!panel) return;
+
+        const banner = document.createElement('div');
+        banner.className = 'network-error-banner';
+        banner.id = 'api-network-error-banner';
+        banner.innerHTML = `
+            <h4>⚠️ Échec de la connexion à l'API (${message || 'Failed to fetch'})</h4>
+            <p>Impossible de joindre l'API à l'adresse <code>${url}</code>. Cela est généralement dû à un problème réseau local ou de CORS.</p>
+            <ul>
+                <li><strong>Le serveur Django est-il démarré ?</strong> Vérifiez dans votre terminal que <code>python manage.py runserver</code> tourne bien.</li>
+                <li><strong>localhost vs 127.0.0.1 (IPv6 vs IPv4) :</strong> Si vous utilisez <code>localhost</code>, le navigateur peut essayer de se connecter en IPv6 (<code>::1</code>), ce qui échouera si Django n'écoute qu'en IPv4 (<code>127.0.0.1</code>). Essayez de passer sur <strong>127.0.0.1</strong>.</li>
+                <li><strong>Restriction CORS :</strong> Le backend Django doit autoriser l'adresse de ce client (configuration de <code>CORS_ALLOWED_ORIGINS</code> dans <code>settings.py</code>).</li>
+                <li><strong>Tunnel Ngrok inactif/expiré :</strong> Si vous testez avec l'URL Ngrok, vérifiez que le tunnel n'est pas expiré ou fermé.</li>
+            </ul>
+            <div style="margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary btn-sm" id="btn-retry-failed-request">🔄 Réessayer la requête</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-switch-to-127-err">🔌 Passer sur 127.0.0.1 et réessayer</button>
+            </div>
+        `;
+
+        panel.insertBefore(banner, panel.firstChild);
+
+        document.getElementById('btn-retry-failed-request').addEventListener('click', () => {
+            if (lastRequest) {
+                makeAPIRequest(lastRequest.endpoint, lastRequest.method, lastRequest.bodyData, lastRequest.headers);
+            }
+        });
+
+        document.getElementById('btn-switch-to-127-err').addEventListener('click', () => {
+            document.getElementById('api-base-url').value = 'http://127.0.0.1:8000';
+            checkServerStatus();
+            if (lastRequest) {
+                makeAPIRequest(lastRequest.endpoint, lastRequest.method, lastRequest.bodyData, lastRequest.headers);
+            }
+        });
+    }
+
+    function showEmailVerificationHelper(email) {
+        const existing = document.getElementById('email-verification-helper');
+        if (existing) existing.remove();
+
+        const panel = document.getElementById('response-json-panel');
+        if (!panel) return;
+
+        const helper = document.createElement('div');
+        helper.className = 'email-verification-helper';
+        helper.id = 'email-verification-helper';
+        
+        helper.style.marginTop = '16px';
+        helper.style.padding = '16px';
+        helper.style.border = '1px solid var(--success)';
+        helper.style.borderLeft = '4px solid var(--success)';
+        helper.style.borderRadius = 'var(--radius)';
+        helper.style.backgroundColor = 'rgba(16, 185, 129, 0.08)';
+        helper.style.color = 'var(--text-main)';
+        helper.style.textAlign = 'left';
+        
+        helper.innerHTML = `
+            <h4 style="margin: 0 0 8px 0; color: var(--success); display: flex; align-items: center; gap: 8px;">📧 Validation de l'adresse email</h4>
+            <p style="margin: 0 0 8px 0; font-size: 0.9rem;">Un e-mail de confirmation est requis pour activer et utiliser le compte de <strong>${email}</strong>.</p>
+            <p style="margin: 0 0 12px 0; font-size: 0.85rem; color: var(--text-muted);">Si vous n'avez pas reçu le mail ou si le lien a expiré, vous pouvez demander le renvoi du lien de confirmation ci-dessous :</p>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-success btn-sm" id="btn-resend-verification-email" style="background-color: var(--success); border-color: var(--success); color: white;">Renvoyer le lien de confirmation</button>
+                <span id="resend-verification-status" style="font-size: 0.85rem; font-weight: 600;"></span>
+            </div>
+        `;
+
+        panel.appendChild(helper);
+
+        document.getElementById('btn-resend-verification-email').addEventListener('click', async () => {
+            const btn = document.getElementById('btn-resend-verification-email');
+            const status = document.getElementById('resend-verification-status');
+            btn.disabled = true;
+            status.textContent = '🔄 Envoi en cours...';
+            status.style.color = 'var(--text-muted)';
+            
+            try {
+                const r = await makeAPIRequest('/api/v1/auth/registration/resend-email/', 'POST', { email });
+                btn.disabled = false;
+                if (r.ok) {
+                    status.textContent = '🟢 Renvoyé avec succès !';
+                    status.style.color = 'var(--success)';
+                } else {
+                    const errorDetail = r.data && (r.data.detail || JSON.stringify(r.data));
+                    status.textContent = '🔴 Échec : ' + (errorDetail || 'Erreur');
+                    status.style.color = 'var(--danger)';
+                }
+            } catch (err) {
+                btn.disabled = false;
+                status.textContent = '🔴 Erreur réseau';
+                status.style.color = 'var(--danger)';
+            }
+        });
+    }
+
+    async function makeAPIRequest(endpoint, method = 'GET', bodyData = null, headers = {}) {
+        const url = `${state.apiBaseUrl}${endpoint}`;
+        const outputJsonEl = document.getElementById('response-output-json');
+        const statusBadge = document.getElementById('response-status');
+        const timeBadge = document.getElementById('response-time');
+        
+        lastRequest = { endpoint, method, bodyData, headers };
+
+        // Clear any previous banners/helpers
+        const existingHelper = document.getElementById('email-verification-helper');
+        if (existingHelper) existingHelper.remove();
+        const existingBanner = document.getElementById('api-network-error-banner');
+        if (existingBanner) existingBanner.remove();
+
+        outputJsonEl.innerHTML = 'Envoi de la requête en cours...';
+        statusBadge.className = 'badge';
+        statusBadge.textContent = 'STATUS : --';
+        timeBadge.textContent = 'TEMPS : -- ms';
+
+        const defaultHeaders = {
+            'Accept': 'application/json',
+            'X-Client-Type': 'mobile', // Indique à l'API qu'on est un client de type mobile/API (pour recevoir les tokens dans le body JSON)
+        };
+
+        if (state.token) {
+            defaultHeaders['Authorization'] = `Bearer ${state.token}`;
+        }
+
+        if (bodyData && !(bodyData instanceof FormData)) {
+            defaultHeaders['Content-Type'] = 'application/json';
+        }
+
+        const requestHeaders = { ...defaultHeaders, ...headers };
+        const requestInfo = {
+            endpoint,
+            method,
+            url,
+            headers: requestHeaders,
+            body: bodyData || null
+        };
+        renderRequestDetails(requestInfo);
+
+        const options = {
+            method: method,
+            headers: requestHeaders
+        };
+
+        if (bodyData) {
+            options.body = bodyData instanceof FormData ? bodyData : JSON.stringify(bodyData);
+        }
+
+        const startTime = performance.now();
+        try {
+            const response = await fetch(url, options);
+            const duration = Math.round(performance.now() - startTime);
+            timeBadge.textContent = `TEMPS : ${duration} ms`;
+            
+            // Set status code badge
+            statusBadge.textContent = `STATUS : ${response.status} ${response.statusText}`;
+            statusBadge.className = 'badge';
+            if (response.status >= 200 && response.status < 300) {
+                statusBadge.classList.add('badge-2xx');
+            } else if (response.status >= 300 && response.status < 400) {
+                statusBadge.classList.add('badge-3xx');
+            } else if (response.status >= 400 && response.status < 500) {
+                statusBadge.classList.add('badge-4xx');
+            } else {
+                statusBadge.classList.add('badge-5xx');
+            }
+
+            // Extract json
+            let data = null;
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                data = { message: await response.text() };
+            }
+
+            // Remove any existing network error banner
+            const existingBanner = document.getElementById('api-network-error-banner');
+            if (existingBanner) existingBanner.remove();
+            const existingHelper2 = document.getElementById('email-verification-helper');
+            if (existingHelper2) existingHelper2.remove();
+
+            outputJsonEl.innerHTML = syntaxHighlightJSON(data);
+            recordApiInteraction({ endpoint, method, url, request: requestInfo, status: response.status, ok: response.ok, duration }, data);
+            return { ok: response.ok, status: response.status, data };
+
+        } catch (error) {
+            const duration = Math.round(performance.now() - startTime);
+            timeBadge.textContent = `TEMPS : ${duration} ms`;
+            statusBadge.textContent = 'STATUS : ERREUR';
+            statusBadge.className = 'badge badge-5xx';
+            
+            const errObj = { error: error.message || 'Erreur réseau ou CORS' };
+            outputJsonEl.innerHTML = syntaxHighlightJSON(errObj);
+            recordApiInteraction({ endpoint, method, url, request: requestInfo, status: 0, ok: false, duration }, errObj);
+            
+            // Show network error diagnostic panel
+            displayNetworkErrorBanner(url, error.message);
+
+            return { ok: false, status: 0, data: errObj };
+        }
+    }
+
+    // JSON syntax highlighting
+    function syntaxHighlightJSON(json) {
+        if (typeof json !== 'string') {
+            json = JSON.stringify(json, null, 2);
+        }
+        json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g, function (match) {
+            let cls = 'json-number';
+            if (/^"/.test(match)) {
+                if (/:$/.test(match)) {
+                    cls = 'json-key';
+                } else {
+                    cls = 'json-string';
+                }
+            } else if (/true|false/.test(match)) {
+                cls = 'json-boolean';
+            } else if (/null/.test(match)) {
+                cls = 'json-null';
+            }
+            return `<span class="${cls}">${match}</span>`;
+        });
+    }
+
+
+    // -------------------------------------------------------------------------
+    // 3B. INTERACTIVE RESPONSE UI
+    // -------------------------------------------------------------------------
+    const responseWorkspace = {
+        history: [],
+        selected: null
+    };
+
+    function escapeHTML(value) {
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    function switchResponseTab(tabName) {
+        document.querySelectorAll('.viewer-tab').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.responseTab === tabName);
+        });
+        document.getElementById('response-json-panel').classList.toggle('active', tabName === 'json');
+        document.getElementById('response-request-panel').classList.toggle('active', tabName === 'request');
+        document.getElementById('response-interface-panel').classList.toggle('active', tabName === 'interface');
+    }
+
+    function visibleRequestHeaders(headers) {
+        const clean = { ...headers };
+        if (clean.Authorization) {
+            clean.Authorization = clean.Authorization.slice(0, 24) + '...';
+        }
+        return clean;
+    }
+
+    function renderRequestDetails(requestInfo) {
+        const output = document.getElementById('request-output-json');
+        if (!output) return;
+        output.innerHTML = syntaxHighlightJSON({
+            method: requestInfo.method,
+            url: requestInfo.url,
+            endpoint: requestInfo.endpoint,
+            headers: visibleRequestHeaders(requestInfo.headers || {}),
+            body: requestInfo.body instanceof FormData ? '[FormData]' : (requestInfo.body ?? null)
+        });
+    }
+
+    function recordApiInteraction(meta, data) {
+        const entry = {
+            id: Date.now(),
+            meta,
+            data,
+            time: new Date().toLocaleTimeString()
+        };
+        responseWorkspace.history.unshift(entry);
+        responseWorkspace.history = responseWorkspace.history.slice(0, 12);
+        renderInteractiveResponse(entry);
+    }
+
+    function isPrimitive(value) {
+        return value === null || ['string', 'number', 'boolean'].includes(typeof value);
+    }
+
+    function isUsefulKey(key) {
+        return /(^id$|_id$|pk|slug|email|telephone|phone|numero|number|reference|processing|code)/i.test(key || '');
+    }
+
+    function describeValue(value) {
+        if (value === null) return 'null';
+        if (typeof value === 'string') return value;
+        return JSON.stringify(value);
+    }
+
+    function getOperationsForSuggestions() {
+        if (!endpointExplorer.operations.length && typeof mergeKnownOperations === 'function') {
+            endpointExplorer.operations = mergeKnownOperations([]);
+        }
+        return endpointExplorer.operations || [];
+    }
+
+    function pathParamMatches(paramName, selectedKey) {
+        const p = String(paramName || '').toLowerCase();
+        const k = String(selectedKey || '').toLowerCase();
+        if (p === k) return true;
+        if ((p === 'id' || p === 'pk') && (k === 'id' || k.endsWith('_id') || k === 'pk')) return true;
+        if (p === 'slug' && k.includes('slug')) return true;
+        if ((p === 'numero' || p === 'number') && (k.includes('numero') || k.includes('number'))) return true;
+        return false;
+    }
+
+    function buildFollowupRequest(op, selected) {
+        let path = op.path;
+        op.parameters.filter(param => param.in === 'path').forEach(param => {
+            const value = pathParamMatches(param.name, selected.key) ? selected.value : defaultValueForParameter(param);
+            path = path.replace(`{${param.name}}`, encodeURIComponent(value));
+        });
+        const bodyExample = requestBodyExample(op.operation);
+        const body = bodyExample ? parseLooseJSON(bodyExample, {}) : null;
+        return { endpoint: path, method: op.method, body, headers: {} };
+    }
+
+    function selectResponseValue(key, value, path) {
+        responseWorkspace.selected = { key, value, path };
+        renderSelectedValue();
+        renderFollowupSuggestions();
+    }
+
+    function renderSelectedValue() {
+        const box = document.getElementById('response-selected-value');
+        if (!box) return;
+        const selected = responseWorkspace.selected;
+        if (!selected) {
+            box.innerHTML = '<span class="text-muted">Clique sur une valeur de la reponse pour l\'utiliser.</span>';
+            return;
+        }
+        box.innerHTML = `
+            <div class="selected-value-card">
+                <span>${escapeHTML(selected.path)}</span>
+                <strong>${escapeHTML(describeValue(selected.value))}</strong>
+            </div>
+        `;
+    }
+
+    function renderFollowupSuggestions() {
+        const target = document.getElementById('response-followup-actions');
+        if (!target) return;
+        const selected = responseWorkspace.selected;
+        if (!selected) {
+            target.innerHTML = '<p class="text-muted">Selectionne une valeur pour voir les endpoints compatibles.</p>';
+            return;
+        }
+
+        const operations = getOperationsForSuggestions().filter(op => {
+            return op.parameters.some(param => param.in === 'path' && pathParamMatches(param.name, selected.key));
+        }).slice(0, 24);
+
+        if (!operations.length) {
+            target.innerHTML = '<p class="text-muted">Aucun endpoint avec parametre compatible trouve.</p>';
+            return;
+        }
+
+        target.innerHTML = '';
+        operations.forEach(op => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'followup-action-btn';
+            btn.innerHTML = `
+                <span class="method-pill method-${op.method.toLowerCase()}">${op.method}</span>
+                <span>${escapeHTML(op.path)}</span>
+            `;
+            btn.addEventListener('click', () => {
+                const pathValues = {};
+                op.parameters.filter(param => param.in === 'path').forEach(param => {
+                    pathValues[param.name] = pathParamMatches(param.name, selected.key) ? selected.value : defaultValueForParameter(param);
+                });
+                prepareOperationInFullTester(op, pathValues);
+                switchResponseTab('json');
+            });
+            target.appendChild(btn);
+        });
+    }
+
+    function renderResponseTree(value, key = 'response', path = 'response') {
+        if (Array.isArray(value)) {
+            const details = document.createElement('details');
+            details.className = 'response-node';
+            details.open = value.length <= 5;
+            details.innerHTML = `<summary>${escapeHTML(key)} <span>${value.length} elements</span></summary>`;
+            value.slice(0, 50).forEach((item, index) => {
+                details.appendChild(renderResponseTree(item, `[${index}]`, `${path}[${index}]`));
+            });
+            if (value.length > 50) {
+                const more = document.createElement('div');
+                more.className = 'response-row muted-row';
+                more.textContent = `${value.length - 50} elements non affiches`;
+                details.appendChild(more);
+            }
+            return details;
+        }
+
+        if (value && typeof value === 'object') {
+            const details = document.createElement('details');
+            details.className = 'response-node';
+            details.open = path === 'response';
+            const keys = Object.keys(value);
+            details.innerHTML = `<summary>${escapeHTML(key)} <span>${keys.length} champs</span></summary>`;
+            keys.forEach(childKey => {
+                details.appendChild(renderResponseTree(value[childKey], childKey, `${path}.${childKey}`));
+            });
+            return details;
+        }
+
+        const row = document.createElement('div');
+        row.className = `response-row ${isUsefulKey(key) ? 'useful-row' : ''}`;
+        const valueText = describeValue(value);
+        row.innerHTML = `
+            <span class="response-key">${escapeHTML(key)}</span>
+            <button type="button" class="response-value-btn">${escapeHTML(valueText)}</button>
+        `;
+        row.querySelector('button').addEventListener('click', () => selectResponseValue(key, value, path));
+        return row;
+    }
+
+    function renderHistoryList() {
+        const target = document.getElementById('response-history-list');
+        if (!target) return;
+        target.innerHTML = '';
+        responseWorkspace.history.forEach(entry => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'history-item';
+            btn.innerHTML = `
+                <span>${escapeHTML(entry.time)}</span>
+                <strong>${escapeHTML(entry.meta.method)} ${escapeHTML(entry.meta.endpoint)}</strong>
+                <small>${entry.meta.status}</small>
+            `;
+            btn.addEventListener('click', () => { renderRequestDetails(entry.meta.request || entry.meta); renderInteractiveResponse(entry, false); });
+            target.appendChild(btn);
+        });
+    }
+
+    function renderInteractiveResponse(entry, switchTab = false) {
+        const panel = document.getElementById('response-interface-panel');
+        if (!panel) return;
+        panel.innerHTML = `
+            <div class="response-interface-layout">
+                <aside class="response-side-panel">
+                    <div class="response-mini-card">
+                        <h4>Requete</h4>
+                        <code>${escapeHTML(entry.meta.method)} ${escapeHTML(entry.meta.endpoint)}</code>
+                        <span>Status ${entry.meta.status} - ${entry.meta.duration || 0} ms</span>
+                    </div>
+                    <div class="response-mini-card">
+                        <h4>Valeur selectionnee</h4>
+                        <div id="response-selected-value"></div>
+                    </div>
+                    <div class="response-mini-card">
+                        <h4>Executer avec cette valeur</h4>
+                        <div id="response-followup-actions"></div>
+                    </div>
+                    <div class="response-mini-card">
+                        <h4>Historique</h4>
+                        <div id="response-history-list"></div>
+                    </div>
+                </aside>
+                <div class="response-tree-panel" id="response-tree-panel"></div>
+            </div>
+        `;
+        document.getElementById('response-tree-panel').appendChild(renderResponseTree(entry.data));
+        renderSelectedValue();
+        renderFollowupSuggestions();
+        renderHistoryList();
+        if (switchTab) switchResponseTab('interface');
+    }
+
+    // UI Auth State Update
+    function updateAuthStatus() {
+        const dot = document.getElementById('auth-status-dot');
+        const text = document.getElementById('auth-status-text');
+        
+        if (state.token) {
+            dot.className = 'status-dot online';
+            text.textContent = 'Connecté (Session active)';
+        } else {
+            dot.className = 'status-dot offline';
+            text.textContent = 'Non connecté';
+        }
+    }
+
+    // Base URL Quick Switches & Server checking
+    async function checkServerStatus() {
+        const badge = document.getElementById('server-status-badge');
+        if (!badge) return;
+        badge.className = 'server-status-badge status-checking';
+        badge.textContent = '🔄 Vérification...';
+        
+        try {
+            const response = await fetch(`${state.apiBaseUrl}/`, {
+                method: 'GET',
+                mode: 'cors',
+                headers: { 'Accept': 'application/json' }
+            });
+            badge.className = 'server-status-badge status-online';
+            badge.textContent = '🟢 En ligne';
+        } catch (error) {
+            badge.className = 'server-status-badge status-offline';
+            badge.textContent = '🔴 Hors ligne';
+        }
+    }
+
+    document.getElementById('btn-url-127').addEventListener('click', () => {
+        document.getElementById('api-base-url').value = 'http://127.0.0.1:8000';
+        checkServerStatus();
+    });
+    document.getElementById('btn-url-local').addEventListener('click', () => {
+        document.getElementById('api-base-url').value = 'http://localhost:8000';
+        checkServerStatus();
+    });
+    document.getElementById('btn-url-ngrok').addEventListener('click', () => {
+        document.getElementById('api-base-url').value = 'https://integral-logically-gator.ngrok-free.app';
+        checkServerStatus();
+    });
+    
+    document.getElementById('api-base-url').addEventListener('change', checkServerStatus);
+
+    // Initial check and periodic polling
+    checkServerStatus();
+    setInterval(checkServerStatus, 8000);
+
+    // 4. GENERAL ENDPOINTS (ACCUEIL)
+    // -------------------------------------------------------------------------
+    document.getElementById('btn-check-api').addEventListener('click', () => {
+        makeAPIRequest('/', 'GET');
+    });
+
+    document.getElementById('btn-check-schema').addEventListener('click', () => {
+        makeAPIRequest('/api/schema/', 'GET');
+    });
+
+    // Clear token button
+    document.getElementById('btn-clear-token').addEventListener('click', () => {
+        state.token = '';
+        state.refreshToken = '';
+        alert('Jeton effacé !');
+    });
+
+    // Prepopulate user shortcuts
+    document.querySelectorAll('.btn-shortcut').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const email = btn.getAttribute('data-email');
+            const password = btn.getAttribute('data-password') || 'UserPassword123!';
+            document.getElementById('login-email').value = email;
+            document.getElementById('login-password').value = password;
+            // Switch to auth tab
+            document.querySelector('.nav-btn[data-target="auth-panel"]').click();
+            document.querySelector('.tab-sub-btn[data-sub="login-sub"]').click();
+        });
+    });
+
+    // Random user details generator for registration
+    document.getElementById('btn-random-register').addEventListener('click', () => {
+        const rand = Math.floor(Math.random() * 100000);
+        document.getElementById('reg-email').value = `testuser${rand}@example.com`;
+        document.getElementById('reg-password').value = `UserPassword123!`;
+        document.getElementById('reg-password-confirm').value = `UserPassword123!`;
+        document.getElementById('reg-first-name').value = `Prénom${rand}`;
+        document.getElementById('reg-last-name').value = `Nom${rand}`;
+        
+        // Random Cameroon phone number starting with +237 6
+        const randPhone = "+2376" + Array.from({length: 8}, () => Math.floor(Math.random() * 10)).join('');
+        document.getElementById('reg-telephone').value = randPhone;
+    });
+
+    // -------------------------------------------------------------------------
+    // 5. AUTHENTICATION & PROFILE
+    // -------------------------------------------------------------------------
+    // Login
+    document.getElementById('form-login').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value;
+
+        const body = {};
+        if (email.includes('@')) {
+            body.email = email;
+        } else {
+            body.telephone = email;
+        }
+        body.password = password;
+
+        const res = await makeAPIRequest('/api/v1/auth/mobile/login/', 'POST', body);
+        if (res.ok && res.data) {
+            storeAuthTokensFromResponse(res.data);
+        } else if (res.data && res.data.email_non_verifie) {
+            showEmailVerificationHelper(res.data.email);
+        }
+    });
+
+    function storeAuthTokensFromResponse(data) {
+        if (!data) return;
+        if (data.access) state.token = data.access;
+        if (data.key && !data.access) state.token = data.key;
+        if (data.refresh) state.refreshToken = data.refresh;
+    }
+
+    // Register
+    document.getElementById('form-register').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('reg-email').value.trim();
+        const password = document.getElementById('reg-password').value;
+        const password_confirm = document.getElementById('reg-password-confirm').value;
+        const first_name = document.getElementById('reg-first-name').value.trim();
+        const last_name = document.getElementById('reg-last-name').value.trim();
+        const telephone = document.getElementById('reg-telephone').value.trim();
+
+        if (password !== password_confirm) {
+            return alert('Les deux mots de passe ne correspondent pas.');
+        }
+
+        // CustomRegisterSerializer attend: email, password, password_confirm.
+        // first_name, last_name et telephone sont optionnels et acceptés dans le même appel.
+        const body = { email, password, password_confirm };
+        if (first_name) body.first_name = first_name;
+        if (last_name) body.last_name = last_name;
+        if (telephone) body.telephone = telephone;
+
+        const res = await makeAPIRequest('/api/v1/auth/registration/', 'POST', body);
+        if (res.ok) {
+            storeAuthTokensFromResponse(res.data);
+            showEmailVerificationHelper(email);
+        } else {
+            if (email && email.includes('@')) {
+                showEmailVerificationHelper(email);
+            }
+        }
+    });
+
+    function loadGoogleIdentityScript() {
+        if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+            return Promise.resolve();
+        }
+        return new Promise((resolve, reject) => {
+            const existing = document.querySelector('script[data-google-identity="true"]');
+            if (existing) {
+                existing.addEventListener('load', resolve, { once: true });
+                existing.addEventListener('error', reject, { once: true });
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = 'https://accounts.google.com/gsi/client';
+            script.async = true;
+            script.defer = true;
+            script.dataset.googleIdentity = 'true';
+            script.onload = resolve;
+            script.onerror = () => reject(new Error('Impossible de charger Google Identity Services.'));
+            document.head.appendChild(script);
+        });
+    }
+
+    async function submitGoogleToken(accessToken, idToken = '') {
+        const body = { access_token: accessToken };
+        if (idToken) body.id_token = idToken;
+        const res = await makeAPIRequest('/api/v1/auth/google/', 'POST', body);
+        if (res.ok) storeAuthTokensFromResponse(res.data);
+        return res;
+    }
+
+    function saveGoogleClientId(clientId) {
+        localStorage.setItem('google_client_id', clientId);
+    }
+
+    const savedGoogleClientId = localStorage.getItem('google_client_id');
+    if (savedGoogleClientId) {
+        document.getElementById('google-client-id').value = savedGoogleClientId;
+    }
+
+    document.getElementById('btn-google-auto-login').addEventListener('click', async () => {
+        const clientId = document.getElementById('google-client-id').value.trim();
+        if (!clientId) return alert('Renseigne ton Google Client ID.');
+        saveGoogleClientId(clientId);
+
+        try {
+            await loadGoogleIdentityScript();
+            const tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: clientId,
+                scope: 'openid email profile',
+                callback: async (tokenResponse) => {
+                    if (tokenResponse.error) {
+                        document.getElementById('response-output-json').innerHTML = syntaxHighlightJSON(tokenResponse);
+                        return;
+                    }
+                    const accessToken = tokenResponse.access_token;
+                    document.getElementById('google-access-token').value = accessToken || '';
+                    await submitGoogleToken(accessToken);
+                }
+            });
+            tokenClient.requestAccessToken({ prompt: 'consent' });
+        } catch (error) {
+            document.getElementById('response-output-json').innerHTML = syntaxHighlightJSON({ error: error.message });
+        }
+    });
+
+    // Google Login / Signup
+    document.getElementById('form-google-login').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const accessToken = document.getElementById('google-access-token').value.trim();
+        const idToken = document.getElementById('google-id-token').value.trim();
+        if (!accessToken) return alert('Colle un access_token Google.');
+        await submitGoogleToken(accessToken, idToken);
+    });
+
+    // Load Me
+    document.getElementById('btn-get-me').addEventListener('click', () => {
+        makeAPIRequest('/api/v1/auth/me/', 'GET');
+    });
+
+    // Logout
+    document.getElementById('btn-logout').addEventListener('click', async () => {
+        await makeAPIRequest('/api/v1/auth/logout/', 'POST');
+        state.token = '';
+        state.refreshToken = '';
+    });
+
+    // Change Email
+    document.getElementById('form-change-email').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const newEmail = document.getElementById('new-email').value.trim();
+        await makeAPIRequest('/api/v1/auth/me/change-email/', 'POST', { email: newEmail });
+    });
+
+    // Update Profile
+    document.getElementById('form-update-profile').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const body = {};
+        const firstName = document.getElementById('profile-first-name').value.trim();
+        const lastName = document.getElementById('profile-last-name').value.trim();
+        const telephone = document.getElementById('profile-telephone').value.trim();
+        const currentPassword = document.getElementById('profile-password').value;
+
+        if (firstName) body.first_name = firstName;
+        if (lastName) body.last_name = lastName;
+        if (telephone) body.telephone = telephone;
+        if (currentPassword) body.current_password = currentPassword;
+
+        if (Object.keys(body).length === 0) {
+            return alert('Renseigne au moins un champ à modifier.');
+        }
+
+        await makeAPIRequest('/api/v1/auth/me/', 'PATCH', body);
+    });
+
+    // Prestataire Apply
+    document.getElementById('btn-prestataire-apply').addEventListener('click', () => {
+        makeAPIRequest('/api/v1/auth/prestataire/apply/', 'POST', {
+            nom_boutique: "Boutique Exotique de " + Math.floor(Math.random() * 1000),
+            description: "Créateur indépendant de parfums naturels."
+        });
+    });
+
+    // Prestataire Dashboard
+    document.getElementById('btn-prestataire-dashboard').addEventListener('click', () => {
+        makeAPIRequest('/api/v1/auth/prestataire/dashboard/', 'GET');
+    });
+
+    // Prestataire Finance History
+    document.getElementById('btn-prestataire-historique').addEventListener('click', () => {
+        makeAPIRequest('/api/v1/auth/prestataire/historique/', 'GET');
+    });
+
+    // Prestataire Payouts
+    document.getElementById('btn-prestataire-payouts').addEventListener('click', () => {
+        makeAPIRequest('/api/v1/auth/prestataire/payouts/', 'GET');
+    });
+
+    // -------------------------------------------------------------------------
+    // 6. SHOP & CATALOG
+    // -------------------------------------------------------------------------
+    
+    // Parfums
+    document.getElementById('btn-list-parfums').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/shop/parfums/', 'GET');
+        renderParfums(res.data);
+    });
+
+    document.getElementById('form-filter-parfums').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const params = new URLSearchParams();
+        const search = document.getElementById('p-search').value.trim();
+        const genre = document.getElementById('p-genre').value;
+        const famille = document.getElementById('p-famille').value.trim();
+        const pMin = document.getElementById('p-prix-min').value;
+        const pMax = document.getElementById('p-prix-max').value;
+        const bestseller = document.getElementById('p-bestseller').checked;
+        const nouveau = document.getElementById('p-nouveau').checked;
+
+        if (search) params.append('search', search);
+        if (genre) params.append('genre', genre);
+        if (famille) params.append('famille_olfactive', famille);
+        if (pMin) params.append('prix_min', pMin);
+        if (pMax) params.append('prix_max', pMax);
+        if (bestseller) params.append('est_bestseller', 'true');
+        if (nouveau) params.append('est_nouveau', 'true');
+
+        const res = await makeAPIRequest(`/api/v1/shop/parfums/?${params.toString()}`, 'GET');
+        renderParfums(res.data);
+    });
+
+    document.getElementById('btn-get-parfum').addEventListener('click', () => {
+        const slug = document.getElementById('p-slug').value.trim();
+        if (!slug) return alert('Indiquez un slug de parfum.');
+        makeAPIRequest(`/api/v1/shop/parfums/${slug}/`, 'GET');
+    });
+
+    function renderParfums(data) {
+        const listContainer = document.getElementById('parfums-list-output');
+        listContainer.innerHTML = '';
+        
+        const results = data.results || data || [];
+        if (results.length === 0) {
+            listContainer.innerHTML = '<p class="text-muted">Aucun parfum trouvé.</p>';
+            return;
+        }
+
+        results.forEach(parfum => {
+            const card = document.createElement('div');
+            card.className = 'catalog-card';
+            
+            let badges = '';
+            if (parfum.est_nouveau) badges += '<span class="badge-card badge-new">Nouveau</span>';
+            if (parfum.est_bestseller) badges += '<span class="badge-card badge-bestseller">Bestseller</span>';
+
+            card.innerHTML = `
+                ${badges}
+                <h4>${parfum.nom}</h4>
+                <div class="sku">SKU: ${parfum.reference_sku || 'N/A'}</div>
+                <div class="description">${parfum.description_courte || 'Pas de description'}</div>
+                <div class="price">${parfum.prix_actuel || parfum.prix_unitaire} FCFA</div>
+                <div class="btn-group mt-2">
+                    <button class="btn btn-secondary btn-sm btn-fav-add" data-id="${parfum.id}">❤️</button>
+                    <button class="btn btn-primary btn-sm btn-view-details" data-slug="${parfum.slug}">Détails</button>
+                </div>
+            `;
+            listContainer.appendChild(card);
+        });
+
+        // Attach card actions
+        listContainer.querySelectorAll('.btn-fav-add').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = btn.getAttribute('data-id');
+                addFavori(id);
+            });
+        });
+
+        listContainer.querySelectorAll('.btn-view-details').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const slug = btn.getAttribute('data-slug');
+                document.getElementById('p-slug').value = slug;
+                makeAPIRequest(`/api/v1/shop/parfums/${slug}/`, 'GET');
+            });
+        });
+    }
+
+    // Accessoires
+    document.getElementById('btn-list-accessoires').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/shop/accessoires/', 'GET');
+        renderAccessoires(res.data);
+    });
+
+    document.getElementById('form-filter-accessoires').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const params = new URLSearchParams();
+        const search = document.getElementById('a-search').value.trim();
+        const matiere = document.getElementById('a-matiere').value.trim();
+        const couleur = document.getElementById('a-couleur').value.trim();
+
+        if (search) params.append('search', search);
+        if (matiere) params.append('matiere', matiere);
+        if (couleur) params.append('couleur', couleur);
+
+        const res = await makeAPIRequest(`/api/v1/shop/accessoires/?${params.toString()}`, 'GET');
+        renderAccessoires(res.data);
+    });
+
+    document.getElementById('btn-get-accessoire').addEventListener('click', () => {
+        const slug = document.getElementById('a-slug').value.trim();
+        if (!slug) return alert('Indiquez un slug d\'accessoire.');
+        makeAPIRequest(`/api/v1/shop/accessoires/${slug}/`, 'GET');
+    });
+
+    function renderAccessoires(data) {
+        const container = document.getElementById('accessoires-list-output');
+        container.innerHTML = '';
+        const results = data.results || data || [];
+
+        results.forEach(acc => {
+            const card = document.createElement('div');
+            card.className = 'catalog-card';
+            card.innerHTML = `
+                <h4>${acc.nom}</h4>
+                <div class="sku">SKU: ${acc.reference_sku || 'N/A'}</div>
+                <div class="description">${acc.description_courte || 'Matière: ' + acc.matiere}</div>
+                <div class="price">${acc.prix_actuel || acc.prix_unitaire} FCFA</div>
+                <button class="btn btn-primary btn-sm btn-view-acc mt-2" data-slug="${acc.slug}">Détails</button>
+            `;
+            container.appendChild(card);
+        });
+
+        container.querySelectorAll('.btn-view-acc').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const slug = btn.getAttribute('data-slug');
+                document.getElementById('a-slug').value = slug;
+                makeAPIRequest(`/api/v1/shop/accessoires/${slug}/`, 'GET');
+            });
+        });
+    }
+
+    // Flacons
+    document.getElementById('btn-list-flacons').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/shop/flacons/', 'GET');
+        renderFlacons(res.data);
+    });
+
+    document.getElementById('form-filter-flacons').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const params = new URLSearchParams();
+        const cont = document.getElementById('f-contenance').value;
+        const mat = document.getElementById('f-matiere').value.trim();
+        const enStock = document.getElementById('f-en-stock').checked;
+
+        if (cont) params.append('contenance_ml', cont);
+        if (mat) params.append('matiere', mat);
+        if (enStock) params.append('en_stock', 'true');
+
+        const res = await makeAPIRequest(`/api/v1/shop/flacons/?${params.toString()}`, 'GET');
+        renderFlacons(res.data);
+    });
+
+    document.getElementById('btn-get-flacon').addEventListener('click', () => {
+        const id = document.getElementById('f-id').value;
+        if (!id) return alert('Indiquez un ID de flacon.');
+        makeAPIRequest(`/api/v1/shop/flacons/${id}/`, 'GET');
+    });
+
+    function renderFlacons(data) {
+        const container = document.getElementById('flacons-list-output');
+        container.innerHTML = '';
+        const results = data.results || data || [];
+
+        results.forEach(fl => {
+            const card = document.createElement('div');
+            card.className = 'catalog-card';
+            card.innerHTML = `
+                <h4>${fl.nom}</h4>
+                <div class="sku">SKU: ${fl.reference_sku || 'N/A'}</div>
+                <div class="description">${fl.contenance_ml}ml - Matière: ${fl.matiere} (${fl.couleur})</div>
+                <div class="price">${fl.prix_unitaire} FCFA</div>
+                <div class="sku mt-1">Disponibilité: ${fl.stock_suffisant ? 'En stock' : 'Stock insuffisant'}</div>
+                <button class="btn btn-primary btn-sm btn-view-fl mt-2" data-id="${fl.id}">Détails</button>
+            `;
+            container.appendChild(card);
+        });
+
+        container.querySelectorAll('.btn-view-fl').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-id');
+                document.getElementById('f-id').value = id;
+                makeAPIRequest(`/api/v1/shop/flacons/${id}/`, 'GET');
+            });
+        });
+    }
+
+    // Favoris List & actions
+    document.getElementById('btn-list-favoris').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/shop/favoris/', 'GET');
+        renderFavoris(res.data);
+    });
+
+    async function addFavori(parfumId) {
+        await makeAPIRequest('/api/v1/shop/favoris/', 'POST', { parfum: parseInt(parfumId) });
+    }
+
+    document.getElementById('form-add-favori').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const type = document.getElementById('fav-product-type').value;
+        const slug = document.getElementById('fav-product-slug').value.trim();
+        const resource = type === 'accessoire' ? 'accessoires' : 'parfums';
+        if (!slug) return alert('Indique un slug.');
+
+        const detail = await makeAPIRequest(`/api/v1/shop/${resource}/${slug}/`, 'GET');
+        if (!detail.ok || !detail.data || !detail.data.id) return;
+
+        // Le backend actuel expose FavoriViewSet en lecture seule. Cette requête teste la création
+        // si tu ajoutes create/toggle plus tard; aujourd'hui elle peut répondre 405 Method Not Allowed.
+        const body = type === 'accessoire' ? { accessoire: detail.data.id } : { parfum: detail.data.id };
+        await makeAPIRequest('/api/v1/shop/favoris/', 'POST', body);
+    });
+
+    function renderFavoris(data) {
+        const container = document.getElementById('favoris-list-output');
+        container.innerHTML = '';
+        const results = data.results || data || [];
+
+        if (results.length === 0) {
+            container.innerHTML = '<p class="text-muted">Aucun favori pour le moment.</p>';
+            return;
+        }
+
+        results.forEach(fav => {
+            const card = document.createElement('div');
+            card.className = 'catalog-card';
+            const parfum = fav.parfum_details || {};
+            card.innerHTML = `
+                <h4>${parfum.nom || 'Parfum ID: ' + fav.parfum}</h4>
+                <div class="sku">ID du Favori: ${fav.id}</div>
+                <div class="price">${parfum.prix_actuel || ''} FCFA</div>
+                <button class="btn btn-danger btn-sm btn-remove-fav mt-2" data-fav-id="${fav.id}">Retirer</button>
+            `;
+            container.appendChild(card);
+        });
+
+        container.querySelectorAll('.btn-remove-fav').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const favId = btn.getAttribute('data-fav-id');
+                const res = await makeAPIRequest(`/api/v1/shop/favoris/${favId}/`, 'DELETE');
+                if (res.ok) {
+                    btn.closest('.catalog-card').remove();
+                }
+            });
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // 7. LAB DIY & IA RECOMMENDATION
+    // -------------------------------------------------------------------------
+    // Essences
+    document.getElementById('btn-list-essences').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/lab/essences/', 'GET');
+        const listEl = document.getElementById('essences-mini-list');
+        listEl.innerHTML = '';
+        const results = res.data.results || res.data || [];
+        results.forEach(ess => {
+            const div = document.createElement('div');
+            div.className = 'item-mini';
+            div.innerHTML = `
+                <div>
+                    <span class="name">[ID ${ess.id}] ${ess.nom}</span>
+                    <span class="meta">${ess.code_reference}</span>
+                </div>
+                <div class="meta">${ess.prix_par_ml} FCFA/ml</div>
+            `;
+            listEl.appendChild(div);
+        });
+    });
+
+    // Ingrédients
+    document.getElementById('btn-list-ingredients').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/lab/ingredients/', 'GET');
+        const listEl = document.getElementById('ingredients-mini-list');
+        listEl.innerHTML = '';
+        const results = res.data.results || res.data || [];
+        results.forEach(ing => {
+            const div = document.createElement('div');
+            div.className = 'item-mini';
+            div.innerHTML = `
+                <div>
+                    <span class="name">[ID ${ing.id}] ${ing.nom}</span>
+                    <span class="meta">${ing.origine}</span>
+                </div>
+                <div class="meta">${ing.prix_par_ml} FCFA/ml</div>
+            `;
+            listEl.appendChild(div);
+        });
+    });
+
+    // Dynamic Line inputs for creations
+    document.getElementById('btn-add-ing-line').addEventListener('click', () => {
+        const container = document.querySelector('.ingredient-lines-inputs');
+        const div = document.createElement('div');
+        div.className = 'line-input form-inline mt-2';
+        div.innerHTML = `
+            <input type="number" class="ing-id" placeholder="ID Ingrédient" required>
+            <input type="number" class="ing-pct" placeholder="%" min="1" max="100" required>
+            <button type="button" class="btn btn-danger btn-sm btn-remove-line">X</button>
+        `;
+        container.appendChild(div);
+        div.querySelector('.btn-remove-line').addEventListener('click', () => div.remove());
+    });
+
+    document.getElementById('btn-add-ess-line').addEventListener('click', () => {
+        const container = document.querySelector('.essence-lines-inputs');
+        const div = document.createElement('div');
+        div.className = 'line-input form-inline mt-2';
+        div.innerHTML = `
+            <select class="ess-type">
+                <option value="catalogue">Catalogue</option>
+                <option value="personnalisee">Créée sur-mesure</option>
+            </select>
+            <input type="number" class="ess-id" placeholder="ID Essence" required>
+            <input type="number" class="ess-vol" placeholder="Vol (ml)" required>
+            <button type="button" class="btn btn-danger btn-sm btn-remove-line">X</button>
+        `;
+        container.appendChild(div);
+        div.querySelector('.btn-remove-line').addEventListener('click', () => div.remove());
+    });
+
+    // Create Custom Essence
+    document.getElementById('form-create-essence-perso').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const nom = document.getElementById('ep-nom').value.trim();
+        const lines = [];
+        document.querySelectorAll('.ingredient-lines-inputs .line-input').forEach(div => {
+            const ingredient = parseInt(div.querySelector('.ing-id').value);
+            const pourcentage = parseInt(div.querySelector('.ing-pct').value);
+            if (ingredient && pourcentage) {
+                lines.push({ ingredient, pourcentage });
+            }
+        });
+
+        await makeAPIRequest('/api/v1/lab/essences-perso/', 'POST', { nom, lignes: lines });
+    });
+
+    // Create Custom Parfum
+    document.getElementById('form-create-parfum-perso').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const nom = document.getElementById('pp-nom').value.trim();
+        const description = document.getElementById('pp-description').value.trim();
+        const flacon = parseInt(document.getElementById('pp-flacon').value);
+
+        const lines = [];
+        document.querySelectorAll('.essence-lines-inputs .line-input').forEach(div => {
+            const type = div.querySelector('.ess-type').value;
+            const essenceId = parseInt(div.querySelector('.ess-id').value);
+            const quantite_ml = parseFloat(div.querySelector('.ess-vol').value);
+
+            if (essenceId && quantite_ml) {
+                const lineObj = { quantite_ml };
+                if (type === 'catalogue') {
+                    lineObj.essence_catalogue = essenceId;
+                } else {
+                    lineObj.essence_personnalisee = essenceId;
+                }
+                lines.push(lineObj);
+            }
+        });
+
+        await makeAPIRequest('/api/v1/lab/parfums-perso/', 'POST', { nom, description, flacon, lignes: lines });
+    });
+
+    // List Custom Parfums & Essences
+    document.getElementById('btn-list-parfums-perso').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/lab/parfums-perso/', 'GET');
+        const container = document.getElementById('parfums-perso-list-output');
+        container.innerHTML = '';
+        const results = res.data.results || res.data || [];
+        results.forEach(pp => {
+            const card = document.createElement('div');
+            card.className = 'catalog-card';
+            card.innerHTML = `
+                <h4>${pp.nom}</h4>
+                <div class="sku">Statut: ${pp.statut}</div>
+                <div class="description">${pp.description || 'Sur mesure'}</div>
+                <div class="price">${pp.prix_total} FCFA</div>
+                <button class="btn btn-secondary btn-sm btn-recalc-price mt-2" data-id="${pp.id}">Recalculer Prix</button>
+            `;
+            container.appendChild(card);
+        });
+
+        container.querySelectorAll('.btn-recalc-price').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-id');
+                makeAPIRequest(`/api/v1/lab/parfums-perso/${id}/recalculer/`, 'POST');
+            });
+        });
+    });
+
+    document.getElementById('btn-list-essences-perso').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/lab/essences-perso/', 'GET');
+        const container = document.getElementById('essences-perso-list-output');
+        container.innerHTML = '';
+        const results = res.data.results || res.data || [];
+        results.forEach(ep => {
+            const card = document.createElement('div');
+            card.className = 'catalog-card';
+            card.innerHTML = `
+                <h4>${ep.nom}</h4>
+                <div class="price">${ep.prix_par_ml_calcule} FCFA/ml</div>
+                <div class="sku">Date: ${new Date(ep.date_creation).toLocaleDateString()}</div>
+            `;
+            container.appendChild(card);
+        });
+    });
+
+    // Gemini IA Recommandation
+    document.getElementById('form-ia-prompt').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const prompt = document.getElementById('ia-prompt').value.trim();
+        const visualOutput = document.getElementById('ia-visual-response');
+        
+        visualOutput.innerHTML = '<div class="empty-state"><p>🪄 Analyse de votre envie par Gemini... Veuillez patienter.</p></div>';
+
+        const res = await makeAPIRequest('/api/v1/lab/ia-recommandation/', 'POST', { prompt });
+        if (res.ok && res.data) {
+            visualOutput.innerHTML = '';
+            
+            // Render Recommended Parfums
+            const parfumsIds = res.data.parfums_existants_recommandes || [];
+            if (parfumsIds.length > 0) {
+                const section = document.createElement('div');
+                section.className = 'ia-rec-section';
+                section.innerHTML = '<h4>🌹 Parfums Recommandés (Existants)</h4>';
+                const grid = document.createElement('div');
+                grid.className = 'ia-rec-grid';
+                parfumsIds.forEach(id => {
+                    grid.innerHTML += `<div class="ia-rec-card"><div class="title">Parfum ID: ${id}</div><p>Présent dans le catalogue</p></div>`;
+                });
+                section.appendChild(grid);
+                visualOutput.appendChild(section);
+            }
+
+            // Render Recommended Essences
+            const essences = res.data.essences_pre_faites || [];
+            if (essences.length > 0) {
+                const section = document.createElement('div');
+                section.className = 'ia-rec-section';
+                section.innerHTML = '<h4>🧪 Essences Recommandées (Formule)</h4>';
+                const grid = document.createElement('div');
+                grid.className = 'ia-rec-grid';
+                essences.forEach(ess => {
+                    grid.innerHTML += `
+                        <div class="ia-rec-card">
+                            <div class="title">Essence ID: ${ess.id || ess}</div>
+                            <div class="qty">Quantité: ${ess.quantite_ml || 0} ml</div>
+                        </div>`;
+                });
+                section.appendChild(grid);
+                visualOutput.appendChild(section);
+            }
+
+            // Render custom ingredients
+            const ingr = res.data.ingredients_sur_mesure || [];
+            if (ingr.length > 0) {
+                const section = document.createElement('div');
+                section.className = 'ia-rec-section';
+                section.innerHTML = '<h4>🔬 Mélange d\'Ingrédients Sur-mesure</h4>';
+                const grid = document.createElement('div');
+                grid.className = 'ia-rec-grid';
+                ingr.forEach(ig => {
+                    grid.innerHTML += `
+                        <div class="ia-rec-card">
+                            <div class="title">Ingrédient ID: ${ig.id || ig}</div>
+                            <div class="qty">Proportion: ${ig.quantite_ml || ig.pourcentage || 0} %</div>
+                        </div>`;
+                });
+                section.appendChild(grid);
+                visualOutput.appendChild(section);
+            }
+
+            // Render Flacon
+            const flaconId = res.data.flacon_id;
+            if (flaconId) {
+                const section = document.createElement('div');
+                section.className = 'ia-rec-section';
+                section.innerHTML = '<h4>🧴 Flacon Recommandé</h4>';
+                section.innerHTML += `
+                    <div class="ia-rec-card" style="max-width: 250px;">
+                        <div class="title">Flacon ID: ${flaconId}</div>
+                        <p>Contenance estimée: ${res.data.quantite_demandee_ml || 50} ml</p>
+                    </div>`;
+                visualOutput.appendChild(section);
+            }
+
+            if (visualOutput.children.length === 0) {
+                visualOutput.innerHTML = '<div class="empty-state"><p>L\'IA a répondu mais aucun produit spécifique n\'a été recommandé.</p></div>';
+            }
+        } else {
+            visualOutput.innerHTML = '<div class="empty-state"><p class="text-muted">❌ Impossible d\'obtenir des recommandations de l\'IA.</p></div>';
+        }
+    });
+
+    // -------------------------------------------------------------------------
+    // 8. LIVREUR SCREEN
+    // -------------------------------------------------------------------------
+    // Livreur Dashboard
+    document.getElementById('btn-livreur-dashboard').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/auth/livreur/dashboard/', 'GET');
+        if (res.ok && res.data) {
+            const stats = res.data;
+            const container = document.getElementById('livreur-stats-output');
+            container.innerHTML = `
+                <div class="grid-2col text-center" style="gap:10px;">
+                    <div class="card" style="padding:10px; background-color: var(--bg-primary);">
+                        <h2 style="color:var(--accent);">${stats.livraisons_actives || 0}</h2>
+                        <span class="text-muted" style="font-size:0.75rem;">Courses Actives</span>
+                    </div>
+                    <div class="card" style="padding:10px; background-color: var(--bg-primary);">
+                        <h2 style="color:var(--success);">${stats.livraisons_terminees || 0}</h2>
+                        <span class="text-muted" style="font-size:0.75rem;">Courses Terminées</span>
+                    </div>
+                </div>
+            `;
+        }
+    });
+
+    // Load Livreur Commandes
+    const btnLivreurCmds = document.getElementById('btn-livreur-commandes');
+    document.getElementById('liv-action').addEventListener('change', () => {
+        const isFailure = document.getElementById('liv-action').value === 'echouer';
+        document.getElementById('liv-motif-field').style.display = isFailure ? 'block' : 'none';
+    });
+
+    btnLivreurCmds.addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/auth/livreur/livraisons/', 'GET');
+        const body = document.getElementById('livreur-commandes-table-body');
+        body.innerHTML = '';
+
+        const results = res.data.results || res.data || [];
+        if (results.length === 0) {
+            body.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Aucune livraison assignée.</td></tr>';
+            return;
+        }
+
+        results.forEach(liv => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${liv.id}</td>
+                <td>${liv.client_nom || 'Client #' + liv.client_id}</td>
+                <td>${liv.adresse_livraison || 'Non renseignée'}</td>
+                <td>${liv.prix_total} FCFA</td>
+                <td><span class="status-badge status-${liv.statut_livraison}">${liv.statut_livraison}</span></td>
+                <td>${new Date(liv.date_creation).toLocaleDateString()}</td>
+                <td>
+                    <button class="btn btn-secondary btn-sm btn-quick-status" data-id="${liv.id}">Gérer</button>
+                </td>
+            `;
+            body.appendChild(tr);
+        });
+
+        // Quick status updater selection helper
+        body.querySelectorAll('.btn-quick-status').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-id');
+                document.getElementById('liv-id').value = id;
+                document.getElementById('liv-action').focus();
+            });
+        });
+    });
+
+    // Form Update Delivery Status
+    document.getElementById('form-livreur-status').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('liv-id').value;
+        const action = document.getElementById('liv-action').value;
+        const motif = document.getElementById('liv-motif') ? document.getElementById('liv-motif').value.trim() : '';
+        const body = { action };
+        if (action === 'echouer') body.motif = motif;
+
+        const res = await makeAPIRequest(`/api/v1/auth/livreur/livraisons/${id}/statut/`, 'POST', body);
+        if (res.ok) {
+            btnLivreurCmds.click(); // reload table
+        }
+    });
+
+    // -------------------------------------------------------------------------
+    // 9. ADMINISTRATION SCREEN
+    // -------------------------------------------------------------------------
+    
+    // Global Stats
+    document.getElementById('btn-admin-stats').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/auth/admin/stats/global/', 'GET');
+        if (res.ok && res.data) {
+            const stats = res.data;
+            const container = document.getElementById('admin-stats-output');
+            container.innerHTML = `
+                <div class="grid-2col text-center" style="gap:10px;">
+                    <div class="card" style="padding:10px; background-color: var(--bg-primary);">
+                        <h3 style="color:var(--accent);">${stats.total_users || 0}</h3>
+                        <span class="text-muted" style="font-size:0.75rem;">Utilisateurs</span>
+                    </div>
+                    <div class="card" style="padding:10px; background-color: var(--bg-primary);">
+                        <h3 style="color:var(--success);">${stats.total_prestataires || 0}</h3>
+                        <span class="text-muted" style="font-size:0.75rem;">Prestataires</span>
+                    </div>
+                    <div class="card" style="padding:10px; background-color: var(--bg-primary);">
+                        <h3 style="color:var(--warning);">${stats.total_commandes || 0}</h3>
+                        <span class="text-muted" style="font-size:0.75rem;">Commandes</span>
+                    </div>
+                    <div class="card" style="padding:10px; background-color: var(--bg-primary);">
+                        <h3 style="color:var(--success);">${stats.chiffre_affaires_total || 0} F</h3>
+                        <span class="text-muted" style="font-size:0.75rem;">CA Total</span>
+                    </div>
+                </div>
+            `;
+        }
+    });
+
+    // Toggle User active/inactive
+    document.getElementById('form-admin-toggle-user').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('adm-user-id').value;
+        const res = await makeAPIRequest(`/api/v1/auth/admin/users/${id}/toggle-status/`, 'PATCH');
+        if (res.ok) {
+            document.getElementById('btn-admin-list-users').click();
+        }
+    });
+
+    // Load Admin Users List
+    document.getElementById('btn-admin-list-users').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/auth/admin/users/', 'GET');
+        const body = document.getElementById('admin-users-table-body');
+        body.innerHTML = '';
+        
+        const results = res.data.results || res.data || [];
+        results.forEach(u => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${u.id}</td>
+                <td>${u.email}</td>
+                <td>${u.telephone || '-'}</td>
+                <td>${u.role_principal || 'client'}</td>
+                <td>${u.is_active ? '✅ Oui' : '❌ Non'}</td>
+                <td>${u.is_staff ? '👑 Oui' : '❌ Non'}</td>
+            `;
+            // clicking row prepopulates active/inactive form
+            tr.addEventListener('click', () => {
+                document.getElementById('adm-user-id').value = u.id;
+            });
+            body.appendChild(tr);
+        });
+    });
+
+    // Validate Prestataire request
+    document.getElementById('form-admin-validate-prestataire').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('adm-pres-id').value;
+        const taux_commission = parseFloat(document.getElementById('adm-pres-commission').value);
+        const reduction_client_pourcentage = parseFloat(document.getElementById('adm-pres-reduction').value);
+        const res = await makeAPIRequest(`/api/v1/auth/admin/prestataires/validate/${id}/`, 'PATCH', {
+            taux_commission,
+            reduction_client_pourcentage
+        });
+        if (res.ok) {
+            document.getElementById('btn-admin-list-prestataires').click();
+        }
+    });
+
+    // Load Admin Prestataires
+    document.getElementById('btn-admin-list-prestataires').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/auth/admin/prestataires/', 'GET');
+        const body = document.getElementById('admin-prestataires-table-body');
+        body.innerHTML = '';
+
+        const results = res.data.results || res.data || [];
+        results.forEach(p => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${p.id}</td>
+                <td>${p.user_email || p.user}</td>
+                <td>${p.nom_boutique}</td>
+                <td><span class="status-badge status-${p.statut}">${p.statut}</span></td>
+                <td>${p.solde_commission} FCFA</td>
+                <td>${p.solde_commission} FCFA</td>
+            `;
+            tr.addEventListener('click', () => {
+                document.getElementById('adm-pres-id').value = p.id;
+                document.getElementById('adm-payout-pres-id').value = p.id;
+            });
+            body.appendChild(tr);
+        });
+    });
+
+    // Payout launcher
+    document.getElementById('form-admin-payout').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('adm-payout-pres-id').value;
+        const montant = parseInt(document.getElementById('adm-payout-amount').value);
+
+        const res = await makeAPIRequest(`/api/v1/auth/admin/prestataires/${id}/payout/`, 'POST', { montant });
+        if (res.ok) {
+            document.getElementById('btn-admin-list-payouts').click();
+        }
+    });
+
+    // List payouts history
+    document.getElementById('btn-admin-list-payouts').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/auth/admin/payouts/', 'GET');
+        const body = document.getElementById('admin-payouts-table-body');
+        body.innerHTML = '';
+
+        const results = res.data.results || res.data || [];
+        results.forEach(pay => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${pay.id}</td>
+                <td>Boutique ID: ${pay.prestataire}</td>
+                <td>${pay.montant} FCFA</td>
+                <td><span class="status-badge status-${pay.statut}">${pay.statut}</span></td>
+                <td>${pay.mode_paiement || 'Monetbil'}</td>
+                <td>${new Date(pay.date_creation).toLocaleDateString()}</td>
+            `;
+            body.appendChild(tr);
+        });
+    });
+
+    // Promote User to Livreur
+    document.getElementById('form-admin-promote-livreur').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const user_id = parseInt(document.getElementById('adm-promote-user-id').value);
+        const vehicule = document.getElementById('adm-promote-vehicule').value.trim();
+
+        const body = { user_id };
+        if (vehicule) body.vehicule = vehicule;
+        const res = await makeAPIRequest('/api/v1/auth/admin/livreurs/promote/', 'POST', body);
+        if (res.ok) {
+            document.getElementById('btn-admin-list-livreurs').click();
+        }
+    });
+
+    // Assign Delivery Livreur
+    document.getElementById('form-admin-assign-delivery').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const orderId = document.getElementById('adm-assign-order-id').value;
+        const livreur_id = parseInt(document.getElementById('adm-assign-livreur-id').value);
+
+        const res = await makeAPIRequest(`/api/v1/auth/admin/commandes/${orderId}/affecter-livreur/`, 'POST', { livreur_id });
+        if (res.ok) {
+            document.getElementById('btn-admin-monitor-deliveries').click();
+        }
+    });
+
+    // List Livreurs
+    document.getElementById('btn-admin-list-livreurs').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/auth/admin/livreurs/', 'GET');
+        const body = document.getElementById('admin-livreurs-table-body');
+        body.innerHTML = '';
+
+        const results = res.data.results || res.data || [];
+        results.forEach(l => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${l.id}</td>
+                <td>${l.user_email || l.user}</td>
+                <td>${l.telephone || '-'}</td>
+                <td>${l.vehicule || 'Non spécifié'}</td>
+                <td>${l.disponible ? '🟢 Oui' : '🔴 Non'}</td>
+                <td>${l.en_livraison ? '📦 Oui' : '⚪ Non'}</td>
+            `;
+            tr.addEventListener('click', () => {
+                document.getElementById('adm-assign-livreur-id').value = l.id;
+            });
+            body.appendChild(tr);
+        });
+    });
+
+    // Deliveries Monitor list
+    document.getElementById('btn-admin-monitor-deliveries').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/auth/admin/livraisons/', 'GET');
+        const body = document.getElementById('admin-deliveries-table-body');
+        body.innerHTML = '';
+
+        const results = res.data.results || res.data || [];
+        results.forEach(d => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>Commande #${d.commande_id || d.id}</td>
+                <td>${d.livreur_email || 'Livreur ID: ' + d.livreur_id}</td>
+                <td>${d.client_nom || 'Client ID: ' + d.client_id}</td>
+                <td>${d.adresse_livraison || 'Non renseignée'}</td>
+                <td><span class="status-badge status-${d.statut_livraison}">${d.statut_livraison}</span></td>
+                <td>${d.date_affectation ? new Date(d.date_affectation).toLocaleString() : '-'}</td>
+            `;
+            body.appendChild(tr);
+        });
+    });
+
+
+
+    // Update Prestataire existing
+    document.getElementById('form-admin-update-prestataire').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('adm-update-pres-id').value;
+        const body = {};
+        const statut = document.getElementById('adm-update-pres-status').value;
+        const taux = document.getElementById('adm-update-pres-commission').value;
+        const reduction = document.getElementById('adm-update-pres-reduction').value;
+        if (statut) body.statut = statut;
+        if (taux) body.taux_commission = parseFloat(taux);
+        if (reduction) body.reduction_client_pourcentage = parseFloat(reduction);
+        if (!id) return alert('Indique un ID prestataire.');
+        if (Object.keys(body).length === 0) return alert('Renseigne au moins un champ à modifier.');
+        const res = await makeAPIRequest(`/api/v1/auth/admin/prestataires/${id}/update/`, 'PATCH', body);
+        if (res.ok) document.getElementById('btn-admin-list-prestataires').click();
+    });
+
+    // Admin notifications
+    document.getElementById('btn-admin-list-notifications').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/utilisateur/notifications/', 'GET');
+        const container = document.getElementById('admin-notifications-list');
+        container.innerHTML = '';
+        const results = res.data.results || res.data || [];
+        if (!results.length) {
+            container.innerHTML = '<p class="text-muted text-center">Aucune notification.</p>';
+            return;
+        }
+        results.forEach(notification => {
+            const item = document.createElement('div');
+            item.className = `notification-item ${notification.is_read ? '' : 'unread'}`;
+            item.innerHTML = `
+                <div class="notification-header">
+                    <span class="notif-badge-type">${notification.type_notification || notification.type || 'info'}</span>
+                    <span>${notification.created_at ? new Date(notification.created_at).toLocaleString() : ''}</span>
+                </div>
+                <div class="notification-title">${notification.title || notification.titre || 'Notification'}</div>
+                <div class="notification-body">${notification.message || notification.contenu || notification.body || ''}</div>
+            `;
+            container.appendChild(item);
+        });
+    });
+
+    // Admin prestataire requests list
+    document.getElementById('btn-admin-list-requests').addEventListener('click', async () => {
+        const res = await makeAPIRequest('/api/v1/utilisateur/prestataire-requests/', 'GET');
+        const body = document.getElementById('admin-requests-table-body');
+        body.innerHTML = '';
+        const results = res.data.results || res.data || [];
+        if (!results.length) {
+            body.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Aucune demande.</td></tr>';
+            return;
+        }
+        results.forEach(req => {
+            const tr = document.createElement('tr');
+            tr.className = 'clickable-row';
+            tr.innerHTML = `
+                <td>${req.id}</td>
+                <td>${req.user_email || req.client_email || req.user || '-'}</td>
+                <td>${req.nom_boutique || '-'}</td>
+                <td>${req.statut || '-'}</td>
+            `;
+            tr.addEventListener('click', () => {
+                document.getElementById('adm-req-detail-id').value = req.id;
+            });
+            body.appendChild(tr);
+        });
+    });
+
+    // Admin prestataire request detail
+    document.getElementById('form-admin-get-request-detail').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('adm-req-detail-id').value;
+        const res = await makeAPIRequest(`/api/v1/utilisateur/prestataire-requests/${id}/`, 'GET');
+        if (!res.ok || !res.data) return;
+        const detail = res.data;
+        document.getElementById('admin-request-detail-output').style.display = 'block';
+        document.getElementById('detail-req-boutique').textContent = detail.nom_boutique || 'Boutique';
+        document.getElementById('detail-req-user').textContent = detail.user_email || detail.client_email || detail.user || '-';
+        document.getElementById('detail-req-desc').textContent = detail.description || '-';
+        document.getElementById('detail-req-date').textContent = detail.date_creation ? new Date(detail.date_creation).toLocaleString() : '-';
+        document.getElementById('detail-req-status').textContent = detail.statut || '-';
+        document.getElementById('adm-pres-id').value = detail.id || id;
+        document.getElementById('adm-update-pres-id').value = detail.id || id;
+    });
+
+    // Quick validate request button
+    document.getElementById('btn-quick-validate-req').addEventListener('click', async () => {
+        const id = document.getElementById('adm-req-detail-id').value || document.getElementById('adm-pres-id').value;
+        const taux_commission = parseFloat(document.getElementById('adm-pres-commission').value || '0') || 10;
+        const reduction_client_pourcentage = parseFloat(document.getElementById('adm-pres-reduction').value || '0') || 0;
+        const res = await makeAPIRequest(`/api/v1/auth/admin/prestataires/validate/${id}/`, 'PATCH', {
+            taux_commission,
+            reduction_client_pourcentage
+        });
+        if (res.ok) document.getElementById('btn-admin-list-requests').click();
+    });
+
+    // Monetbil webhook simulator
+    document.getElementById('form-webhook-simulator').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const processing_number = document.getElementById('web-processing-number').value.trim();
+        const status = document.getElementById('web-status').value;
+        const message = document.getElementById('web-message').value.trim();
+        await makeAPIRequest('/api/v1/auth/payout/webhook/', 'POST', { processing_number, status, message });
+    });
+
+    // -------------------------------------------------------------------------
+    // 10. OPENAPI ENDPOINT EXPLORER
+    // -------------------------------------------------------------------------
+    const endpointExplorer = {
+        operations: [],
+        selected: null
+    };
+
+    const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete'];
+
+    function parseLooseJSON(value, fallback = {}) {
+        const trimmed = value.trim();
+        if (!trimmed) return fallback;
+        try {
+            return JSON.parse(trimmed);
+        } catch (error) {
+            throw new Error(`JSON invalide: ${error.message}`);
+        }
+    }
+
+    function normalizeSchemaPath(path) {
+        return path.startsWith('/') ? path : `/${path}`;
+    }
+
+    function operationLabel(operation, method, path) {
+        return operation.summary || operation.operationId || `${method.toUpperCase()} ${path}`;
+    }
+
+    function schemaExampleFromObject(schema) {
+        if (!schema || typeof schema !== 'object') return {};
+        if (schema.example !== undefined) return schema.example;
+        if (schema.default !== undefined) return schema.default;
+        if (schema.type === 'array') return [];
+        if (schema.properties) {
+            return Object.fromEntries(Object.entries(schema.properties).map(([key, prop]) => {
+                if (prop.example !== undefined) return [key, prop.example];
+                if (prop.default !== undefined) return [key, prop.default];
+                if (prop.type === 'integer' || prop.type === 'number') return [key, 0];
+                if (prop.type === 'boolean') return [key, false];
+                if (prop.type === 'array') return [key, []];
+                if (prop.type === 'object') return [key, {}];
+                return [key, ''];
+            }));
+        }
+        return {};
+    }
+
+    function requestBodyExample(operation) {
+        const content = operation.requestBody && operation.requestBody.content;
+        if (!content) return '';
+        const jsonContent = content['application/json'] || Object.values(content)[0];
+        if (!jsonContent) return '';
+        return JSON.stringify(schemaExampleFromObject(jsonContent.schema), null, 2);
+    }
+
+    async function fetchOpenAPISchema() {
+        lastRequest = { endpoint: '/api/schema/', method: 'GET', bodyData: null, headers: {} };
+        try {
+            const response = await fetch(`${state.apiBaseUrl}/api/schema/`, {
+                headers: {
+                    'Accept': 'application/vnd.oai.openapi+json, application/json',
+                    ...(state.token ? { 'Authorization': `Bearer ${state.token}` } : {})
+                }
+            });
+            const text = await response.text();
+            if (!response.ok) {
+                throw new Error(`Schema indisponible (${response.status}) ${text.slice(0, 160)}`);
+            }
+            try {
+                return JSON.parse(text);
+            } catch (error) {
+                throw new Error('Le schema recu n\'est pas du JSON. Verifie que /api/schema/ renvoie OpenAPI JSON.');
+            }
+        } catch (error) {
+            // Show network error diagnostic panel if it's a Failed to fetch or connection error
+            if (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('connexion') || error.message.includes('Failed')) {
+                displayNetworkErrorBanner(`${state.apiBaseUrl}/api/schema/`, error.message);
+            }
+            throw error;
+        }
+    }
+
+    function extractOperations(schema) {
+        const operations = [];
+        Object.entries(schema.paths || {}).forEach(([path, pathItem]) => {
+            HTTP_METHODS.forEach(method => {
+                const operation = pathItem[method];
+                if (!operation) return;
+                const parameters = operation.parameters || [];
+                operations.push({
+                    method: method.toUpperCase(),
+                    path: normalizeSchemaPath(path),
+                    label: operationLabel(operation, method, path),
+                    summary: operation.description || operation.summary || '',
+                    tags: operation.tags || [],
+                    parameters,
+                    requestBody: operation.requestBody || null,
+                    operation
+                });
+            });
+        });
+        return operations.sort((a, b) => `${a.path} ${a.method}`.localeCompare(`${b.path} ${b.method}`));
+    }
+
+    function renderEndpointList() {
+        const listEl = document.getElementById('endpoint-list');
+        const search = document.getElementById('endpoint-search').value.trim().toLowerCase();
+        const operations = endpointExplorer.operations.filter(op => {
+            const haystack = `${op.method} ${op.path} ${op.label} ${op.tags.join(' ')}`.toLowerCase();
+            return !search || haystack.includes(search);
+        });
+
+        if (!operations.length) {
+            listEl.innerHTML = '<p class="text-muted text-center">Aucun endpoint trouve.</p>';
+            return;
+        }
+
+        listEl.innerHTML = '';
+        operations.forEach((op, index) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'endpoint-item';
+            btn.dataset.index = endpointExplorer.operations.indexOf(op);
+            btn.innerHTML = `
+                <span class="method-pill method-${op.method.toLowerCase()}">${op.method}</span>
+                <span class="endpoint-item-main">
+                    <strong>${op.path}</strong>
+                    <small>${op.label}</small>
+                </span>
+            `;
+            btn.addEventListener('click', () => selectEndpoint(Number(btn.dataset.index)));
+            listEl.appendChild(btn);
+        });
+    }
+
+    function expectedPathValue(name, path) {
+        const n = name.toLowerCase();
+        const p = path.toLowerCase();
+        if (n === 'slug') {
+            if (p.includes('parfum')) return 'royal-oud';
+            if (p.includes('accessoire')) return 'coffret-luxe';
+            if (p.includes('flacon')) return 'flacon-std-50';
+            if (p.includes('essence')) return 'essence-rose';
+            if (p.includes('tag')) return 'saison-ete';
+            if (p.includes('categorie')) return 'boises';
+            return 'royal-oud';
+        }
+        if (n === 'id' || n === 'pk') {
+            return 1;
+        }
+        if (n === 'email') return 'admin@example.com';
+        return 'test';
+    }
+
+    function expectedQueryValue(param, path) {
+        if (param.defaultValue !== undefined) return param.defaultValue;
+        if (param.example !== undefined) return param.example;
+        if (param.schema && param.schema.example !== undefined) return param.schema.example;
+        if (param.schema && param.schema.default !== undefined) return param.schema.default;
+        
+        const name = param.name.toLowerCase();
+        if (name === 'search') return '';
+        if (name === 'page') return 1;
+        if (name === 'page_size') return 10;
+        if (name === 'ordering') return '';
+        return '';
+    }
+
+    function getExpectedBody(method, path, schemaBody) {
+        if (method !== 'POST' && method !== 'PUT' && method !== 'PATCH') return '';
+        const p = path.toLowerCase();
+        
+        let parsedSchema = null;
+        if (schemaBody) {
+            try {
+                parsedSchema = JSON.parse(schemaBody);
+            } catch(e) {}
+        }
+        
+        if (p.includes('/auth/login/') || p.includes('/auth/web/login/') || p.includes('/auth/mobile/login/')) {
+            return JSON.stringify({ email: "admin@example.com", password: "admin123" }, null, 2);
+        }
+        if (p.includes('/auth/registration/verify-email/')) {
+            return JSON.stringify({ key: "votre_code_verification_ici" }, null, 2);
+        }
+        if (p.includes('/auth/registration/resend-email/')) {
+            return JSON.stringify({ email: "nouveau@example.com" }, null, 2);
+        }
+        if (p.includes('/auth/registration/')) {
+            return JSON.stringify({ 
+                email: "nouveau@example.com", 
+                password: "password123", 
+                password_confirm: "password123", 
+                first_name: "Nouveau", 
+                last_name: "Utilisateur",
+                telephone: "+237690000000"
+            }, null, 2);
+        }
+        if (p.includes('/auth/password/reset/')) {
+            return JSON.stringify({ email: "client@test.com" }, null, 2);
+        }
+        if (p.includes('/auth/password/change/')) {
+            return JSON.stringify({ old_password: "password123", new_password1: "newpassword123", new_password2: "newpassword123" }, null, 2);
+        }
+        if (p.includes('/auth/me/change-email/')) {
+            return JSON.stringify({ email: "nouveau.email@example.com", current_password: "password123" }, null, 2);
+        }
+        if (p.includes('/auth/me/')) {
+            return JSON.stringify({ first_name: "Jean-Pierre", last_name: "Dupont", telephone: "+237655443322", current_password: "password123" }, null, 2);
+        }
+        if (p.includes('/auth/prestataire/apply/')) {
+            return JSON.stringify({ nom_boutique: "Ma Boutique " + Math.floor(Math.random() * 1000), description: "Créateur indépendant de parfums." }, null, 2);
+        }
+        if (p.includes('/payout/webhook/')) {
+            return JSON.stringify({ processing_number: "payout_test_123", status: "success", message: "Transaction réussie" }, null, 2);
+        }
+        if (p.includes('/livreur/livraisons/') && p.includes('/statut/')) {
+            return JSON.stringify({ action: "livrer" }, null, 2);
+        }
+        if (p.includes('/admin/prestataires/validate/')) {
+            return JSON.stringify({ taux_commission: 15.0, reduction_client_pourcentage: 5.0 }, null, 2);
+        }
+        if (p.includes('/admin/prestataires/') && p.includes('/payout/')) {
+            return JSON.stringify({ montant: 5000 }, null, 2);
+        }
+        if (p.includes('/admin/prestataires/') && p.includes('/update/')) {
+            return JSON.stringify({ statut: "actif", taux_commission: 15.0, reduction_client_pourcentage: 5.0 }, null, 2);
+        }
+        if (p.includes('/admin/livreurs/promote/')) {
+            return JSON.stringify({ user_id: 2, vehicule: "Moto Haojue" }, null, 2);
+        }
+        if (p.includes('/admin/commandes/') && p.includes('/affecter-livreur/')) {
+            return JSON.stringify({ livreur_id: 1 }, null, 2);
+        }
+        if (p.includes('/shop/parfums/') && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+            return JSON.stringify({
+                nom: "Royal Oud",
+                slug: "royal-oud",
+                reference_sku: "SKU-OUD-99",
+                description_courte: "Un parfum boisé d'exception.",
+                description_longue: "Une création raffinée à base d'essence d'oud.",
+                prix_unitaire: "35000.00",
+                stock_quantite: 50,
+                genre_cible: "mixte",
+                intensite: "forte",
+                actif: true,
+                categorie_id: 1
+            }, null, 2);
+        }
+        if (p.includes('/shop/accessoires/') && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+            return JSON.stringify({
+                nom: "Coffret Luxe",
+                slug: "coffret-luxe",
+                reference_sku: "SKU-COF-01",
+                description_courte: "Un magnifique coffret.",
+                prix_unitaire: "15000.00",
+                stock_quantite: 30,
+                matiere: "Bois",
+                couleur: "Noir",
+                taille: "M",
+                actif: true,
+                type_accessoire_id: 1
+            }, null, 2);
+        }
+        if (p.includes('/shop/flacons/') && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+            return JSON.stringify({
+                nom: "Flacon Standard",
+                slug: "flacon-std-50",
+                reference_sku: "SKU-FLA-50",
+                contenance_ml: 50,
+                matiere: "Verre",
+                couleur: "Transparent",
+                prix_unitaire: "2500.00",
+                stock_quantite: 100,
+                actif: true,
+                type_flacon_id: 1
+            }, null, 2);
+        }
+        if (p.includes('/shop/favoris/')) {
+            return JSON.stringify({ parfum: 1 }, null, 2);
+        }
+        if (p.includes('/shop/tags/')) {
+            return JSON.stringify({ nom: "Saison Éte", slug: "saison-ete", type: "saison", actif: true }, null, 2);
+        }
+        if (p.includes('/shop/categories-parfum/')) {
+            return JSON.stringify({ nom: "Boisés", slug: "boises", description: "Parfums aux notes de bois", ordre_affichage: 1, actif: true }, null, 2);
+        }
+        if (p.includes('/shop/types-accessoire/')) {
+            return JSON.stringify({ nom: "Coffrets", slug: "coffrets", description: "Coffrets cadeaux", actif: true }, null, 2);
+        }
+        if (p.includes('/shop/types-flacon/')) {
+            return JSON.stringify({ nom: "Atomiseurs", slug: "atomiseurs", description: "Flacons atomiseurs", actif: true }, null, 2);
+        }
+        if (p.includes('/shop/produits-essence/')) {
+            return JSON.stringify({ essence: 1, taille_ml: 50, prix: "15000.00", stock_disponible: 20, actif: true }, null, 2);
+        }
+        if (p.includes('/lab/essences-perso/')) {
+            return JSON.stringify({
+                nom: "Mon Essence de Rose Noire",
+                lignes: [
+                    { ingredient: 1, quantite_ml: 5.0 },
+                    { ingredient: 2, quantite_ml: 10.0 }
+                ]
+            }, null, 2);
+        }
+        if (p.includes('/lab/parfums-perso/')) {
+            return JSON.stringify({
+                nom: "Ma Douce Nuit",
+                description: "Création douce pour le soir",
+                flacon: 1,
+                lignes: [
+                    { essence_catalogue: 1, quantite_ml: 10.0 },
+                    { essence_personnalisee: null, quantite_ml: 5.0 }
+                ]
+            }, null, 2);
+        }
+        if (p.includes('/lab/essences/')) {
+            return JSON.stringify({
+                nom: "Essence de Rose",
+                slug: "essence-rose",
+                code_reference: "ESS-ROS-01",
+                prix_par_ml: "150.00",
+                actif: true,
+                initial_lot: {
+                    stock_ml: "1000.00",
+                    seuil_alerte_ml: "100.00",
+                    reference_fournisseur: "LOT-INITIAL"
+                }
+            }, null, 2);
+        }
+        if (p.includes('/lab/lots-essence/')) {
+            return JSON.stringify({ essence: 1, stock_ml: "500.00", seuil_alerte_ml: "50.00", reference_fournisseur: "FOURN-XYZ", actif: true }, null, 2);
+        }
+        if (p.includes('/lab/ingredients/')) {
+            return JSON.stringify({ nom: "Extrait de Jasmin", slug: "jasmin-ext", description: "Note florale pure", prix_par_ml: "250.00", stock_ml: "500.00", actif: true }, null, 2);
+        }
+        if (p.includes('/lab/ia-recommandation/')) {
+            return JSON.stringify({ prompt: "Je cherche un parfum frais, avec des notes de citron et de menthe pour porter en été après le sport." }, null, 2);
+        }
+        
+        if (parsedSchema && Object.keys(parsedSchema).length > 0) {
+            return JSON.stringify(parsedSchema, null, 2);
+        }
+        
+        return '{}';
+    }
+
+    function selectEndpoint(index) {
+        const op = endpointExplorer.operations[index];
+        if (!op) return;
+        endpointExplorer.selected = op;
+
+        document.querySelectorAll('.endpoint-item').forEach(item => item.classList.toggle('active', Number(item.dataset.index) === index));
+        document.getElementById('endpoint-title').textContent = `${op.method} ${op.path}`;
+        document.getElementById('endpoint-summary').textContent = op.label;
+        const pill = document.getElementById('endpoint-method-pill');
+        pill.textContent = op.method;
+        pill.className = `method-pill method-${op.method.toLowerCase()}`;
+        document.getElementById('endpoint-method').value = op.method;
+        document.getElementById('endpoint-path').value = op.path;
+
+        const pathParams = {};
+        const queryParams = {};
+        op.parameters.forEach(param => {
+            if (param.in === 'path') pathParams[param.name] = expectedPathValue(param.name, op.path);
+            if (param.in === 'query') queryParams[param.name] = expectedQueryValue(param, op.path);
+        });
+        document.getElementById('endpoint-path-values').value = Object.keys(pathParams).length ? JSON.stringify(pathParams, null, 2) : '';
+        document.getElementById('endpoint-query-values').value = Object.keys(queryParams).length ? JSON.stringify(queryParams, null, 2) : '';
+        
+        const method = op.method;
+        const schemaBody = requestBodyExample(op.operation);
+        document.getElementById('endpoint-body').value = getExpectedBody(method, op.path, schemaBody);
+    }
+
+    function buildEndpointRequest() {
+        const method = document.getElementById('endpoint-method').value;
+        let path = document.getElementById('endpoint-path').value.trim();
+        const pathValues = parseLooseJSON(document.getElementById('endpoint-path-values').value, {});
+        const queryValues = parseLooseJSON(document.getElementById('endpoint-query-values').value, {});
+        const extraHeaders = parseLooseJSON(document.getElementById('endpoint-extra-headers').value, {});
+        const bodyText = document.getElementById('endpoint-body').value.trim();
+
+        Object.entries(pathValues).forEach(([key, value]) => {
+            path = path.replace(`{${key}}`, encodeURIComponent(value));
+        });
+
+        const query = new URLSearchParams();
+        Object.entries(queryValues).forEach(([key, value]) => {
+            if (value !== '' && value !== null && value !== undefined) query.append(key, value);
+        });
+        const endpoint = query.toString() ? `${path}?${query}` : path;
+        const body = bodyText ? parseLooseJSON(bodyText, {}) : null;
+        return { endpoint, method, body, headers: extraHeaders };
+    }
+
+    function copyText(value) {
+        if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(value);
+        }
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+        return Promise.resolve();
+    }
+
+    function buildCurlCommand({ endpoint, method, body, headers }) {
+        const parts = [`curl -X ${method}`, `'${state.apiBaseUrl}${endpoint}'`, `-H 'Accept: application/json'`];
+        if (state.token) parts.push(`-H 'Authorization: Bearer ${state.token}'`);
+        Object.entries(headers).forEach(([key, value]) => parts.push(`-H '${key}: ${value}'`));
+        if (body) {
+            parts.push(`-H 'Content-Type: application/json'`);
+            parts.push(`--data '${JSON.stringify(body).replace(/'/g, "'\\''")}'`);
+        }
+        return parts.join(' ');
+    }
+
+    document.getElementById('btn-load-endpoints').addEventListener('click', async () => {
+        const listEl = document.getElementById('endpoint-list');
+        listEl.innerHTML = '<p class="text-muted text-center">Chargement du schema...</p>';
+        try {
+            const schema = await fetchOpenAPISchema();
+            endpointExplorer.operations = mergeKnownOperations(extractOperations(schema));
+            renderEndpointList();
+            document.getElementById('response-output-json').innerHTML = syntaxHighlightJSON({
+                info: `${endpointExplorer.operations.length} endpoints charges depuis /api/schema/`,
+                titre: schema.info && schema.info.title,
+                version: schema.info && schema.info.version
+            });
+        } catch (error) {
+            listEl.innerHTML = `<p class="text-muted text-center">${error.message}</p>`;
+            document.getElementById('response-output-json').innerHTML = syntaxHighlightJSON({ error: error.message });
+        }
+    });
+
+    document.getElementById('endpoint-search').addEventListener('input', renderEndpointList);
+
+    document.getElementById('form-endpoint-tester').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        try {
+            const request = buildEndpointRequest();
+            await makeAPIRequest(request.endpoint, request.method, request.body, request.headers);
+        } catch (error) {
+            document.getElementById('response-output-json').innerHTML = syntaxHighlightJSON({ error: error.message });
+            document.getElementById('response-status').textContent = 'STATUS : FORMULAIRE';
+            document.getElementById('response-status').className = 'badge badge-4xx';
+        }
+    });
+
+    document.getElementById('btn-copy-endpoint-curl').addEventListener('click', async () => {
+        try {
+            const request = buildEndpointRequest();
+            await copyText(buildCurlCommand(request));
+            document.getElementById('response-output-json').innerHTML = syntaxHighlightJSON({ info: 'Commande cURL copiee dans le presse-papiers.' });
+        } catch (error) {
+            document.getElementById('response-output-json').innerHTML = syntaxHighlightJSON({ error: error.message });
+        }
+    });
+
+    document.getElementById('btn-reset-endpoint-form').addEventListener('click', () => {
+        ['endpoint-path-values', 'endpoint-query-values', 'endpoint-body', 'endpoint-extra-headers'].forEach(id => {
+            document.getElementById(id).value = '';
+        });
+    });
+
+
+    // -------------------------------------------------------------------------
+    // 11. PRACTICAL TEST PAGES
+    // -------------------------------------------------------------------------
+    const quickTests = {
+        activeCategory: 'all',
+        categories: []
+    };
+
+    const QUICK_CATEGORY_LABELS = {
+        all: 'Tout',
+        auth: 'Authentification',
+        shop: 'Boutique',
+        lab: 'Laboratoire',
+        orders: 'Commandes',
+        livreur: 'Livreur',
+        admin: 'Admin',
+        utilisateur: 'Utilisateur',
+        schema: 'Docs / Schema',
+        other: 'Autres'
+    };
+
+
+    const KNOWN_ENDPOINTS = [
+        ['GET', '/api/schema/', 'Schema OpenAPI'],
+        ['GET', '/api/docs/', 'Documentation Swagger'],
+        ['GET', '/api/redoc/', 'Documentation Redoc'],
+        ['POST', '/api/v1/auth/login/', 'Connexion legacy', { email: 'client@test.com', password: 'Motdepasse123*' }],
+        ['POST', '/api/v1/auth/web/login/', 'Connexion web', { email: 'client@test.com', password: 'Motdepasse123*' }],
+        ['POST', '/api/v1/auth/mobile/login/', 'Connexion mobile', { email: 'client@test.com', password: 'Motdepasse123*' }],
+        ['POST', '/api/v1/auth/logout/', 'Deconnexion'],
+        ['GET', '/api/v1/auth/user/', 'Utilisateur dj-rest-auth'],
+        ['PATCH', '/api/v1/auth/user/', 'Modifier utilisateur dj-rest-auth', { first_name: 'Test', last_name: 'API' }],
+        ['POST', '/api/v1/auth/password/reset/', 'Demande reset password', { email: 'client@test.com' }],
+        ['POST', '/api/v1/auth/password/reset/confirm/', 'Confirmer reset password', { uid: '', token: '', new_password1: 'Motdepasse123*', new_password2: 'Motdepasse123*' }],
+        ['POST', '/api/v1/auth/password/change/', 'Changer password', { old_password: 'Motdepasse123*', new_password1: 'Nouveau123*', new_password2: 'Nouveau123*' }],
+        ['POST', '/api/v1/auth/registration/', 'Inscription', { email: 'client@test.com', password: 'Motdepasse123*', password_confirm: 'Motdepasse123*', first_name: '', last_name: '', telephone: '' }],
+        ['POST', '/api/v1/auth/registration/verify-email/', 'Verifier email', { key: '' }],
+        ['POST', '/api/v1/auth/registration/resend-email/', 'Renvoyer email verification', { email: 'client@test.com' }],
+        ['POST', '/api/v1/auth/google/', 'Connexion Google', { access_token: 'GOOGLE_ACCESS_TOKEN', id_token: '' }],
+        ['GET', '/api/v1/auth/me/', 'Mon profil'],
+        ['PATCH', '/api/v1/auth/me/', 'Modifier mon profil', { first_name: 'Test', last_name: 'API' }],
+        ['PUT', '/api/v1/auth/me/', 'Remplacer mon profil', { first_name: 'Test', last_name: 'API' }],
+        ['POST', '/api/v1/auth/me/change-email/', 'Changer email', { email: 'nouveau@test.com' }],
+        ['POST', '/api/v1/auth/prestataire/apply/', 'Postuler prestataire', { nom_boutique: 'Boutique test', description: 'Demande de test' }],
+        ['GET', '/api/v1/auth/prestataire/dashboard/', 'Dashboard prestataire'],
+        ['GET', '/api/v1/auth/prestataire/historique/', 'Historique prestataire'],
+        ['GET', '/api/v1/auth/prestataire/payouts/', 'Payouts prestataire'],
+        ['POST', '/api/v1/auth/payout/webhook/', 'Webhook payout', { processing_number: 'TEST-123', status: 'success', message: 'Test' }],
+        ['GET', '/api/v1/auth/livreur/dashboard/', 'Dashboard livreur'],
+        ['GET', '/api/v1/auth/livreur/livraisons/', 'Livraisons livreur'],
+        ['POST', '/api/v1/auth/livreur/livraisons/{pk}/statut/', 'Changer statut livraison', { action: 'livrer' }, { pk: 1 }],
+        ['GET', '/api/v1/auth/admin/users/', 'Admin utilisateurs'],
+        ['PATCH', '/api/v1/auth/admin/users/{pk}/toggle-status/', 'Admin activer/desactiver utilisateur', null, { pk: 1 }],
+        ['GET', '/api/v1/auth/admin/prestataires/', 'Admin prestataires'],
+        ['PATCH', '/api/v1/auth/admin/prestataires/validate/{pk}/', 'Admin valider prestataire', { taux_commission: 10, reduction_client_pourcentage: 0 }, { pk: 1 }],
+        ['PATCH', '/api/v1/auth/admin/prestataires/{pk}/update/', 'Admin modifier prestataire', { statut: 'actif' }, { pk: 1 }],
+        ['POST', '/api/v1/auth/admin/prestataires/{pk}/payout/', 'Admin payout prestataire', { montant: 5000 }, { pk: 1 }],
+        ['GET', '/api/v1/auth/admin/payouts/', 'Admin liste payouts'],
+        ['GET', '/api/v1/auth/admin/stats/global/', 'Admin statistiques globales'],
+        ['GET', '/api/v1/auth/admin/livreurs/', 'Admin livreurs'],
+        ['POST', '/api/v1/auth/admin/livreurs/promote/', 'Admin promouvoir livreur', { user_id: 1, vehicule: 'Moto' }],
+        ['PATCH', '/api/v1/auth/admin/livreurs/{pk}/', 'Admin modifier livreur', { disponible: true }, { pk: 1 }],
+        ['POST', '/api/v1/auth/admin/commandes/{pk}/affecter-livreur/', 'Admin affecter livreur', { livreur_id: 1 }, { pk: 1 }],
+        ['GET', '/api/v1/auth/admin/livraisons/', 'Admin suivi livraisons'],
+        ['GET', '/api/v1/shop/parfums/', 'Lister parfums'],
+        ['POST', '/api/v1/shop/parfums/', 'Creer parfum', {}],
+        ['GET', '/api/v1/shop/parfums/{slug}/', 'Detail parfum', null, { slug: 'test' }],
+        ['PATCH', '/api/v1/shop/parfums/{slug}/', 'Modifier parfum', {}, { slug: 'test' }],
+        ['DELETE', '/api/v1/shop/parfums/{slug}/', 'Supprimer parfum', null, { slug: 'test' }],
+        ['POST', '/api/v1/shop/parfums/{slug}/favori/', 'Ajouter/Retirer favori parfum', null, { slug: 'test' }],
+        ['GET', '/api/v1/shop/parfums/bestsellers/', 'Parfums bestsellers'],
+        ['GET', '/api/v1/shop/parfums/hotsellers/', 'Parfums hotsellers'],
+        ['POST', '/api/v1/shop/parfums/{slug}/similaires/', 'Parfums similaires', null, { slug: 'test' }],
+        ['GET', '/api/v1/shop/accessoires/', 'Lister accessoires'],
+        ['POST', '/api/v1/shop/accessoires/', 'Creer accessoire', {}],
+        ['GET', '/api/v1/shop/accessoires/{slug}/', 'Detail accessoire', null, { slug: 'test' }],
+        ['PATCH', '/api/v1/shop/accessoires/{slug}/', 'Modifier accessoire', {}, { slug: 'test' }],
+        ['DELETE', '/api/v1/shop/accessoires/{slug}/', 'Supprimer accessoire', null, { slug: 'test' }],
+        ['POST', '/api/v1/shop/accessoires/{slug}/favori/', 'Ajouter/Retirer favori accessoire', null, { slug: 'test' }],
+        ['GET', '/api/v1/shop/accessoires/bestsellers/', 'Accessoires bestsellers'],
+        ['GET', '/api/v1/shop/accessoires/hotsellers/', 'Accessoires hotsellers'],
+        ['POST', '/api/v1/shop/accessoires/{slug}/similaires/', 'Accessoires similaires', null, { slug: 'test' }],
+        ['GET', '/api/v1/shop/flacons/', 'Lister flacons'],
+        ['POST', '/api/v1/shop/flacons/', 'Creer flacon', {}],
+        ['GET', '/api/v1/shop/flacons/{id}/', 'Detail flacon', null, { id: 1 }],
+        ['PATCH', '/api/v1/shop/flacons/{id}/', 'Modifier flacon', {}, { id: 1 }],
+        ['DELETE', '/api/v1/shop/flacons/{id}/', 'Supprimer flacon', null, { id: 1 }],
+        ['GET', '/api/v1/shop/favoris/', 'Lister favoris'],
+        ['GET', '/api/v1/shop/favoris/{id}/', 'Detail favori', null, { id: 1 }],
+        ['GET', '/api/v1/shop/tags/', 'Lister tags'],
+        ['POST', '/api/v1/shop/tags/', 'Creer tag', { nom: 'Tag test', slug: 'tag-test', type: 'saison', actif: true }],
+        ['PATCH', '/api/v1/shop/tags/{slug}/', 'Modifier tag', { nom: 'Tag maj' }, { slug: 'tag-test' }],
+        ['GET', '/api/v1/shop/categories-parfum/', 'Lister categories parfum'],
+        ['POST', '/api/v1/shop/categories-parfum/', 'Creer categorie parfum', { nom: 'Cat test', slug: 'cat-test', description: 'Desc', ordre_affichage: 1, actif: true }],
+        ['PATCH', '/api/v1/shop/categories-parfum/{slug}/', 'Modifier categorie parfum', { nom: 'Cat maj' }, { slug: 'cat-test' }],
+        ['GET', '/api/v1/shop/types-accessoire/', 'Lister types accessoire'],
+        ['POST', '/api/v1/shop/types-accessoire/', 'Creer type accessoire', { nom: 'Type test', slug: 'type-test', description: 'Desc', actif: true }],
+        ['PATCH', '/api/v1/shop/types-accessoire/{slug}/', 'Modifier type accessoire', { nom: 'Type maj' }, { slug: 'type-test' }],
+        ['GET', '/api/v1/shop/types-flacon/', 'Lister types flacon'],
+        ['POST', '/api/v1/shop/types-flacon/', 'Creer type flacon', { nom: 'Type test', slug: 'type-test', description: 'Desc', actif: true }],
+        ['PATCH', '/api/v1/shop/types-flacon/{slug}/', 'Modifier type flacon', { nom: 'Type maj' }, { slug: 'type-test' }],
+        ['GET', '/api/v1/shop/produits-essence/', 'Lister produits essence'],
+        ['POST', '/api/v1/shop/produits-essence/', 'Creer produit essence', { essence: 1, taille_ml: 50, prix: 15000, stock_disponible: 10, actif: true }],
+        ['PATCH', '/api/v1/shop/produits-essence/{id}/', 'Modifier produit essence', { prix: 16000 }, { id: 1 }],
+        ['GET', '/api/v1/lab/ia-recommandation/', 'IA recommandation GET'],
+        ['POST', '/api/v1/lab/ia-recommandation/', 'IA recommandation', { prompt: 'Je veux un parfum doux et floral' }],
+        ['GET', '/api/v1/lab/parfums-perso/', 'Lister parfums perso'],
+        ['POST', '/api/v1/lab/parfums-perso/', 'Creer parfum perso', {}],
+        ['GET', '/api/v1/lab/parfums-perso/{id}/', 'Detail parfum perso', null, { id: 1 }],
+        ['PATCH', '/api/v1/lab/parfums-perso/{id}/', 'Modifier parfum perso', {}, { id: 1 }],
+        ['DELETE', '/api/v1/lab/parfums-perso/{id}/', 'Supprimer parfum perso', null, { id: 1 }],
+        ['POST', '/api/v1/lab/parfums-perso/{id}/recalculer/', 'Recalculer parfum perso', null, { id: 1 }],
+        ['GET', '/api/v1/lab/essences-perso/', 'Lister essences perso'],
+        ['POST', '/api/v1/lab/essences-perso/', 'Creer essence perso', {}],
+        ['GET', '/api/v1/lab/essences-perso/{id}/', 'Detail essence perso', null, { id: 1 }],
+        ['PATCH', '/api/v1/lab/essences-perso/{id}/', 'Modifier essence perso', {}, { id: 1 }],
+        ['DELETE', '/api/v1/lab/essences-perso/{id}/', 'Supprimer essence perso', null, { id: 1 }],
+        ['GET', '/api/v1/lab/essences/', 'Lister essences'],
+        ['POST', '/api/v1/lab/essences/', 'Creer essence', {}],
+        ['GET', '/api/v1/lab/essences/{id}/', 'Detail essence', null, { id: 1 }],
+        ['PATCH', '/api/v1/lab/essences/{id}/', 'Modifier essence', {}, { id: 1 }],
+        ['DELETE', '/api/v1/lab/essences/{id}/', 'Supprimer essence', null, { id: 1 }],
+        ['GET', '/api/v1/lab/ingredients/', 'Lister ingredients'],
+        ['POST', '/api/v1/lab/ingredients/', 'Creer ingredient', {}],
+        ['GET', '/api/v1/lab/ingredients/{id}/', 'Detail ingredient', null, { id: 1 }],
+        ['PATCH', '/api/v1/lab/ingredients/{id}/', 'Modifier ingredient', {}, { id: 1 }],
+        ['DELETE', '/api/v1/lab/ingredients/{id}/', 'Supprimer ingredient', null, { id: 1 }],
+        ['GET', '/api/v1/lab/lots-essence/', 'Lister lots essence'],
+        ['POST', '/api/v1/lab/lots-essence/', 'Creer lot essence', { essence: 1, stock_ml: 500, seuil_alerte_ml: 50, reference_fournisseur: 'FOURN-1', actif: true }],
+        ['PATCH', '/api/v1/lab/lots-essence/{id}/', 'Modifier lot essence', { stock_ml: 600 }, { id: 1 }],
+        ['GET', '/api/v1/lab/labo/essences/disponible/', 'Stock disponible essences labo'],
+        ['GET', '/api/v1/lab/labo/essences/{slug}/detail/', 'Detail essence labo', null, { slug: 'essence-rose' }],
+        ['GET', '/api/v1/utilisateur/notifications/', 'Notifications admin'],
+        ['GET', '/api/v1/utilisateur/prestataire-requests/', 'Demandes prestataires'],
+        ['GET', '/api/v1/utilisateur/prestataire-requests/{pk}/', 'Detail demande prestataire', null, { pk: 1 }]
+    ];
+
+    function pathParametersFromPath(path, defaults = {}) {
+        const params = [];
+        [...path.matchAll(/\{([^}]+)\}/g)].forEach(match => {
+            params.push({
+                name: match[1],
+                in: 'path',
+                schema: typeof defaults[match[1]] === 'number' ? { type: 'integer' } : { type: 'string' },
+                defaultValue: defaults[match[1]] !== undefined ? defaults[match[1]] : (match[1].includes('id') || match[1] === 'pk' ? 1 : 'test')
+            });
+        });
+        return params;
+    }
+
+    function knownEndpointToOperation(item) {
+        const [method, path, label, exampleBody = null, pathDefaults = {}] = item;
+        return {
+            method,
+            path,
+            label,
+            summary: label,
+            tags: [],
+            parameters: pathParametersFromPath(path, pathDefaults),
+            requestBody: exampleBody ? { content: { 'application/json': { schema: { example: exampleBody } } } } : null,
+            operation: { summary: label, requestBody: exampleBody ? { content: { 'application/json': { schema: { example: exampleBody } } } } : null },
+            known: true
+        };
+    }
+
+    function mergeKnownOperations(operations) {
+        const byKey = new Map();
+        [...operations, ...KNOWN_ENDPOINTS.map(knownEndpointToOperation)].forEach(op => {
+            const key = `${op.method} ${op.path}`;
+            if (!byKey.has(key)) byKey.set(key, op);
+        });
+        return [...byKey.values()].sort((a, b) => `${a.path} ${a.method}`.localeCompare(`${b.path} ${b.method}`));
+    }
+
+    function classifyOperation(op) {
+        const path = op.path.toLowerCase();
+        if (path.includes('/api/schema') || path.includes('/api/docs') || path.includes('/api/redoc')) return 'schema';
+        if (path.includes('/api/v1/auth/admin/')) return 'admin';
+        if (path.includes('/api/v1/auth/livreur/')) return 'livreur';
+        if (path.includes('/api/v1/auth/')) return 'auth';
+        if (path.includes('/api/v1/shop/')) return 'shop';
+        if (path.includes('/api/v1/lab/')) return 'lab';
+        if (path.includes('/api/v1/orders/')) return 'orders';
+        if (path.includes('/api/v1/utilisateur/')) return 'utilisateur';
+        return 'other';
+    }
+
+    async function ensureOpenAPIOperations() {
+        if (endpointExplorer.operations.length) return endpointExplorer.operations;
+        try {
+            const schema = await fetchOpenAPISchema();
+            endpointExplorer.operations = mergeKnownOperations(extractOperations(schema));
+        } catch (error) {
+            endpointExplorer.operations = mergeKnownOperations([]);
+            document.getElementById('response-output-json').innerHTML = syntaxHighlightJSON({
+                warning: 'Schema OpenAPI indisponible. Utilisation de la liste locale des endpoints.',
+                detail: error.message
+            });
+        }
+        renderEndpointList();
+        return endpointExplorer.operations;
+    }
+
+    function categoryOrder(category) {
+        return ['all', 'auth', 'shop', 'lab', 'orders', 'livreur', 'admin', 'utilisateur', 'schema', 'other'].indexOf(category);
+    }
+
+    function renderQuickCategoryTabs() {
+        const tabs = document.getElementById('quick-category-tabs');
+        const categories = ['all', ...new Set(endpointExplorer.operations.map(classifyOperation))]
+            .sort((a, b) => categoryOrder(a) - categoryOrder(b));
+        quickTests.categories = categories;
+        tabs.innerHTML = '';
+        categories.forEach(category => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = `tab-sub-btn ${category === quickTests.activeCategory ? 'active' : ''}`;
+            btn.dataset.category = category;
+            btn.textContent = QUICK_CATEGORY_LABELS[category] || category;
+            btn.addEventListener('click', () => {
+                quickTests.activeCategory = category;
+                renderQuickCategoryTabs();
+                renderQuickTestCards();
+            });
+            tabs.appendChild(btn);
+        });
+    }
+
+    function canSendDirectly(op) {
+        const hasBody = !!requestBodyExample(op.operation);
+        const requiredPathParams = op.parameters.some(param => param.in === 'path');
+        return op.method === 'GET' && !requiredPathParams && !hasBody;
+    }
+
+    function prepareOperationInFullTester(op, pathParamOverrides = {}) {
+        const index = endpointExplorer.operations.indexOf(op);
+        document.querySelector('.nav-btn[data-target="endpoint-panel"]').click();
+        renderEndpointList();
+        selectEndpoint(index);
+
+        if (Object.keys(pathParamOverrides).length > 0) {
+            const currentPathParams = parseLooseJSON(document.getElementById('endpoint-path-values').value, {});
+            const merged = { ...currentPathParams, ...pathParamOverrides };
+            document.getElementById('endpoint-path-values').value = JSON.stringify(merged, null, 2);
+        }
+    }
+
+    function defaultValueForParameter(param) {
+        if (param.defaultValue !== undefined) return param.defaultValue;
+        const type = param.schema && param.schema.type;
+        if (type === 'integer' || type === 'number') return 1;
+        if (type === 'boolean') return true;
+        return 'test';
+    }
+
+    function buildExampleRequestForOperation(op, card = null) {
+        let path = op.path;
+        const query = new URLSearchParams();
+        const pathValues = card ? parseLooseJSON(card.querySelector('.quick-path-values').value, {}) : {};
+        const queryValues = card ? parseLooseJSON(card.querySelector('.quick-query-values').value, {}) : {};
+        const bodyText = card ? card.querySelector('.quick-body-values').value.trim() : requestBodyExample(op.operation);
+
+        op.parameters.forEach(param => {
+            const value = param.in === 'path'
+                ? (pathValues[param.name] !== undefined ? pathValues[param.name] : defaultValueForParameter(param))
+                : queryValues[param.name];
+            if (param.in === 'path') path = path.replace(`{${param.name}}`, encodeURIComponent(value));
+        });
+
+        Object.entries(queryValues).forEach(([key, value]) => {
+            if (value !== '' && value !== null && value !== undefined) query.append(key, value);
+        });
+
+        const endpoint = query.toString() ? `${path}?${query}` : path;
+        const body = bodyText ? parseLooseJSON(bodyText, {}) : null;
+        return { endpoint, method: op.method, body, headers: {} };
+    }
+
+    function quickInitialPathValues(op) {
+        const values = {};
+        op.parameters.filter(param => param.in === 'path').forEach(param => {
+            values[param.name] = defaultValueForParameter(param);
+        });
+        return values;
+    }
+
+    function quickInitialQueryValues(op) {
+        const values = {};
+        op.parameters.filter(param => param.in === 'query' && param.required).forEach(param => {
+            values[param.name] = defaultValueForParameter(param);
+        });
+        return values;
+    }
+
+    function updateQuickUrlPreview(card, op) {
+        try {
+            const request = buildExampleRequestForOperation(op, card);
+            card.querySelector('.quick-url-preview').textContent = `${state.apiBaseUrl}${request.endpoint}`;
+        } catch (error) {
+            card.querySelector('.quick-url-preview').textContent = 'JSON invalide dans la carte';
+        }
+    }
+
+    function renderQuickTestCards() {
+        const grid = document.getElementById('quick-tests-grid');
+        const category = quickTests.activeCategory;
+        const operations = endpointExplorer.operations.filter(op => category === 'all' || classifyOperation(op) === category);
+
+        if (!operations.length) {
+            grid.innerHTML = `
+                <div class="card empty-quick-tests">
+                    <h3>Aucun endpoint dans cette page</h3>
+                    <p class="text-muted">Charge le schema ou choisis une autre categorie.</p>
+                </div>
+            `;
+            return;
+        }
+
+        grid.innerHTML = '';
+        operations.forEach(op => {
+            const card = document.createElement('article');
+            card.className = 'quick-endpoint-card';
+            const pathValues = quickInitialPathValues(op);
+            const queryValues = quickInitialQueryValues(op);
+            const bodyExample = requestBodyExample(op.operation);
+            card.innerHTML = `
+                <div class="quick-card-top">
+                    <span class="method-pill method-${op.method.toLowerCase()}">${op.method}</span>
+                    <span class="quick-category">${QUICK_CATEGORY_LABELS[classifyOperation(op)] || classifyOperation(op)}</span>
+                </div>
+                <h3>${op.label}</h3>
+                <code>${op.path}</code>
+                <div class="quick-url-preview"></div>
+                <details class="quick-card-fields" ${Object.keys(pathValues).length || Object.keys(queryValues).length || bodyExample ? 'open' : ''}>
+                    <summary>Parametres de test</summary>
+                    <label>Path params JSON</label>
+                    <textarea class="quick-path-values" rows="3">${Object.keys(pathValues).length ? JSON.stringify(pathValues, null, 2) : ''}</textarea>
+                    <label>Query params JSON</label>
+                    <textarea class="quick-query-values" rows="3">${Object.keys(queryValues).length ? JSON.stringify(queryValues, null, 2) : ''}</textarea>
+                    <label>Body JSON</label>
+                    <textarea class="quick-body-values" rows="5">${bodyExample || ''}</textarea>
+                </details>
+                <div class="quick-card-actions">
+                    <button type="button" class="btn btn-primary btn-sm quick-send">Tester cet endpoint</button>
+                    <button type="button" class="btn btn-secondary btn-sm quick-prepare">Modifier dans le testeur complet</button>
+                </div>
+            `;
+            card.querySelectorAll('textarea').forEach(textarea => {
+                textarea.addEventListener('input', () => updateQuickUrlPreview(card, op));
+            });
+            card.querySelector('.quick-prepare').addEventListener('click', () => prepareOperationInFullTester(op));
+            card.querySelector('.quick-send').addEventListener('click', async () => {
+                try {
+                    const request = buildExampleRequestForOperation(op, card);
+                    updateQuickUrlPreview(card, op);
+                    await makeAPIRequest(request.endpoint, request.method, request.body, request.headers);
+                } catch (error) {
+                    document.getElementById('response-output-json').innerHTML = syntaxHighlightJSON({ error: error.message });
+                    document.getElementById('response-status').textContent = 'STATUS : FORMULAIRE';
+                    document.getElementById('response-status').className = 'badge badge-4xx';
+                }
+            });
+            updateQuickUrlPreview(card, op);
+            grid.appendChild(card);
+        });
+    }
+
+    async function loadQuickTestPages() {
+        const grid = document.getElementById('quick-tests-grid');
+        grid.innerHTML = `
+            <div class="card empty-quick-tests">
+                <h3>Chargement...</h3>
+                <p class="text-muted">Lecture de /api/schema/ en cours.</p>
+            </div>
+        `;
+        try {
+            await ensureOpenAPIOperations();
+            renderQuickCategoryTabs();
+            renderQuickTestCards();
+            document.getElementById('response-output-json').innerHTML = syntaxHighlightJSON({
+                info: `${endpointExplorer.operations.length} endpoints disponibles dans les pages de test pratiques.`
+            });
+        } catch (error) {
+            grid.innerHTML = `
+                <div class="card empty-quick-tests">
+                    <h3>Impossible de charger les endpoints</h3>
+                    <p class="text-muted">${error.message}</p>
+                </div>
+            `;
+            document.getElementById('response-output-json').innerHTML = syntaxHighlightJSON({ error: error.message });
+        }
+    }
+
+    document.getElementById('btn-load-quick-tests').addEventListener('click', loadQuickTestPages);
+    document.getElementById('btn-open-full-endpoints').addEventListener('click', () => {
+        document.querySelector('.nav-btn[data-target="endpoint-panel"]').click();
+    });
+
+    document.querySelector('.nav-btn[data-target="quick-tests-panel"]').addEventListener('click', () => {
+        if (!endpointExplorer.operations.length) loadQuickTestPages();
+    });
+
+    // -------------------------------------------------------------------------
+    // 12. INITIALIZATION
+    // -------------------------------------------------------------------------
+    // Register click listeners to switch response panels
+    document.querySelectorAll('.viewer-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+            switchResponseTab(btn.dataset.responseTab);
+        });
+    });
+
+    updateAuthStatus();
+});

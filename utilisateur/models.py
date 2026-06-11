@@ -64,18 +64,21 @@ class User(AbstractUser):
     def role(self):
         """Détermine le rôle de l'utilisateur dynamiquement"""
         if self.is_superuser:
-            return "admin"
-        
-        # On vérifie les relations OneToOne
-        if hasattr(self, 'client'):
-            if hasattr(self.client, 'serveuse'):
-                return "serveuse"
-            if hasattr(self.client, 'prestataire'):
-                return "prestataire"
-            if hasattr(self.client, 'livreur'):
-                return "livreur"
-        
-        return "client"
+            return "superadmin"
+
+        # On vérifie les relations OneToOne - retourne les TOUS les rôles actifs
+        if not hasattr(self, 'client'):
+            return "client"
+
+        roles = []
+        if hasattr(self.client, 'serveuse') and self.client.serveuse.actif:
+            roles.append("serveuse")
+        if hasattr(self.client, 'prestataire') and self.client.prestataire.statut == 'actif':
+            roles.append("prestataire")
+        if hasattr(self.client, 'livreur') and self.client.livreur.statut != 'inactif':
+            roles.append("livreur")
+
+        return roles if roles else "client"
 
 
 class Client(models.Model):
@@ -185,10 +188,9 @@ class Livreur(models.Model):
 
 class Serveuse(models.Model):
     """Serveuse = Client + spécificités"""
-    STATUT_CHOICES = [('disponible', 'Disponible'), ('en_service', 'En service'), ('inactif', 'Inactif'), ('suspendu', 'Suspendu')]
-    
+
     client = models.OneToOneField(Client, on_delete=models.CASCADE, related_name='serveuse')
-    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='disponible')
+    actif = models.BooleanField(default=False)
     note_moyenne = models.DecimalField(max_digits=3, decimal_places=2, default=0)
     nombre_services = models.IntegerField(default=0)
     date_embauche = models.DateField(null=True, blank=True)

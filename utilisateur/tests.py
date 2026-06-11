@@ -798,7 +798,7 @@ class ServeuseEndpointsTest(APITestCase):
         )
         self.serveuse = Serveuse.objects.create(
             client=self.serveuse_user.client,
-            statut='disponible'
+            actif=True
         )
 
     def test_access_restrictions(self):
@@ -839,12 +839,12 @@ class ServeuseEndpointsTest(APITestCase):
         # Update serveuse status
         response = self.client.patch(
             f'/api/v1/auth/admin/serveuses/{self.serveuse.pk}/',
-            {'statut': 'suspendu'},
+            {'actif': False},
             format='json'
         )
         self.assertEqual(response.status_code, 200)
         self.serveuse.refresh_from_db()
-        self.assertEqual(self.serveuse.statut, 'suspendu')
+        self.assertEqual(self.serveuse.actif, False)
 
         # Delete serveuse
         response = self.client.delete(f'/api/v1/auth/admin/serveuses/{self.serveuse.pk}/delete/')
@@ -865,7 +865,7 @@ class ServeuseEndpointsTest(APITestCase):
         
         response = self.client.post('/api/v1/auth/admin/serveuses/promote/', payload, format='json')
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['statut'], 'disponible')
+        self.assertEqual(response.data['actif'], True)
         
         # Verify database entities
         user = User.objects.get(email='new_serveuse_scratch@example.com')

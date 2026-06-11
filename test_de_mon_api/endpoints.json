@@ -1,0 +1,414 @@
+{
+  "api_base": "http://127.0.0.1:8000/api/v1",
+  "roles": {
+    "superadmin": {
+      "name": "Super Admin",
+      "email": "admin@test.com",
+      "password": "AdminPassword123!",
+      "description": "Accès complet à tout"
+    },
+    "serveuse": {
+      "name": "Serveuse",
+      "email": "serveuse@test.com",
+      "password": "ServeusePassword123!",
+      "description": "Accès limité: paiements, livreurs, lecture-seule clients/prestataires/livreurs"
+    },
+    "prestataire": {
+      "name": "Prestataire",
+      "email": "prestataire@test.com",
+      "password": "PrestatairePassword123!",
+      "description": "Dashboard prestataire + commandes"
+    },
+    "livreur": {
+      "name": "Livreur",
+      "email": "livreur@test.com",
+      "password": "LivreurPassword123!",
+      "description": "Dashboard livreur + gestion livraisons"
+    },
+    "client": {
+      "name": "Client",
+      "email": "client@test.com",
+      "password": "ClientPassword123!",
+      "description": "Client simple - catalogue et profil"
+    }
+  },
+  "endpoints": {
+    "authentication": {
+      "name": "🔑 Authentification",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/auth/web/login/",
+          "name": "Web Login (HttpOnly cookies)",
+          "body": {
+            "email": "${email}",
+            "password": "${password}"
+          },
+          "permissions": "PUBLIC",
+          "roles": ["all"]
+        },
+        {
+          "method": "POST",
+          "path": "/auth/mobile/login/",
+          "name": "Mobile Login (JSON tokens)",
+          "body": {
+            "email": "${email}",
+            "password": "${password}"
+          },
+          "permissions": "PUBLIC",
+          "roles": ["all"]
+        },
+        {
+          "method": "GET",
+          "path": "/auth/me/",
+          "name": "Profil utilisateur connecté",
+          "permissions": "IsAuthenticated",
+          "roles": ["all"]
+        },
+        {
+          "method": "PUT",
+          "path": "/auth/me/",
+          "name": "Modifier profil",
+          "permissions": "IsAuthenticated",
+          "roles": ["all"],
+          "body": {
+            "first_name": "John",
+            "last_name": "Doe",
+            "genre": "homme",
+            "date_naissance": "1990-01-01"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/auth/logout/",
+          "name": "Déconnexion",
+          "permissions": "IsAuthenticated",
+          "roles": ["all"]
+        }
+      ]
+    },
+    "admin": {
+      "name": "🛠️ Administration (Superadmin Only)",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/auth/admin/users/",
+          "name": "Lister tous les utilisateurs",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"]
+        },
+        {
+          "method": "GET",
+          "path": "/auth/admin/users/?page=1",
+          "name": "Lister utilisateurs (paginer)",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"]
+        },
+        {
+          "method": "PATCH",
+          "path": "/auth/admin/users/{user_id}/toggle-status/",
+          "name": "Activer/Désactiver utilisateur",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"],
+          "params": {"user_id": "ID utilisateur"}
+        },
+        {
+          "method": "GET",
+          "path": "/auth/admin/prestataires/",
+          "name": "Lister prestataires",
+          "permissions": "IsSuperadmin",
+          "roles": ["superadmin"]
+        },
+        {
+          "method": "POST",
+          "path": "/auth/admin/prestataires/validate/{pk}/",
+          "name": "Valider prestataire (commission)",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"],
+          "params": {"pk": "ID prestataire"},
+          "body": {"taux_commission": 0.15}
+        },
+        {
+          "method": "PATCH",
+          "path": "/auth/admin/prestataires/{pk}/",
+          "name": "Modifier prestataire",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"],
+          "params": {"pk": "ID prestataire"},
+          "body": {"taux_commission": 0.20}
+        },
+        {
+          "method": "GET",
+          "path": "/auth/admin/livreurs/",
+          "name": "Lister livreurs",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"]
+        },
+        {
+          "method": "POST",
+          "path": "/auth/admin/livreurs/promote/",
+          "name": "Promouvoir client en livreur",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"],
+          "body": {"user_id": 0}
+        },
+        {
+          "method": "PATCH",
+          "path": "/auth/admin/livreurs/{pk}/",
+          "name": "Modifier livreur",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"],
+          "params": {"pk": "ID livreur"},
+          "body": {"statut": "disponible"}
+        },
+        {
+          "method": "DELETE",
+          "path": "/auth/admin/livreurs/{pk}/delete/",
+          "name": "Supprimer livreur",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"],
+          "params": {"pk": "ID livreur"}
+        },
+        {
+          "method": "GET",
+          "path": "/auth/admin/serveuses/",
+          "name": "Lister serveuses (Superadmin ONLY)",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"]
+        },
+        {
+          "method": "POST",
+          "path": "/auth/admin/serveuses/promote/",
+          "name": "Créer/Promouvoir serveuse",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"],
+          "body": {
+            "user_id": 0
+          }
+        },
+        {
+          "method": "PATCH",
+          "path": "/auth/admin/serveuses/{pk}/",
+          "name": "Modifier serveuse (actif)",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"],
+          "params": {"pk": "ID serveuse"},
+          "body": {"actif": true}
+        },
+        {
+          "method": "DELETE",
+          "path": "/auth/admin/serveuses/{pk}/delete/",
+          "name": "Supprimer serveuse",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"],
+          "params": {"pk": "ID serveuse"}
+        },
+        {
+          "method": "GET",
+          "path": "/auth/admin/stats/global/",
+          "name": "Stats globales (Superadmin ONLY)",
+          "permissions": "IsSuperadminOnly",
+          "roles": ["superadmin"]
+        },
+        {
+          "method": "GET",
+          "path": "/auth/admin/notifications/",
+          "name": "Notifications (Superadmin + Serveuse)",
+          "permissions": "IsSuperadminOrActiveServeuse",
+          "roles": ["superadmin", "serveuse"]
+        },
+        {
+          "method": "GET",
+          "path": "/auth/admin/payouts/",
+          "name": "Liste paiements (Superadmin + Serveuse)",
+          "permissions": "IsSuperadminOrActiveServeuse",
+          "roles": ["superadmin", "serveuse"]
+        },
+        {
+          "method": "POST",
+          "path": "/auth/admin/prestataires/{pk}/payout/",
+          "name": "Payer prestataire (Superadmin + Serveuse)",
+          "permissions": "IsSuperadminOrActiveServeuse",
+          "roles": ["superadmin", "serveuse"],
+          "params": {"pk": "ID prestataire"},
+          "body": {"montant": 100}
+        }
+      ]
+    },
+    "admin_read_only": {
+      "name": "👁️ Admin - Lecture Seule (Superadmin + Serveuse READ)",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/auth/admin/users/",
+          "name": "Lister clients (Superadmin + Serveuse READ)",
+          "permissions": "IsSuperadminOrServeuseReadOnly",
+          "roles": ["superadmin", "serveuse"]
+        },
+        {
+          "method": "GET",
+          "path": "/auth/admin/prestataires/",
+          "name": "Lister prestataires (Superadmin + Serveuse READ)",
+          "permissions": "IsSuperadminOrServeuseReadOnly",
+          "roles": ["superadmin", "serveuse"]
+        },
+        {
+          "method": "GET",
+          "path": "/auth/admin/livreurs/",
+          "name": "Lister livreurs (Superadmin + Serveuse READ)",
+          "permissions": "IsSuperadminOrServeuseReadOnly",
+          "roles": ["superadmin", "serveuse"]
+        },
+        {
+          "method": "GET",
+          "path": "/auth/admin/commandes/{id}/affecter-livreur/",
+          "name": "Affecter livreur (Superadmin + Serveuse)",
+          "permissions": "IsSuperadminOrActiveServeuse",
+          "roles": ["superadmin", "serveuse"],
+          "params": {"id": "ID commande"},
+          "body": {"livreur_id": 0}
+        },
+        {
+          "method": "GET",
+          "path": "/auth/admin/livraisons/",
+          "name": "Monitorer livraisons (Superadmin + Serveuse)",
+          "permissions": "IsSuperadminOrActiveServeuse",
+          "roles": ["superadmin", "serveuse"]
+        }
+      ]
+    },
+    "prestataire": {
+      "name": "🏪 Espace Prestataire",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/auth/prestataire/dashboard/",
+          "name": "Dashboard prestataire",
+          "permissions": "IsAuthenticated (actif=True)",
+          "roles": ["prestataire"],
+          "description": "Voir solde, code promo, stats"
+        },
+        {
+          "method": "GET",
+          "path": "/auth/prestataire/finance/",
+          "name": "Historique financier",
+          "permissions": "IsAuthenticated (actif=True)",
+          "roles": ["prestataire"]
+        },
+        {
+          "method": "GET",
+          "path": "/auth/prestataire/payouts/",
+          "name": "Historique paiements",
+          "permissions": "IsAuthenticated (actif=True)",
+          "roles": ["prestataire"]
+        }
+      ]
+    },
+    "livreur": {
+      "name": "🛵 Espace Livreur",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/auth/livreur/dashboard/",
+          "name": "Dashboard livreur",
+          "permissions": "IsAuthenticated (actif!=inactif)",
+          "roles": ["livreur"],
+          "description": "Statut, livraisons actives"
+        },
+        {
+          "method": "GET",
+          "path": "/auth/livreur/commandes/",
+          "name": "Liste livraisons",
+          "permissions": "IsAuthenticated (actif!=inactif)",
+          "roles": ["livreur"]
+        },
+        {
+          "method": "POST",
+          "path": "/auth/livreur/commandes/{pk}/update-status/",
+          "name": "Mettre à jour statut livraison",
+          "permissions": "IsAuthenticated (actif!=inactif)",
+          "roles": ["livreur"],
+          "params": {"pk": "ID commande"},
+          "body": {"nouvelle_action": "livrer"}
+        }
+      ]
+    },
+    "boutique": {
+      "name": "🛍️ Boutique & Catalogue",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/shop/accessoires/",
+          "name": "Liste accessoires",
+          "permissions": "PUBLIC",
+          "roles": ["all"]
+        },
+        {
+          "method": "GET",
+          "path": "/shop/accessoires/{id}/",
+          "name": "Détail accessoire",
+          "permissions": "PUBLIC",
+          "roles": ["all"],
+          "params": {"id": "ID accessoire"}
+        },
+        {
+          "method": "GET",
+          "path": "/shop/parfums/",
+          "name": "Liste parfums",
+          "permissions": "PUBLIC",
+          "roles": ["all"]
+        },
+        {
+          "method": "GET",
+          "path": "/shop/favoris/",
+          "name": "Mes favoris",
+          "permissions": "IsAuthenticated",
+          "roles": ["client", "prestataire", "livreur", "serveuse"]
+        },
+        {
+          "method": "POST",
+          "path": "/shop/favoris/",
+          "name": "Ajouter aux favoris",
+          "permissions": "IsAuthenticated",
+          "roles": ["client", "prestataire", "livreur", "serveuse"],
+          "body": {
+            "produit_id": 0,
+            "type_produit": "accessoire"
+          }
+        }
+      ]
+    },
+    "commandes": {
+      "name": "📦 Commandes",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/orders/commandes/",
+          "name": "Mes commandes",
+          "permissions": "IsAuthenticated",
+          "roles": ["client", "prestataire", "livreur"]
+        },
+        {
+          "method": "POST",
+          "path": "/orders/commandes/",
+          "name": "Créer commande",
+          "permissions": "IsAuthenticated",
+          "roles": ["client"],
+          "body": {
+            "articles": [
+              {"type": "accessoire", "id": 1, "quantity": 1}
+            ]
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/orders/commandes/{id}/",
+          "name": "Détail commande",
+          "permissions": "IsAuthenticated",
+          "roles": ["client", "prestataire", "livreur"],
+          "params": {"id": "ID commande"}
+        }
+      ]
+    }
+  }
+}
