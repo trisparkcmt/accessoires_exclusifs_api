@@ -28,6 +28,8 @@
         .inline-check { display: flex; align-items: center; gap: 8px; }
         .random-btn { background: #f59e0b; color: #1e293b; }
         .random-btn:hover { background: #d97706; }
+        .file-input-group { background: #f8fafc; padding: 15px; border-radius: 16px; border: 1px dashed #cbd5e1; margin-bottom: 12px; }
+        .file-input-group label { display: block; margin-bottom: 8px; font-size: 0.85rem; font-weight: 600; color: #475569; }
     </style>
 </head>
 <body>
@@ -42,6 +44,9 @@
             <input type="password" id="loginPassword" placeholder="Mot de passe" value="admin123">
             <button id="loginBtn" class="primary">Se connecter</button>
             <button id="logoutBtn" class="danger">Déconnexion</button>
+            <span style="font-size: 0.7rem; color: #64748b; margin-left: 10px;">
+                💡 Admin ou Serveuse requis pour les actions de modification (POST/PUT/PATCH/DELETE).
+            </span>
         </div>
         <div class="flex">
             <label>🌐 Base URL :</label>
@@ -107,6 +112,25 @@
                 <label>🔑 Utiliser le token (authentifié)</label>
             </div>
         </div>
+
+        <!-- Zone d'upload d'images -->
+        <div class="file-input-group">
+            <div class="flex">
+                <div style="flex:1;">
+                    <label>🖼️ Image principale (image_principale / image / icone) :</label>
+                    <input type="file" id="mainImageInput" accept="image/*" style="width: 100%;">
+                </div>
+                <div style="flex:1;">
+                    <label>📸 Galerie (images_supplementaires - multiple) :</label>
+                    <input type="file" id="galleryImagesInput" accept="image/*" multiple style="width: 100%;">
+                </div>
+                <button id="clearFilesBtn" class="secondary" style="margin-top:20px;">🗑️ Effacer fichiers</button>
+            </div>
+            <p style="font-size: 0.7rem; color: #94a3b8; margin: 8px 0 0 0;">
+                💡 Note : Si des images sont sélectionnées, la requête basculera automatiquement en mode <b>multipart/form-data</b>.
+            </p>
+        </div>
+
         <div class="flex">
             <textarea id="jsonBody" rows="6" placeholder='Corps JSON (pour POST/PUT/PATCH)' style="width:100%;"></textarea>
             <button id="randomJsonBtn" class="random-btn">🎲 Générer JSON aléatoire</button>
@@ -332,60 +356,60 @@
         { name: "Parfums – Détail (slug)", url: "/shop/parfums/{slug}/", method: "GET", needId: true, idType: "slug" },
         { name: "Parfums – Bestsellers", url: "/shop/parfums/bestsellers/", method: "GET" },
         { name: "Parfums – Hotsellers", url: "/shop/parfums/hotsellers/", method: "GET" },
-        { name: "Parfums – Créer (admin)", url: "/shop/parfums/", method: "POST", needAuth: true },
-        { name: "Parfums – Modifier (slug)", url: "/shop/parfums/{slug}/", method: "PUT", needId: true, idType: "slug", needAuth: true },
-        { name: "Parfums – Patch (slug)", url: "/shop/parfums/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
-        { name: "Parfums – Supprimer", url: "/shop/parfums/{slug}/", method: "DELETE", needId: true, idType: "slug", needAuth: true },
+        { name: "Parfums – Créer (admin/serveuse)", url: "/shop/parfums/", method: "POST", needAuth: true },
+        { name: "Parfums – Modifier (slug) (admin/serveuse)", url: "/shop/parfums/{slug}/", method: "PUT", needId: true, idType: "slug", needAuth: true },
+        { name: "Parfums – Patch (slug) (admin/serveuse)", url: "/shop/parfums/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
+        { name: "Parfums – Supprimer (admin/serveuse)", url: "/shop/parfums/{slug}/", method: "DELETE", needId: true, idType: "slug", needAuth: true },
         { name: "Parfums – Favori (toggle)", url: "/shop/parfums/{slug}/favori/", method: "POST", needId: true, idType: "slug", needAuth: true },
         { name: "Accessoires – Liste", url: "/shop/accessoires/", method: "GET" },
         { name: "Accessoires – Détail (slug)", url: "/shop/accessoires/{slug}/", method: "GET", needId: true, idType: "slug" },
         { name: "Accessoires – Bestsellers", url: "/shop/accessoires/bestsellers/", method: "GET" },
         { name: "Accessoires – Hotsellers", url: "/shop/accessoires/hotsellers/", method: "GET" },
-        { name: "Accessoires – Créer (admin)", url: "/shop/accessoires/", method: "POST", needAuth: true },
-        { name: "Accessoires – Modifier (slug)", url: "/shop/accessoires/{slug}/", method: "PUT", needId: true, idType: "slug", needAuth: true },
-        { name: "Accessoires – Patch (slug)", url: "/shop/accessoires/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
-        { name: "Accessoires – Supprimer", url: "/shop/accessoires/{slug}/", method: "DELETE", needId: true, idType: "slug", needAuth: true },
+        { name: "Accessoires – Créer (admin/serveuse)", url: "/shop/accessoires/", method: "POST", needAuth: true },
+        { name: "Accessoires – Modifier (slug) (admin/serveuse)", url: "/shop/accessoires/{slug}/", method: "PUT", needId: true, idType: "slug", needAuth: true },
+        { name: "Accessoires – Patch (slug) (admin/serveuse)", url: "/shop/accessoires/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
+        { name: "Accessoires – Supprimer (admin/serveuse)", url: "/shop/accessoires/{slug}/", method: "DELETE", needId: true, idType: "slug", needAuth: true },
         { name: "Accessoires – Favori", url: "/shop/accessoires/{slug}/favori/", method: "POST", needId: true, idType: "slug", needAuth: true },
         { name: "Flacons – Liste", url: "/shop/flacons/", method: "GET" },
         { name: "Flacons – Détail (slug)", url: "/shop/flacons/{slug}/", method: "GET", needId: true, idType: "slug" },
-        { name: "Flacons – Créer (admin)", url: "/shop/flacons/", method: "POST", needAuth: true },
-        { name: "Flacons – Modifier (slug)", url: "/shop/flacons/{slug}/", method: "PUT", needId: true, idType: "slug", needAuth: true },
-        { name: "Flacons – Patch (slug)", url: "/shop/flacons/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
-        { name: "Flacons – Supprimer", url: "/shop/flacons/{slug}/", method: "DELETE", needId: true, idType: "slug", needAuth: true },
+        { name: "Flacons – Créer (admin/serveuse)", url: "/shop/flacons/", method: "POST", needAuth: true },
+        { name: "Flacons – Modifier (slug) (admin/serveuse)", url: "/shop/flacons/{slug}/", method: "PUT", needId: true, idType: "slug", needAuth: true },
+        { name: "Flacons – Patch (slug) (admin/serveuse)", url: "/shop/flacons/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
+        { name: "Flacons – Supprimer (admin/serveuse)", url: "/shop/flacons/{slug}/", method: "DELETE", needId: true, idType: "slug", needAuth: true },
         { name: "Favoris – Ma liste", url: "/shop/favoris/", method: "GET", needAuth: true },
         { name: "Tags – Liste", url: "/shop/tags/", method: "GET" },
-        { name: "Tags – Créer (admin)", url: "/shop/tags/", method: "POST", needAuth: true },
-        { name: "Tags – Patch (admin)", url: "/shop/tags/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
+        { name: "Tags – Créer (admin/serveuse)", url: "/shop/tags/", method: "POST", needAuth: true },
+        { name: "Tags – Patch (admin/serveuse)", url: "/shop/tags/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
         { name: "Catégories parfum – Liste", url: "/shop/categories-parfum/", method: "GET" },
-        { name: "Catégories parfum – Créer (admin)", url: "/shop/categories-parfum/", method: "POST", needAuth: true },
-        { name: "Catégories parfum – Patch (admin)", url: "/shop/categories-parfum/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
+        { name: "Catégories parfum – Créer (admin/serveuse)", url: "/shop/categories-parfum/", method: "POST", needAuth: true },
+        { name: "Catégories parfum – Patch (admin/serveuse)", url: "/shop/categories-parfum/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
         { name: "Types accessoire – Liste", url: "/shop/types-accessoire/", method: "GET" },
-        { name: "Types accessoire – Créer (admin)", url: "/shop/types-accessoire/", method: "POST", needAuth: true },
-        { name: "Types accessoire – Patch (admin)", url: "/shop/types-accessoire/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
+        { name: "Types accessoire – Créer (admin/serveuse)", url: "/shop/types-accessoire/", method: "POST", needAuth: true },
+        { name: "Types accessoire – Patch (admin/serveuse)", url: "/shop/types-accessoire/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
         { name: "Types flacon – Liste", url: "/shop/types-flacon/", method: "GET" },
-        { name: "Types flacon – Créer (admin)", url: "/shop/types-flacon/", method: "POST", needAuth: true },
-        { name: "Types flacon – Patch (admin)", url: "/shop/types-flacon/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
+        { name: "Types flacon – Créer (admin/serveuse)", url: "/shop/types-flacon/", method: "POST", needAuth: true },
+        { name: "Types flacon – Patch (admin/serveuse)", url: "/shop/types-flacon/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
         { name: "Produits finis (essences) – Liste", url: "/shop/produits-essence/", method: "GET" },
-        { name: "Produits finis – Créer (admin)", url: "/shop/produits-essence/", method: "POST", needAuth: true },
-        { name: "Produits finis – Patch (admin)", url: "/shop/produits-essence/{id}/", method: "PATCH", needId: true, idType: "id", needAuth: true },
+        { name: "Produits finis – Créer (admin/serveuse)", url: "/shop/produits-essence/", method: "POST", needAuth: true },
+        { name: "Produits finis – Patch (admin/serveuse)", url: "/shop/produits-essence/{id}/", method: "PATCH", needId: true, idType: "id", needAuth: true },
         { name: "Essences (catalogue) – Liste", url: "/lab/essences/", method: "GET" },
         { name: "Essences – Détail (slug)", url: "/lab/essences/{slug}/", method: "GET", needId: true, idType: "slug" },
-        { name: "Essences – Créer (admin)", url: "/lab/essences/", method: "POST", needAuth: true },
-        { name: "Essences – Patch (admin)", url: "/lab/essences/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
+        { name: "Essences – Créer (admin/serveuse)", url: "/lab/essences/", method: "POST", needAuth: true },
+        { name: "Essences – Patch (admin/serveuse)", url: "/lab/essences/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
         { name: "Lots essence – Liste", url: "/lab/lots-essence/", method: "GET" },
         { name: "Auth – Inscription", url: "/auth/registration/", method: "POST" },
-        { name: "Lots essence – Créer (admin)", url: "/lab/lots-essence/", method: "POST", needAuth: true },
-        { name: "Lots essence – Patch (admin)", url: "/lab/lots-essence/{id}/", method: "PATCH", needId: true, idType: "id", needAuth: true },
+        { name: "Lots essence – Créer (admin/serveuse)", url: "/lab/lots-essence/", method: "POST", needAuth: true },
+        { name: "Lots essence – Patch (admin/serveuse)", url: "/lab/lots-essence/{id}/", method: "PATCH", needId: true, idType: "id", needAuth: true },
         { name: "Laboratoire – Stock disponible", url: "/lab/labo/essences/disponible/", method: "GET" },
         { name: "Laboratoire – Détail essence (labo)", url: "/lab/labo/essences/{slug}/detail/", method: "GET", needId: true, idType: "slug" },
         { name: "Ingrédients – Liste", url: "/lab/ingredients/", method: "GET" },
-        { name: "Ingrédients – Créer (admin)", url: "/lab/ingredients/", method: "POST", needAuth: true },
-        { name: "Ingrédients – Patch (admin)", url: "/lab/ingredients/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
-        { name: "Notifications – Liste (admin)", url: "/shop/notifications/", method: "GET", needAuth: true },
-        { name: "Notifications – Non lues (admin)", url: "/shop/notifications/non_lues/", method: "GET", needAuth: true },
-        { name: "Notifications – Stats (admin)", url: "/shop/notifications/stats/", method: "GET", needAuth: true },
-        { name: "Notifications – Tout marquer lu (admin)", url: "/shop/notifications/marquer_tous_comme_lus/", method: "PATCH", needAuth: true },
-        { name: "Notifications – Marquer lu (admin)", url: "/shop/notifications/{id}/", method: "PATCH", needId: true, idType: "id", needAuth: true },
+        { name: "Ingrédients – Créer (admin/serveuse)", url: "/lab/ingredients/", method: "POST", needAuth: true },
+        { name: "Ingrédients – Patch (admin/serveuse)", url: "/lab/ingredients/{slug}/", method: "PATCH", needId: true, idType: "slug", needAuth: true },
+        { name: "Notifications – Liste (admin/serveuse)", url: "/shop/notifications/", method: "GET", needAuth: true },
+        { name: "Notifications – Non lues (admin/serveuse)", url: "/shop/notifications/non_lues/", method: "GET", needAuth: true },
+        { name: "Notifications – Stats (admin/serveuse)", url: "/shop/notifications/stats/", method: "GET", needAuth: true },
+        { name: "Notifications – Tout marquer lu (admin/serveuse)", url: "/shop/notifications/marquer_tous_comme_lus/", method: "PATCH", needAuth: true },
+        { name: "Notifications – Marquer lu (admin/serveuse)", url: "/shop/notifications/{id}/", method: "PATCH", needId: true, idType: "id", needAuth: true },
         { name: "Tags Parfum (select) – Liste", url: "/shop/tags-parfum/", method: "GET" },
         { name: "Tags Essence (select) – Liste", url: "/shop/tags-essence/", method: "GET" }
     ];
@@ -450,6 +474,11 @@
         }
     });
 
+    document.getElementById('clearFilesBtn').addEventListener('click', () => {
+        document.getElementById('mainImageInput').value = '';
+        document.getElementById('galleryImagesInput').value = '';
+    });
+
     function buildUrl() {
         const idx = endpointSelect.value;
         const ep = endpoints[idx];
@@ -467,20 +496,72 @@
     async function sendRequest() {
         const url = buildUrl();
         if (!url) return;
+        
+        const idx = endpointSelect.value;
+        const ep = endpoints[idx];
         const method = methodSelect.value;
-        let body = null;
+        
+        // Récupération des fichiers
+        const mainImageFile = document.getElementById('mainImageInput').files[0];
+        const galleryFiles = document.getElementById('galleryImagesInput').files;
+        
+        let requestBody = null;
+        const headers = {};
         const bodyText = jsonBody.value.trim();
-        if (method !== 'GET' && method !== 'DELETE') {
+
+        // Construction du corps de la requête (Multipart si fichiers, sinon JSON)
+        if (method !== 'GET' && method !== 'DELETE' && (mainImageFile || galleryFiles.length > 0)) {
+            requestBody = new FormData();
+            
+            // 1. Ajouter les données du JSON au FormData
             if (bodyText) {
                 try {
-                    body = JSON.parse(bodyText);
+                    const jsonData = JSON.parse(bodyText);
+                    Object.keys(jsonData).forEach(key => {
+                        // Si la valeur est un objet/array (comme les tags), on le stringify
+                        if (typeof jsonData[key] === 'object' && jsonData[key] !== null) {
+                            requestBody.append(key, JSON.stringify(jsonData[key]));
+                        } else {
+                            requestBody.append(key, jsonData[key]);
+                        }
+                    });
+                } catch (e) {
+                    responseDiv.innerHTML = `❌ JSON invalide (requis pour les champs texte) : ${e.message}`;
+                    return;
+                }
+            }
+
+            // 2. Ajouter l'image principale avec détection du nom de champ
+            if (mainImageFile) {
+                let fieldName = 'image_principale'; 
+                const name = ep.name.toLowerCase();
+                if (name.includes('catégorie') || name.includes('type flacon')) fieldName = 'image';
+                if (name.includes('type accessoire')) fieldName = 'icone';
+                
+                requestBody.append(fieldName, mainImageFile);
+            }
+
+            // 3. Ajouter la galerie d'images
+            if (galleryFiles.length > 0) {
+                for (let i = 0; i < galleryFiles.length; i++) {
+                    requestBody.append('images_supplementaires', galleryFiles[i]);
+                    // On ajoute aussi au format image_supp_X si le backend utilise des champs spécifiques
+                    requestBody.append(`image_supp_${i+1}`, galleryFiles[i]);
+                }
+            }
+            // Note: On ne définit PAS le Content-Type, le navigateur s'en charge pour le multipart
+        } else if (method !== 'GET' && method !== 'DELETE') {
+            headers['Content-Type'] = 'application/json';
+            if (bodyText) {
+                try {
+                    requestBody = JSON.stringify(JSON.parse(bodyText));
                 } catch (e) {
                     responseDiv.innerHTML = `❌ JSON invalide : ${e.message}`;
                     return;
                 }
             }
         }
-        const headers = { 'Content-Type': 'application/json' };
+
         const useToken = useTokenCheckbox.checked;
         if (useToken && accessToken) {
             headers['Authorization'] = `Bearer ${accessToken}`;
@@ -488,9 +569,9 @@
         responseDiv.innerHTML = '🔄 Chargement...';
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
-            const fetchOptions = { method, headers, signal: controller.signal };
-            if (body) fetchOptions.body = JSON.stringify(body);
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s pour l'upload
+            const fetchOptions = { method, headers, signal: controller.signal, body: requestBody };
+            
             const resp = await fetch(url, fetchOptions);
             clearTimeout(timeoutId);
             let data;

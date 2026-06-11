@@ -19,7 +19,7 @@ from drf_spectacular.utils import (
 from drf_spectacular.types import OpenApiTypes
 from rest_framework.permissions import IsAuthenticated
 from orders.models import CommandeLigneAccessoire
-from .permissions import IsAdminOrReadOnly, IsAdmin
+from .permissions import IsAdminOrReadOnly, IsAdmin, IsAdminOrServeuse, IsAdminOrServeuseOrReadOnly
 
 from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Flacon, Favori, Ingredient, ProduitFiniEssence, Tag, TypeAccessoire, TypeFlacon, NotificationCatalogue, MouvementStock
 from .serializers import (
@@ -217,7 +217,7 @@ Retourne également :
 class ParfumViewSet(viewsets.ModelViewSet):
     serializer_class   = ParfumSerializer
     pagination_class   = StandardPagination
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends    = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = ParfumFilter
@@ -440,7 +440,7 @@ de la journée recommandés.
 class EssenceViewSet(viewsets.ModelViewSet):
     serializer_class = EssenceSerializer
     pagination_class = StandardPagination
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_class = EssenceFilter   # vous devrez adapter EssenceFilter plus tard
     search_fields = ['marque', 'nom', 'code_reference']
@@ -460,7 +460,7 @@ class EssenceViewSet(viewsets.ModelViewSet):
 
 class LotEssenceViewSet(viewsets.ModelViewSet):
     serializer_class = LotEssenceSerializer
-    permission_classes = [IsAdminOrReadOnly]   # lecture publique, écriture admin
+    permission_classes = [IsAdminOrServeuseOrReadOnly]   # lecture publique, écriture admin
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['essence', 'actif']
     ordering           = ['date_reception']
@@ -472,7 +472,7 @@ class LotEssenceViewSet(viewsets.ModelViewSet):
     
 class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
     serializer_class = ProduitFiniEssencePublicSerializer
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['essence', 'taille_ml']
     search_fields = ['essence__marque', 'essence__nom'] 
@@ -567,7 +567,7 @@ pour créer des parfums personnalisés.
 class IngredientViewSet(viewsets.ModelViewSet):
     serializer_class   = IngredientSerializer
     pagination_class   = StandardPagination
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends    = [DjangoFilterBackend, SearchFilter, OrderingFilter]
 
     search_fields      = ['nom', 'description']
@@ -644,7 +644,7 @@ pour créer des parfums personnalisés.
 class IngredientViewSet(viewsets.ModelViewSet):
     serializer_class   = IngredientSerializer
     pagination_class   = StandardPagination
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends    = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     search_fields      = ['nom', 'description']
     ordering_fields    = ['prix_par_ml', 'date_creation', 'nom', 'stock_ml']
@@ -752,7 +752,7 @@ Retourne la liste paginée de tous les accessoires **actifs**.
 class AccessoireViewSet(viewsets.ModelViewSet):
     serializer_class   = AccessoireSerializer
     pagination_class   = StandardPagination
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends    = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = AccessoireFilter
@@ -962,7 +962,7 @@ pour une commande (stock > seuil_alerte_stock).
 class FlaconViewSet(viewsets.ModelViewSet):
     serializer_class   = FlaconSerializer
     pagination_class   = StandardPagination
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends    = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = FlaconFilter
@@ -999,7 +999,7 @@ class FavoriViewSet(viewsets.ReadOnlyModelViewSet):
         
 class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
     serializer_class = TagSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     search_fields = ['nom', 'type']
@@ -1010,7 +1010,7 @@ class TagViewSet(viewsets.ModelViewSet):
 class TagParfumSelectViewSet(viewsets.ModelViewSet):
     allowed_types = ['famille_olfactive', 'humeur', 'saison', 'occasion']
     serializer_class = TagSelectSerializer
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['type']
     search_fields = ['nom', 'type']
@@ -1031,7 +1031,7 @@ class TagParfumSelectViewSet(viewsets.ModelViewSet):
 
 class TagEssenceSelectViewSet(viewsets.ModelViewSet):
     serializer_class = TagSelectSerializer
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['type']
     search_fields = ['nom', 'type']
@@ -1045,7 +1045,7 @@ class TagEssenceSelectViewSet(viewsets.ModelViewSet):
 class CategorieParfumViewSet(viewsets.ModelViewSet):
     queryset = CategorieParfum.objects.filter(actif=True)
     serializer_class = CategorieParfumSerializer
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
     parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     search_fields = ['nom', 'description']
@@ -1058,7 +1058,7 @@ class TypeAccessoireViewSet(viewsets.ModelViewSet):
     """
     queryset = TypeAccessoire.objects.filter(actif=True)
     serializer_class = TypeAccessoireSerializer
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     search_fields = ['nom', 'description']
     ordering_fields = ['nom', 'date_creation']
@@ -1070,7 +1070,7 @@ class TypeFlaconViewSet(viewsets.ModelViewSet):
     """
     queryset = TypeFlacon.objects.filter(actif=True)
     serializer_class = TypeFlaconSerializer
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     search_fields = ['nom', 'description']
     ordering_fields = ['nom', 'date_creation']
@@ -1115,7 +1115,7 @@ class NotificationCatalogueViewSet(viewsets.ModelViewSet):
     """
     queryset = NotificationCatalogue.objects.all()
     serializer_class = NotificationCatalogueSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrServeuse]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['type_produit', 'est_lu']
     search_fields = ['product_name', 'message']
@@ -1178,7 +1178,7 @@ class MouvementStockViewSet(viewsets.ReadOnlyModelViewSet):
     lors de toute modification d'un champ de stock.
     """
     serializer_class = MouvementStockSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrServeuse]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['type_produit', 'utilisateur']
     search_fields = ['nom_produit']
