@@ -13,9 +13,16 @@ def upload_to_parfum(instance, filename):
  
 def upload_to_parfum_galerie(instance, filename):
     return f'parfums/{instance.slug}/galerie/{filename}'
- 
+
+def upload_to_essence_galerie(instance, filename):
+    # Gère instance = Essence ou ProduitFiniEssence
+    ref = getattr(instance, 'code_reference', None) or instance.essence.code_reference
+    return f'essences/{ref}/galerie/{filename}'
+
 def upload_to_essence(instance, filename):
-    return f'essences/{instance.code_reference}/{filename}'
+    # Gère instance = Essence ou ProduitFiniEssence
+    ref = getattr(instance, 'code_reference', None) or instance.essence.code_reference
+    return f'essences/{ref}/{filename}'
  
 def upload_to_accessoire(instance, filename):
     return f'accessoires/{instance.slug}/{filename}'
@@ -392,6 +399,8 @@ class Essence(models.Model):
 
     # Statut
     actif = models.BooleanField(default=True)
+    
+    
 
     date_creation = models.DateTimeField(auto_now_add=True)
     date_modification = models.DateTimeField(auto_now=True)
@@ -480,7 +489,19 @@ class ProduitFiniEssence(models.Model):
     prix_promotionnel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     stock_disponible = models.PositiveIntegerField(default=0)
     stock_precedent = models.PositiveIntegerField(default=0, editable=False, help_text="Stock de ce format avant la mise à jour")
+    
+    image_principale = models.ImageField(
+        upload_to=upload_to_essence,
+        blank=True, null=True,
+        help_text="Image principale du produit fini (jpg, png, webp — max 2Mo)"
+    )
+    image_supp_1 = models.ImageField(upload_to=upload_to_essence_galerie, blank=True, null=True, help_text="Image supplémentaire 1")
+    image_supp_2 = models.ImageField(upload_to=upload_to_essence_galerie, blank=True, null=True, help_text="Image supplémentaire 2")
+    image_supp_3 = models.ImageField(upload_to=upload_to_essence_galerie, blank=True, null=True, help_text="Image supplémentaire 3")
+    image_supp_4 = models.ImageField(upload_to=upload_to_essence_galerie, blank=True, null=True, help_text="Image supplémentaire 4")
+    
     actif = models.BooleanField(default=True)
+    
 
     class Meta:
         db_table = 'produit_fini_essence'
@@ -762,4 +783,3 @@ class MouvementStock(models.Model):
     def __str__(self):
         user_str = self.utilisateur.email if self.utilisateur else "Système"
         return f"{self.date_ajout.strftime('%Y-%m-%d %H:%M')} - {user_str} a ajouté {self.quantite_ajoutee} à {self.nom_produit} ({self.type_produit})"
-

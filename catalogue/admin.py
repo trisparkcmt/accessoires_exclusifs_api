@@ -403,7 +403,7 @@ class LotEssenceAdmin(admin.ModelAdmin):
 @admin.register(ProduitFiniEssence)
 class ProduitFiniEssenceAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 'essence', 'taille_ml', 'prix', 'prix_promotionnel',
+        'id', 'apercu_image_col', 'essence', 'taille_ml', 'prix', 'prix_promotionnel',
         'prix_actuel', 'stock_disponible', 'stock_precedent', 'actif'
     )
     list_filter = ('actif', 'taille_ml', 'essence__categorie')
@@ -422,11 +422,18 @@ class ProduitFiniEssenceAdmin(admin.ModelAdmin):
         ('Stock', {
             'fields': ('stock_disponible', 'stock_precedent')
         }),
+        ('Images', {
+            'fields': ('image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')
+        }),
         ('Statut', {
             'fields': ('actif',)
         }),
     )
     readonly_fields = ('prix_actuel', 'stock_precedent')
+
+    @admin.display(description="Aperçu")
+    def apercu_image_col(self, obj):
+        return apercu_image(obj.image_principale)
 
     @admin.display(description="Prix actuel", ordering='prix')
     def prix_actuel(self, obj):

@@ -299,7 +299,10 @@ class ProduitFiniEssencePublicSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProduitFiniEssence
-        fields = ['id', 'marque', 'nom', 'categorie', 'taille_ml', 'prix_actuel', 'stock_disponible']
+        fields = ['id', 'marque', 'nom', 'categorie', 'taille_ml', 'prix_actuel', 'stock_disponible', 'image_principale']
+
+    def get_image_principale(self, obj):
+        return get_image_url(self.context.get('request'), obj.image_principale)
 # ============================================================
 # LOTessence et produit finis 
 # ============================================================
@@ -331,8 +334,18 @@ class ProduitFiniEssenceSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'essence', 'essence_details', 'taille_ml',
             'prix', 'prix_promotionnel', 'prix_actuel', 'prix_par_ml',
-            'stock_disponible', 'stock_precedent', 'actif'
+            'stock_disponible', 'stock_precedent', 'actif',
+            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4'
         ]
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        request = self.context.get('request')
+        representation['image_principale'] = get_image_url(request, instance.image_principale)
+        for i in range(1, 5):
+            img_field = f'image_supp_{i}'
+            representation[img_field] = get_image_url(request, getattr(instance, img_field))
+        return representation
 
     def create(self, validated_data):
         essence = validated_data.get('essence')
@@ -687,4 +700,3 @@ class MouvementStockSerializer(serializers.ModelSerializer):
             from utilisateur.serializers import UserSerializer
             return UserSerializer(obj.utilisateur, context=self.context).data
         return None
-

@@ -91,3 +91,7 @@ MANIFEST
 *.tmp
 *.orig
 Thumbs.db
+
+
+
+test_de_mon_api/

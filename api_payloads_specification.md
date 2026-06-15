@@ -761,6 +761,126 @@ Chaque section répertorie :
 *   **Payload d'entrée** : Aucun
 *   **Réponse - 200 OK** : Liste de toutes ses livraisons passées (livrées et échouées).
 
+### 4.9 Supprimer un Livreur (Admin)
+*   **URL** : `DELETE /api/v1/auth/admin/livreurs/{id}/delete/`
+*   **Permissions** : Admin uniquement (`IsAdminUser`)
+*   **Payload d'entrée** : Aucun
+*   **Réponse - 204 No Content** :
+    ```json
+    {
+      "detail": "Livreur Paul Nguene supprimé avec succès."
+    }
+    ```
+
+---
+
+## 4.B MODULE SERVEUSES (Admin Only)
+
+Toutes les actions de ce module sont réservées aux administrateurs (`IsSuperadmin`).
+
+### 4.B.1 Lister les serveuses
+*   **URL** : `GET /api/v1/auth/admin/serveuses/`
+*   **Permissions** : Admin uniquement
+*   **Query Parameters** :
+    *   `statut` : string `[OPTIONNEL]`
+*   **Payload d'entrée** : Aucun
+*   **Réponse - 200 OK** :
+    ```json
+    {
+      "count": 1,
+      "next": null,
+      "previous": null,
+      "results": [
+        {
+          "id": 1,
+          "user_details": {
+            "id": 5,
+            "email": "serveuse@example.com",
+            "telephone": "+237699999999",
+            "first_name": "Anna",
+            "last_name": "Kouam",
+            "roles": ["client", "serveuse"]
+          },
+          "actif": true,
+          "nombre_services": 12,
+          "note_moyenne": "4.50",
+          "date_embauche": "2026-06-01",
+          "date_creation": "2026-06-01T12:00:00Z"
+        }
+      ]
+    }
+    ```
+
+### 4.B.2 Promouvoir ou Créer une Serveuse
+*   **URL** : `POST /api/v1/auth/admin/serveuses/promote/`
+*   **Permissions** : Admin uniquement
+*   **Payload d'entrée** :
+    *   *Cas 1 : Promotion d'un client existant*
+        ```json
+        {
+          "user_id": 5,                   // [REQUIS] integer
+          "date_embauche": "2026-06-01"    // [OPTIONNEL] string (YYYY-MM-DD)
+        }
+        ```
+    *   *Cas 2 : Création à partir de zéro*
+        ```json
+        {
+          "email": "serveuse@example.com", // [REQUIS] string
+          "telephone": "+237699999999",    // [REQUIS] string
+          "password": "motdepassefort",    // [REQUIS] string
+          "first_name": "Anna",            // [OPTIONNEL] string
+          "last_name": "Kouam",             // [OPTIONNEL] string
+          "genre": "femme",                // [OPTIONNEL] string ("homme" | "femme" | "autre")
+          "date_embauche": "2026-06-01"    // [OPTIONNEL] string (YYYY-MM-DD)
+        }
+        ```
+*   **Réponse - 201 Created** :
+    ```json
+    {
+      "id": 1,
+      "user_details": {
+        "id": 5,
+        "email": "serveuse@example.com",
+        "telephone": "+237699999999",
+        "first_name": "Anna",
+        "last_name": "Kouam",
+        "roles": ["client", "serveuse"]
+      },
+      "actif": true,
+      "nombre_services": 0,
+      "note_moyenne": "0.00",
+      "date_embauche": "2026-06-01",
+      "date_creation": "2026-06-12T12:00:00Z"
+    }
+    ```
+
+### 4.B.3 Modifier une Serveuse
+*   **URL** : `PATCH /api/v1/auth/admin/serveuses/{id}/`
+*   **Permissions** : Admin uniquement
+*   **Payload d'entrée** :
+    ```json
+    {
+      "actif": false // [OPTIONNEL] boolean
+    }
+    ```
+*   **Réponse - 200 OK** :
+    ```json
+    {
+      "actif": false
+    }
+    ```
+
+### 4.B.4 Supprimer une Serveuse
+*   **URL** : `DELETE /api/v1/auth/admin/serveuses/{id}/delete/`
+*   **Permissions** : Admin uniquement
+*   **Payload d'entrée** : Aucun
+*   **Réponse - 204 No Content** :
+    ```json
+    {
+      "detail": "Serveuse Anna Kouam supprimée avec succès."
+    }
+    ```
+
 ---
 
 ## 5. MODULE CATALOGUE & BOUTIQUE (`/api/v1/shop/`)
@@ -966,6 +1086,34 @@ Chaque section répertorie :
         ```
 *   **Modifier / Supprimer** : `PUT`, `PATCH`, `DELETE` sur `/api/v1/shop/accessoires/{slug}/` (Admin)
 *   **Bascule Favori** : `POST /api/v1/shop/accessoires/{slug}/favori/` (Connecté)
+*   **Bestsellers Historique** : `GET /api/v1/shop/accessoires/bestsellers/` (Public)
+    *   *Payload d'entrée* : Aucun
+    *   *Réponse - 200 OK* :
+        ```json
+        [
+          {
+            "id": 1,
+            "nom": "Pochette Cuir",
+            "slug": "pochette-cuir",
+            "prix_actuel": "12000.00",
+            "image_principale": "http://domain.com/media/image.jpg"
+          }
+        ]
+        ```
+*   **Ventes Hotsellers (du moment)** : `GET /api/v1/shop/accessoires/hotsellers/` (Public)
+    *   *Payload d'entrée* : Aucun
+    *   *Réponse - 200 OK* :
+        ```json
+        [
+          {
+            "id": 1,
+            "nom": "Pochette Cuir",
+            "slug": "pochette-cuir",
+            "prix_actuel": "12000.00",
+            "image_principale": "http://domain.com/media/image.jpg"
+          }
+        ]
+        ```
 
 ### 5.3 Flacons
 *   **URL** : `/api/v1/shop/flacons/`
@@ -1504,10 +1652,70 @@ Chaque section répertorie :
     }
     ```
 
-### 6.7 Suivi de l'Inventaire Labo
-*   **URL** : `/api/v1/lab/labo/essences/`
-*   **Méthodes** : `GET`, `POST` (Admin/Laborantin)
-*   **Détail, Modifier & Supprimer** : `GET`, `PUT`, `PATCH`, `DELETE` sur `/api/v1/lab/labo/essences/{id}/` (Admin)
+### 6.7 Suivi de l'Inventaire Labo (Essences & Lots)
+*   **Permissions** : Public (`AllowAny`)
+*   **Endpoints** :
+    *   **Lister les essences disponibles avec leurs lots** :
+        *   **URL** : `GET /api/v1/lab/labo/essences/disponible/`
+        *   **Payload d'entrée** : Aucun
+        *   **Réponse - 200 OK** :
+            ```json
+            [
+              {
+                "id": 4,
+                "marque": "Exclusif",
+                "nom": "Essence de Patchouli",
+                "categorie": "premium",
+                "stock_total_ml": "1000.00",
+                "prix_par_ml": "500.00"
+              }
+            ]
+            ```
+    *   **Détail complet d'une essence (avec lots)** :
+        *   **URL** : `GET /api/v1/lab/labo/essences/{slug}/detail/`
+        *   **Payload d'entrée** : Aucun
+        *   **Réponse - 200 OK** :
+            ```json
+            {
+              "id": 4,
+              "marque": "Exclusif",
+              "nom": "Essence de Patchouli",
+              "slug": "exclusif-essence-de-patchouli-12345",
+              "categorie": "premium",
+              "code_reference": "ESS-PAT",
+              "description": "Note boisée",
+              "description_ia": "",
+              "fournisseur": "Hervé S.A.",
+              "origine_pays": "Cameroun",
+              "concentration_max": "15.00",
+              "couleur": "Marron",
+              "duree": "longue",
+              "intensite": "forte",
+              "genre_cible": "mixte",
+              "notes_tete": "Citron",
+              "notes_coeur": "Patchouli",
+              "notes_fond": "Santal",
+              "tags": [
+                {
+                  "id": 1,
+                  "nom": "Boisé",
+                  "slug": "boise-famille-12345",
+                  "type": "famille_olfactive"
+                }
+              ],
+              "famille_olfactive": ["Boisé"],
+              "humeurs_compatibles": [],
+              "occasions": [],
+              "saisons_compatibles": [],
+              "signes_astrologiques_compatibles": [],
+              "moments_journee": [],
+              "prix_par_ml": "500.00",
+              "actif": true,
+              "stock_total_ml": "1000.00",
+              "date_creation": "2026-06-06T12:00:00Z",
+              "date_modification": "2026-06-06T12:00:00Z"
+            }
+            ```
 
 ---
 
