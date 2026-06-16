@@ -123,3 +123,41 @@ class DepensePermission(permissions.BasePermission):
             return True
         return False
 
+
+class CommandePermission(permissions.BasePermission):
+    """
+    Permissions pour les Commandes :
+    - Admin et Serveuse active : accès complet (lecture, assignation livreur, modification statuts commande/livraison).
+    - Livreur actif : accès en lecture à ses commandes assignées, et modification uniquement du statut de paiement vers 'payé' ou 'échoué'.
+    - Client actif : accès en lecture à ses propres commandes.
+    """
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        
+        # Superadmin
+        if user.is_superuser:
+            return True
+            
+        # Serveuse active
+        if is_active_serveuse(user):
+            return True
+            
+        # Livreur actif
+        if is_active_livreur(user):
+            # Doit être le livreur assigné à cette commande
+            return bool(obj.livreur and obj.livreur.user == user)
+            
+        # Client actif
+        if is_active_client(user):
+            # Uniquement lecture/actions sur ses propres commandes
+            return bool(obj.client and obj.client.user == user)
+                
+        return False
+
+

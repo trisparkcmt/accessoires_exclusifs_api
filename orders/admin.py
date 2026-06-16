@@ -109,8 +109,12 @@ class AffectationLivraisonInline(admin.TabularInline):
 @admin.register(Commande)
 class CommandeAdmin(admin.ModelAdmin):
     list_display = ('id', 'numero_commande', 'client_info', 'total_ttc', 'statut', 'statut_paiement', 'date_creation', 'actions_links')
-    list_filter = ('statut', 'statut_paiement', 'methode_paiement', 'date_creation')
-    search_fields = ('numero_commande', 'client__user__email', 'client__user__username', 'client__user__first_name', 'client__user__last_name')
+    list_filter = ('statut', 'statut_paiement', 'statut_livraison', 'date_creation')
+    search_fields = (
+        'numero_commande', 'client__user__email', 'client__user__username', 
+        'client__user__first_name', 'client__user__last_name', 'livraison_nom_complet'
+    )
+    list_per_page = 100
     readonly_fields = ('date_creation', 'date_modification', 'numero_commande')
     inlines = [
         CommandeLigneParfumInline, 
@@ -138,9 +142,7 @@ class CommandeAdmin(admin.ModelAdmin):
         ('Suivi livraison', {
             'fields': ('date_livraison_estimee', 'date_livraison_reelle')
         }),
-        ('Paiement', {
-            'fields': ('methode_paiement',)
-        }),
+        
         ('Notes', {
             'fields': ('note_client', 'note_interne')
         }),

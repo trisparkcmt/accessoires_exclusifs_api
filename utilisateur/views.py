@@ -160,7 +160,7 @@ class CustomLogoutView(LogoutView):
 
 #==============================utils================================
 
-def generate_promo_code(length=8):
+def generate_promo_code(length=4):
     """Génère un code promo unique de type ACC-XXXXXX"""
     chars = string.ascii_uppercase + string.digits
     code = ''.join(random.choice(chars) for _ in range(length))

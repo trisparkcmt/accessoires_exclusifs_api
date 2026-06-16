@@ -1,5 +1,9 @@
-from django.db import models
+from django.db import models, transaction
 from django.core.validators import MinValueValidator
+from django.utils import timezone
+from decimal import Decimal
+import random
+import string
 
 
 
@@ -13,8 +17,8 @@ class Panier(models.Model):
         ('converti', 'Converti'),
     ]
     
+
     client = models.ForeignKey('utilisateur.Client', on_delete=models.CASCADE, null=True, blank=True, related_name='paniers')
-    
     code_promo_applique = models.CharField(max_length=50, blank=True)
     prestataire = models.ForeignKey('utilisateur.Prestataire', on_delete=models.SET_NULL, null=True, blank=True, related_name='paniers')
     remise_montant = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -40,8 +44,10 @@ class Panier(models.Model):
         total_parfums = sum(ligne.sous_total for ligne in self.lignes_parfums.all())
         total_persos = sum(ligne.sous_total for ligne in self.lignes_parfums_perso.all())
         total_accessoires = sum(ligne.sous_total for ligne in self.lignes_accessoires.all())
+        total_produit_fini_essence = sum(ligne.sous_total for ligne in self.lignes_produit_fini_essence.all())
+        total_essence_personnalisee = sum(ligne.sous_total for ligne in self.lignes_essence_personnalisee.all())
         
-        self.sous_total = total_parfums + total_persos + total_accessoires
+        self.sous_total = total_parfums + total_persos + total_accessoires + total_produit_fini_essence + total_essence_personnalisee
         
         if self.remise_pourcentage:
             self.remise_montant = self.sous_total * (self.remise_pourcentage / 100)
@@ -54,12 +60,30 @@ class Panier(models.Model):
 class PanierLigneParfum(models.Model):
     panier = models.ForeignKey('orders.Panier', on_delete=models.CASCADE, related_name='lignes_parfums')
     parfum = models.ForeignKey('catalogue.Parfum', on_delete=models.CASCADE)
+    
     quantite = models.IntegerField(default=1, validators=[MinValueValidator(1)])
     prix_unitaire_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
     sous_total = models.DecimalField(max_digits=10, decimal_places=2)
     
     class Meta:
         db_table = 'panier_ligne_parfum'
+    
+    def save(self, *args, **kwargs):
+        self.sous_total = self.prix_unitaire_snapshot * self.quantite
+        super().save(*args, **kwargs)
+
+
+
+class PanierLigneProduitFiniEssence(models.Model):
+    panier = models.ForeignKey('orders.Panier', on_delete=models.CASCADE, related_name='lignes_produit_fini_essence')
+    produit_fini_essence = models.ForeignKey('catalogue.ProduitFiniEssence', on_delete=models.CASCADE)
+
+    quantite = models.IntegerField(default=1, validators=[MinValueValidator(1)])
+    prix_unitaire_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
+    sous_total = models.DecimalField(max_digits=10, decimal_places=2)
+    
+    class Meta:
+        db_table = 'panier_ligne_produit_fini_essence'
     
     def save(self, *args, **kwargs):
         self.sous_total = self.prix_unitaire_snapshot * self.quantite
@@ -76,6 +100,22 @@ class PanierLigneParfumPerso(models.Model):
     
     class Meta:
         db_table = 'panier_ligne_parfum_perso'
+    
+    def save(self, *args, **kwargs):
+        self.sous_total = self.prix_calcule * self.quantite
+        super().save(*args, **kwargs)
+
+
+
+class PanierLigneEssencePersonnalisee(models.Model):
+    panier = models.ForeignKey('orders.Panier', on_delete=models.CASCADE, related_name='lignes_essence_personnalisee')
+    essence_personnalisee = models.ForeignKey('laboratoire.EssencePersonnalisee', on_delete=models.CASCADE)
+    quantite = models.IntegerField(default=1, validators=[MinValueValidator(1)])
+    prix_calcule = models.DecimalField(max_digits=10, decimal_places=2)
+    sous_total = models.DecimalField(max_digits=10, decimal_places=2)
+    
+    class Meta:
+        db_table = 'panier_ligne_essence_personnalisee'
     
     def save(self, *args, **kwargs):
         self.sous_total = self.prix_calcule * self.quantite
@@ -99,7 +139,7 @@ class PanierLigneAccessoire(models.Model):
 
 # ============================================================
 # COMMANDE
-# ============================================================
+# ==============================    ==============================
 class Commande(models.Model):
     STATUT_CHOICES = [
         ('en_attente', 'En attente'),
@@ -118,17 +158,14 @@ class Commande(models.Model):
         ('en_attente', 'En attente'),
         ('payé', 'Payé'),
         ('échoué', 'Échoué'),
-        ('remboursé', 'Remboursé'),
+        
     ]
     COMMISSION_STATUT_CHOICES = [
         ('non_versée', 'Non versée'),
         ('versée', 'Versée'),
         ('annulée', 'Annulée'),
     ]
-    METHODE_PAIEMENT_CHOICES = [
-        ('cash', 'cash'),
-        ('mobile_money', 'mobile_money'),
-    ]
+
     
     numero_commande = models.CharField(max_length=50, unique=True)
     client = models.ForeignKey('utilisateur.Client', on_delete=models.CASCADE, related_name='commandes')
@@ -151,7 +188,7 @@ class Commande(models.Model):
     livraison_ville = models.CharField(max_length=100, blank=True)
     livraison_telephone = models.CharField(max_length=20)
     
-    methode_paiement = models.CharField(max_length=50, choices=METHODE_PAIEMENT_CHOICES)
+   
     statut_paiement = models.CharField(max_length=20, choices=STATUT_PAIEMENT_CHOICES, default='en_attente')
 
     date_livraison_estimee = models.DateField(null=True, blank=True)
@@ -172,6 +209,274 @@ class Commande(models.Model):
     def __str__(self):
         return f"{self.numero_commande} - {self.client.user.email} - {self.statut}"
 
+    def recalculer_commande(self):
+        total_parfums = sum(ligne.sous_total for ligne in self.lignes_parfums.all())
+        total_persos = sum(ligne.sous_total for ligne in self.lignes_parfums_perso.all())
+        total_accessoires = sum(ligne.sous_total for ligne in self.lignes_accessoires.all())
+        total_produits_finis = sum(ligne.sous_total for ligne in self.lignes_produit_fini_essence.all())
+        total_essences_perso = sum(ligne.sous_total for ligne in self.lignes_essence_personnalisee.all())
+        
+        self.sous_total = total_parfums + total_persos + total_accessoires + total_produits_finis + total_essences_perso
+        
+        if self.prestataire:
+            self.remise_code_promo = self.sous_total * (self.prestataire.reduction_client_pourcentage / 100)
+            self.commission_montant = self.sous_total * (self.prestataire.taux_commission / 100)
+        else:
+            self.remise_code_promo = Decimal('0')
+            self.commission_montant = Decimal('0')
+            
+        self.total_ttc = self.sous_total - self.remise_code_promo + self.frais_livraison
+
+    def liberer_stocks(self):
+        # Pour les matières premières (ingrédients et essences), la règle métier stipule qu'une fois
+        # mélangés, ils ne peuvent plus être séparés. On n'effectue donc aucun retour en stock pour eux.
+        # Seuls les produits finis standards (Parfums, Accessoires, Produits Finis Essences) sont réintégrés.
+        
+        # 1. Parfums standard
+        for ligne in self.lignes_parfums.all():
+            if ligne.mouvement_stock_genere:
+                if ligne.parfum:
+                    parfum = ligne.parfum
+                    parfum.stock_quantite += ligne.quantite
+                    parfum.save(update_fields=['stock_quantite'])
+                ligne.mouvement_stock_genere = False
+                ligne.save(update_fields=['mouvement_stock_genere'])
+
+        # 2. Accessoires standard
+        for ligne in self.lignes_accessoires.all():
+            if ligne.mouvement_stock_genere:
+                if ligne.accessoire:
+                    accessoire = ligne.accessoire
+                    accessoire.stock_quantite += ligne.quantite
+                    accessoire.save(update_fields=['stock_quantite'])
+                ligne.mouvement_stock_genere = False
+                ligne.save(update_fields=['mouvement_stock_genere'])
+
+        # 3. Produits finis essence standard
+        for ligne in self.lignes_produit_fini_essence.all():
+            if ligne.mouvement_stock_genere:
+                if ligne.produit_fini_essence:
+                    prod = ligne.produit_fini_essence
+                    prod.stock_disponible += ligne.quantite
+                    prod.save(update_fields=['stock_disponible'])
+                ligne.mouvement_stock_genere = False
+                ligne.save(update_fields=['mouvement_stock_genere'])
+
+    def appliquer_stocks(self):
+        if self.statut in ['annulée', 'remboursée']:
+            return
+
+        # 1. Produits personnalisés : décrémentation lors du passage à "validé"
+        if self.statut == 'validé':
+            # Parfums personnalisés
+            for ligne in self.lignes_parfums_perso.all():
+                if not ligne.proportions_mises_a_jour:
+                    # Flacon
+                    if ligne.parfum_personnalise.flacon:
+                        flacon = ligne.parfum_personnalise.flacon
+                        flacon.stock_quantite -= ligne.quantite
+                        flacon.save(update_fields=['stock_quantite'])
+                    # Essences
+                    for l_perf in ligne.parfum_personnalise.lignes.all():
+                        if l_perf.essence:
+                            lot = l_perf.essence
+                            lot.stock_ml -= Decimal(ligne.quantite) * l_perf.quantite_ml
+                            lot.save(update_fields=['stock_ml'])
+                        elif l_perf.essence_personnalisee:
+                            essence_perso = l_perf.essence_personnalisee
+                            for l_ess in essence_perso.lignes.all():
+                                ing = l_ess.ingredient
+                                ing.stock_ml -= Decimal(ligne.quantite) * l_perf.quantite_ml * l_ess.quantite_ml
+                                ing.save(update_fields=['stock_ml'])
+                    ligne.proportions_mises_a_jour = True
+                    ligne.save(update_fields=['proportions_mises_a_jour'])
+
+            # Essences personnalisées
+            for ligne in self.lignes_essence_personnalisee.all():
+                if not ligne.proportions_mises_a_jour:
+                    essence_perso = ligne.essence_personnalise
+                    if essence_perso:
+                        for l_ess in essence_perso.lignes.all():
+                            ing = l_ess.ingredient
+                            ing.stock_ml -= Decimal(ligne.quantite) * l_ess.quantite_ml
+                            ing.save(update_fields=['stock_ml'])
+                    ligne.proportions_mises_a_jour = True
+                    ligne.save(update_fields=['proportions_mises_a_jour'])
+
+        # 2. Produits standards : décrémentation lors du paiement
+        if self.statut_paiement == 'payé':
+            # Parfums standard
+            for ligne in self.lignes_parfums.all():
+                if not ligne.mouvement_stock_genere:
+                    if ligne.parfum:
+                        parfum = ligne.parfum
+                        parfum.stock_quantite -= ligne.quantite
+                        parfum.save(update_fields=['stock_quantite'])
+                    ligne.mouvement_stock_genere = True
+                    ligne.save(update_fields=['mouvement_stock_genere'])
+
+            # Accessoires standard
+            for ligne in self.lignes_accessoires.all():
+                if not ligne.mouvement_stock_genere:
+                    if ligne.accessoire:
+                        accessoire = ligne.accessoire
+                        accessoire.stock_quantite -= ligne.quantite
+                        accessoire.save(update_fields=['stock_quantite'])
+                    ligne.mouvement_stock_genere = True
+                    ligne.save(update_fields=['mouvement_stock_genere'])
+
+            # Produits finis essence standard
+            for ligne in self.lignes_produit_fini_essence.all():
+                if not ligne.mouvement_stock_genere:
+                    if ligne.produit_fini_essence:
+                        prod = ligne.produit_fini_essence
+                        prod.stock_disponible -= ligne.quantite
+                        prod.save(update_fields=['stock_disponible'])
+                    ligne.mouvement_stock_genere = True
+                    ligne.save(update_fields=['mouvement_stock_genere'])
+
+    def traiter_commissions(self, original):
+        from utilisateur.models import CommissionLog, Notification
+        
+        # Données de l'ancien état
+        prev_commission_montant = original.commission_montant if original else Decimal('0')
+        
+        is_paid = self.statut_paiement == 'payé' and self.statut not in ['annulée', 'remboursée']
+        
+        if is_paid:
+            if self.prestataire:
+                if self.commission_statut == 'non_versée':
+                    # Attribution de la commission
+                    self.prestataire.solde_commission += self.commission_montant
+                    self.prestataire.save(update_fields=['solde_commission'])
+                    
+                    CommissionLog.objects.create(
+                        prestataire=self.prestataire,
+                        type_operation='vente',
+                        montant=self.commission_montant,
+                        reference_commande=self.numero_commande,
+                        description=f"Commission sur vente pour la commande {self.numero_commande}"
+                    )
+                    
+                    self.commission_statut = 'versée'
+                    Commande.objects.filter(pk=self.pk).update(commission_statut='versée')
+                    
+                    # Notification prestataire
+                    Notification.objects.create(
+                        recipient=self.prestataire.user,
+                        type='commission',
+                        title="Nouvelle commission !",
+                        message=f"Félicitations ! Vous avez reçu une commission de {self.commission_montant} € pour la commande {self.numero_commande}."
+                    )
+                elif self.commission_statut == 'versée' and self.commission_montant != prev_commission_montant:
+                    # Ajustement si modification de la commande
+                    diff = self.commission_montant - prev_commission_montant
+                    self.prestataire.solde_commission += diff
+                    self.prestataire.save(update_fields=['solde_commission'])
+                    
+                    CommissionLog.objects.create(
+                        prestataire=self.prestataire,
+                        type_operation='bonus',
+                        montant=diff,
+                        reference_commande=self.numero_commande,
+                        description=f"Ajustement de commission pour la commande {self.numero_commande}"
+                    )
+            else:
+                # Si le prestataire a été retiré après versement
+                if self.commission_statut == 'versée' and original and original.prestataire:
+                    original.prestataire.solde_commission -= prev_commission_montant
+                    original.prestataire.save(update_fields=['solde_commission'])
+                    
+                    CommissionLog.objects.create(
+                        prestataire=original.prestataire,
+                        type_operation='bonus',
+                        montant=-prev_commission_montant,
+                        reference_commande=self.numero_commande,
+                        description=f"Annulation de commission suite au retrait du code promo de la commande {self.numero_commande}"
+                    )
+                    self.commission_statut = 'annulée'
+                    Commande.objects.filter(pk=self.pk).update(commission_statut='annulée')
+        else:
+            # Commande non payée, annulée ou remboursée
+            if self.commission_statut == 'versée':
+                if self.prestataire:
+                    self.prestataire.solde_commission -= prev_commission_montant
+                    self.prestataire.save(update_fields=['solde_commission'])
+                    
+                    CommissionLog.objects.create(
+                        prestataire=self.prestataire,
+                        type_operation='bonus',
+                        montant=-prev_commission_montant,
+                        reference_commande=self.numero_commande,
+                        description=f"Annulation de commission suite à l'annulation/remboursement de la commande {self.numero_commande}"
+                    )
+                self.commission_statut = 'annulée'
+                Commande.objects.filter(pk=self.pk).update(commission_statut='annulée')
+            elif self.statut in ['annulée', 'remboursée'] and self.commission_statut == 'non_versée':
+                self.commission_statut = 'annulée'
+                Commande.objects.filter(pk=self.pk).update(commission_statut='annulée')
+
+    def traiter_livreur_notification(self, original):
+        from utilisateur.models import Notification
+        
+        old_livreur = original.livreur if original else None
+        
+        if self.livreur and self.livreur != old_livreur:
+            # Notification livreur
+            Notification.objects.create(
+                recipient=self.livreur.user,
+                type='livraison',
+                title="Nouvelle livraison assignée !",
+                message=f"La commande {self.numero_commande} vous a été assignée."
+            )
+            
+            # Créer l'affectation
+            from orders.models import AffectationLivraison
+            AffectationLivraison.objects.get_or_create(
+                commande=self,
+                livreur=self.livreur,
+                defaults={'statut': 'assignée'}
+            )
+            
+            # Mettre à jour automatiquement le statut de livraison de la commande
+            if not self.statut_livraison or self.statut_livraison == 'en_attente_affectation':
+                self.statut_livraison = 'assignée'
+                Commande.objects.filter(pk=self.pk).update(statut_livraison='assignée')
+
+    def save(self, *args, **kwargs):
+        if not self.numero_commande:
+            for _ in range(10):
+                code = f"CMD-{''.join(random.choices(string.ascii_uppercase + string.digits, k=6))}"
+                if not Commande.objects.filter(numero_commande=code).exists():
+                    self.numero_commande = code
+                    break
+        
+        original = None
+        if self.pk:
+            try:
+                original = Commande.objects.get(pk=self.pk)
+            except Commande.DoesNotExist:
+                pass
+        
+        # 1. Recalculer le total
+        # Remarque : recalculer_commande s'appuie sur les relations inverses. Si la commande est nouvelle,
+        # elle n'a pas encore de lignes associées en base, le calcul donnera 0. C'est normal, le recalcul
+        # sera relancé après l'ajout des lignes par le view/serializer.
+        if self.pk:
+            self.recalculer_commande()
+            
+        super().save(*args, **kwargs)
+        
+        # 2. Gestion des stocks
+        with transaction.atomic():
+            self.liberer_stocks()
+            self.appliquer_stocks()
+            
+        # 3. Commissions et Notifications
+        self.traiter_commissions(original)
+        self.traiter_livreur_notification(original)
+
+
 
 class CommandeLigneParfum(models.Model):
     commande = models.ForeignKey('orders.Commande', on_delete=models.CASCADE, related_name='lignes_parfums')
@@ -185,6 +490,24 @@ class CommandeLigneParfum(models.Model):
     
     class Meta:
         db_table = 'commande_ligne_parfum'
+    
+    def save(self, *args, **kwargs):
+        self.sous_total = (self.prix_unitaire_snapshot - self.remise_ligne) * self.quantite
+        super().save(*args, **kwargs)
+
+
+class CommandeProduitFiniEssence(models.Model):
+    commande = models.ForeignKey('orders.Commande', on_delete=models.CASCADE, related_name='lignes_produit_fini_essence')
+    produit_fini_essence = models.ForeignKey('catalogue.ProduitFiniEssence', on_delete=models.SET_NULL, null=True, related_name='commandes_lignes')
+    nom_snapshot = models.CharField(max_length=200)
+    quantite = models.IntegerField(validators=[MinValueValidator(1)])
+    prix_unitaire_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
+    remise_ligne = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    sous_total = models.DecimalField(max_digits=10, decimal_places=2)
+    mouvement_stock_genere = models.BooleanField(default=False)
+    
+    class Meta:
+        db_table = 'commande_produit_fini_essence'
     
     def save(self, *args, **kwargs):
         self.sous_total = (self.prix_unitaire_snapshot - self.remise_ligne) * self.quantite
@@ -210,6 +533,36 @@ class CommandeLigneParfumPerso(models.Model):
     
     class Meta:
         db_table = 'commande_ligne_parfum_perso'
+    
+    def save(self, *args, **kwargs):
+        self.sous_total = self.prix_snapshot * self.quantite
+        super().save(*args, **kwargs)
+
+
+
+
+
+
+#  ajouttt--------------------------------------------
+class CommandeLigneEssencePersonnalisee(models.Model):
+    STATUT_LABO_CHOICES = [
+        ('en_attente', 'En attente'),
+        ('validée', 'Validée'),
+ 
+        ('livrée', 'Livrée'),
+    ]
+    
+    commande = models.ForeignKey('orders.Commande', on_delete=models.CASCADE, related_name='lignes_essence_personnalisee')
+    essence_personnalise = models.ForeignKey('laboratoire.EssencePersonnalisee', on_delete=models.SET_NULL, null=True, related_name='commandes_lignes')
+    quantite = models.IntegerField(validators=[MinValueValidator(1)])
+    prix_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
+    sous_total = models.DecimalField(max_digits=10, decimal_places=2)
+    statut_laboratoire = models.CharField(max_length=30, choices=STATUT_LABO_CHOICES, default='en_attente')
+    proportions_mises_a_jour = models.BooleanField(default=False, help_text="True quand stock essence et flacon décrémentés")
+    note_laboratoire = models.TextField(blank=True)
+    
+    class Meta:
+        db_table = 'commande_ligne_essence_personnalisee'
     
     def save(self, *args, **kwargs):
         self.sous_total = self.prix_snapshot * self.quantite
