@@ -2765,6 +2765,408 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // -------------------------------------------------------------------------
+    // 11. COMMANDES & PANIER CLIENT/ADMIN LOGIC
+    // -------------------------------------------------------------------------
+
+    // Toggle Livreur Update sections based on selected type
+    const livPatchTypeSelect = document.getElementById('liv-patch-type');
+    if (livPatchTypeSelect) {
+        livPatchTypeSelect.addEventListener('change', () => {
+            const val = livPatchTypeSelect.value;
+            document.getElementById('liv-patch-section-action').style.display = val === 'action-directe' ? 'block' : 'none';
+            document.getElementById('liv-patch-section-fields').style.display = val === 'fields-directs' ? 'block' : 'none';
+        });
+    }
+
+    const livPatchActionSelect = document.getElementById('liv-patch-action');
+    if (livPatchActionSelect) {
+        livPatchActionSelect.addEventListener('change', () => {
+            const isFailure = livPatchActionSelect.value === 'echouer';
+            document.getElementById('liv-patch-motif-field').style.display = isFailure ? 'block' : 'none';
+        });
+    }
+
+    // Load Panier
+    const btnLoadPanier = document.getElementById('btn-load-panier');
+    if (btnLoadPanier) {
+        btnLoadPanier.addEventListener('click', async () => {
+            const res = await makeAPIRequest('/api/v1/orders/panier/', 'GET');
+            const display = document.getElementById('panier-display');
+            if (res.ok && res.data) {
+                const panier = res.data;
+                
+                // Set panier ID in checkout form for ease
+                document.getElementById('checkout-panier-id').value = panier.id;
+
+                let html = `
+                    <div style="margin-bottom:10px;">
+                        <strong>Panier #${panier.id}</strong> (${panier.statut})<br/>
+                        <small>Prestataire ID: ${panier.prestataire || 'aucun'}</small>
+                    </div>
+                    <ul style="list-style:none; padding:0; margin:0;">
+                `;
+
+                const collectLigne = (lignes, type) => {
+                    lignes.forEach(line => {
+                        html += `
+                            <li style="display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <span>${line.nom_snapshot || line.nom || line.parfum_nom || 'Article'} (x${line.quantite})</span>
+                                <div>
+                                    <span style="font-weight:600; margin-right:10px;">${line.sous_total} FCFA</span>
+                                    <button class="btn btn-danger btn-sm btn-delete-line" data-type="${type}" data-id="${line.id}" style="padding:2px 5px; font-size:0.75rem;">Supprimer</button>
+                                </div>
+                            </li>
+                        `;
+                    });
+                };
+
+                collectLigne(panier.lignes_parfums || [], 'parfum');
+                collectLigne(panier.lignes_accessoires || [], 'accessoire');
+                collectLigne(panier.lignes_produit_fini_essence || [], 'produit-fini-essence');
+                collectLigne(panier.lignes_parfums_perso || [], 'parfum-personnalise');
+                collectLigne(panier.lignes_essence_personnalisee || [], 'essence-personnalisee');
+
+                const totalItems = (panier.lignes_parfums || []).length +
+                                   (panier.lignes_accessoires || []).length +
+                                   (panier.lignes_produit_fini_essence || []).length +
+                                   (panier.lignes_parfums_perso || []).length +
+                                   (panier.lignes_essence_personnalisee || []).length;
+
+                if (totalItems === 0) {
+                    html += `<li class="text-muted text-center">Le panier est vide.</li>`;
+                }
+
+                html += `
+                    </ul>
+                    <div style="margin-top:15px; border-top:1px solid rgba(255,255,255,0.1); padding-top:10px;">
+                        <div style="display:flex; justify-content:space-between; font-size:0.9rem;">
+                            <span>Sous-total:</span><span>${panier.sous_total} FCFA</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:0.9rem; color:var(--warning);">
+                            <span>Remise code promo:</span><span>-${panier.remise_montant} FCFA</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:0.9rem;">
+                            <span>Frais de livraison:</span><span>${panier.frais_livraison} FCFA</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; font-size:1.1rem; font-weight:700; margin-top:5px; color:var(--success);">
+                            <span>Total TTC:</span><span>${panier.total} FCFA</span>
+                        </div>
+                    </div>
+                `;
+                display.innerHTML = html;
+
+                // Add delete actions
+                display.querySelectorAll('.btn-delete-line').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const type = btn.getAttribute('data-type');
+                        const id = btn.getAttribute('data-id');
+                        if (confirm(`Voulez-vous supprimer cette ligne de type ${type} ?`)) {
+                            const resDel = await makeAPIRequest(`/api/v1/orders/panier/ligne/${type}/${id}/`, 'DELETE');
+                            if (resDel.ok) {
+                                btnLoadPanier.click();
+                            }
+                        }
+                    });
+                });
+            } else {
+                display.innerHTML = `<p class="text-danger text-center">Erreur lors du chargement : ${res.data.detail || 'Erreur indéterminée'}</p>`;
+            }
+        });
+    }
+
+    // Create Empty Panier
+    const btnCreatePanier = document.getElementById('btn-create-panier');
+    if (btnCreatePanier) {
+        btnCreatePanier.addEventListener('click', async () => {
+            if (confirm('Voulez-vous recréer un panier vide ? (L\'ancien panier actif sera abandonné/modifié)')) {
+                localStorage.removeItem('guest_panier_id');
+                const res = await makeAPIRequest('/api/v1/orders/panier/', 'GET'); // gets or creates
+                if (res.ok && res.data) {
+                    alert('Nouveau panier actif initialisé : ID #' + res.data.id);
+                    if (btnLoadPanier) btnLoadPanier.click();
+                }
+            }
+        });
+    }
+
+    // Add Item to Panier
+    const formPanierAjouter = document.getElementById('form-panier-ajouter');
+    if (formPanierAjouter) {
+        formPanierAjouter.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const type = document.getElementById('add-item-type').value;
+            const itemId = parseInt(document.getElementById('add-item-id').value);
+            const qty = parseInt(document.getElementById('add-item-qty').value);
+
+            let payloadKey = '';
+            if (type === 'parfum') payloadKey = 'parfum_id';
+            else if (type === 'accessoire') payloadKey = 'accessoire_id';
+            else if (type === 'produit-fini-essence') payloadKey = 'produit_fini_essence_id';
+            else if (type === 'parfum-personnalise') payloadKey = 'parfum_personnalise_id';
+            else if (type === 'essence-personnalisee') payloadKey = 'essence_personnalisee_id';
+
+            const body = {
+                quantite: qty
+            };
+            body[payloadKey] = itemId;
+
+            // Optional guest basket ID if present in field
+            const guestId = document.getElementById('checkout-panier-id').value;
+            if (guestId) {
+                body.panier_id = parseInt(guestId);
+            }
+
+            const res = await makeAPIRequest(`/api/v1/orders/panier/ajouter/${type}/`, 'POST', body);
+            if (res.ok) {
+                if (btnLoadPanier) btnLoadPanier.click();
+            }
+        });
+    }
+
+    // Apply Promo Code
+    const formPanierPromo = document.getElementById('form-panier-promo');
+    if (formPanierPromo) {
+        formPanierPromo.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const code = document.getElementById('panier-promo-code').value.trim();
+            const body = { code_promo: code };
+            
+            const guestId = document.getElementById('checkout-panier-id').value;
+            if (guestId) {
+                body.panier_id = parseInt(guestId);
+            }
+
+            const res = await makeAPIRequest('/api/v1/orders/panier/appliquer-promo/', 'POST', body);
+            if (res.ok) {
+                if (btnLoadPanier) btnLoadPanier.click();
+            }
+        });
+    }
+
+    // Remove Promo Code
+    const btnRetirerPromo = document.getElementById('btn-panier-retirer-promo');
+    if (btnRetirerPromo) {
+        btnRetirerPromo.addEventListener('click', async () => {
+            const body = {};
+            const guestId = document.getElementById('checkout-panier-id').value;
+            if (guestId) {
+                body.panier_id = parseInt(guestId);
+            }
+            const res = await makeAPIRequest('/api/v1/orders/panier/retirer-promo/', 'POST', body);
+            if (res.ok) {
+                document.getElementById('panier-promo-code').value = '';
+                if (btnLoadPanier) btnLoadPanier.click();
+            }
+        });
+    }
+
+    // Checkout / Passer Commande
+    const formOrdersCheckout = document.getElementById('form-orders-checkout');
+    if (formOrdersCheckout) {
+        formOrdersCheckout.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const panier_id = document.getElementById('checkout-panier-id').value;
+            const body = {
+                livraison_nom_complet: document.getElementById('checkout-nom').value.trim(),
+                livraison_ville: document.getElementById('checkout-ville').value.trim(),
+                livraison_quartier: document.getElementById('checkout-quartier').value.trim(),
+                livraison_telephone: document.getElementById('checkout-telephone').value.trim(),
+                note_client: document.getElementById('checkout-note').value.trim()
+            };
+            if (panier_id) {
+                body.panier_id = parseInt(panier_id);
+            }
+
+            const res = await makeAPIRequest('/api/v1/orders/commandes/passer/', 'POST', body);
+            if (res.ok && res.data) {
+                alert('Commande validée avec succès ! Code : ' + res.data.numero_commande);
+                document.getElementById('checkout-panier-id').value = '';
+                if (btnLoadPanier) btnLoadPanier.click();
+            }
+        });
+    }
+
+    // Load Client Orders
+    const btnLoadClientOrders = document.getElementById('btn-load-client-orders');
+    if (btnLoadClientOrders) {
+        btnLoadClientOrders.addEventListener('click', async () => {
+            const res = await makeAPIRequest('/api/v1/orders/commandes/', 'GET');
+            const tbody = document.getElementById('client-orders-table-body');
+            tbody.innerHTML = '';
+
+            const results = res.data.results || res.data || [];
+            if (results.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Aucune commande trouvée.</td></tr>';
+                return;
+            }
+
+            results.forEach(cmd => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${cmd.numero_commande}</strong></td>
+                    <td>${cmd.total_ttc} FCFA</td>
+                    <td><span class="status-badge status-${cmd.statut}">${cmd.statut}</span></td>
+                    <td><span class="status-badge status-${cmd.statut_paiement}">${cmd.statut_paiement}</span></td>
+                    <td><span class="status-badge status-${cmd.statut_livraison}">${cmd.statut_livraison}</span></td>
+                    <td>${new Date(cmd.date_creation).toLocaleString()}</td>
+                    <td><button class="btn btn-secondary btn-sm btn-quick-order-view" data-num="${cmd.numero_commande}">Détails</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            tbody.querySelectorAll('.btn-quick-order-view').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const num = btn.getAttribute('data-num');
+                    document.getElementById('client-order-num').value = num;
+                    document.getElementById('form-client-get-order').dispatchEvent(new Event('submit'));
+                });
+            });
+        });
+    }
+
+    // Get specific client order detail
+    const formClientGetOrder = document.getElementById('form-client-get-order');
+    if (formClientGetOrder) {
+        formClientGetOrder.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const num = document.getElementById('client-order-num').value.trim();
+            await makeAPIRequest(`/api/v1/orders/commandes/${num}/`, 'GET');
+        });
+    }
+
+    // Filter and search orders (Admin & Serveuse)
+    const formAdminFilterOrders = document.getElementById('form-admin-filter-orders');
+    if (formAdminFilterOrders) {
+        formAdminFilterOrders.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const statut = document.getElementById('adm-ord-status').value;
+            const statut_paiement = document.getElementById('adm-ord-payment').value;
+            const statut_livraison = document.getElementById('adm-ord-delivery').value;
+            const nom = document.getElementById('adm-ord-name').value.trim();
+            const search = document.getElementById('adm-ord-search').value.trim();
+            const page = parseInt(document.getElementById('adm-ord-page').value) || 1;
+
+            const query = new URLSearchParams();
+            if (statut) query.append('statut', statut);
+            if (statut_paiement) query.append('statut_paiement', statut_paiement);
+            if (statut_livraison) query.append('statut_livraison', statut_livraison);
+            if (nom) query.append('nom', nom);
+            if (search) query.append('search', search);
+            query.append('page', page);
+
+            const res = await makeAPIRequest(`/api/v1/orders/commandes/?${query.toString()}`, 'GET');
+            const tbody = document.getElementById('admin-orders-table-body');
+            tbody.innerHTML = '';
+
+            const paginationInfo = document.getElementById('admin-orders-pagination-info');
+            if (res.ok && res.data) {
+                const results = res.data.results || [];
+                const count = res.data.count || results.length;
+                paginationInfo.textContent = `Page ${page} / ${Math.ceil(count / 100) || 1} (Total: ${count})`;
+
+                if (results.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Aucune commande ne correspond aux filtres.</td></tr>';
+                    return;
+                }
+
+                results.forEach(cmd => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><strong>${cmd.numero_commande}</strong></td>
+                        <td>${cmd.client_email}</td>
+                        <td>${cmd.livraison_nom_complet || '-'}</td>
+                        <td>${cmd.livraison_telephone || '-'}</td>
+                        <td>${cmd.total_ttc} F</td>
+                        <td>
+                            <small>Com: <span class="status-badge status-${cmd.statut}">${cmd.statut}</span></small><br/>
+                            <small>Pai: <span class="status-badge status-${cmd.statut_paiement}">${cmd.statut_paiement}</span></small><br/>
+                            <small>Liv: <span class="status-badge status-${cmd.statut_livraison}">${cmd.statut_livraison}</span></small>
+                        </td>
+                        <td>${new Date(cmd.date_creation).toLocaleDateString()}</td>
+                    `;
+                    tr.addEventListener('click', () => {
+                        document.getElementById('adm-patch-order-num').value = cmd.numero_commande;
+                        document.getElementById('liv-patch-order-num').value = cmd.numero_commande;
+                    });
+                    tbody.appendChild(tr);
+                });
+            } else {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Erreur lors de la récupération des commandes.</td></tr>';
+            }
+        });
+    }
+
+    // Admin PATCH Commande / Assigner livreur
+    const formAdminPatchOrder = document.getElementById('form-admin-patch-order');
+    if (formAdminPatchOrder) {
+        formAdminPatchOrder.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const num = document.getElementById('adm-patch-order-num').value.trim();
+            const body = {};
+
+            const fields = {
+                'statut': 'adm-patch-status',
+                'statut_livraison': 'adm-patch-delivery',
+                'livreur': 'adm-patch-livreur',
+                'date_livraison_estimee': 'adm-patch-date-est',
+                'frais_livraison': 'adm-patch-frais',
+                'note_interne': 'adm-patch-note'
+            };
+
+            Object.entries(fields).forEach(([payloadKey, elementId]) => {
+                const el = document.getElementById(elementId);
+                if (el && el.value !== '') {
+                    if (payloadKey === 'livreur') {
+                        body[payloadKey] = parseInt(el.value);
+                    } else if (payloadKey === 'frais_livraison') {
+                        body[payloadKey] = parseFloat(el.value);
+                    } else {
+                        body[payloadKey] = el.value;
+                    }
+                }
+            });
+
+            const res = await makeAPIRequest(`/api/v1/orders/commandes/${num}/`, 'PATCH', body);
+            if (res.ok) {
+                alert('Commande mise à jour !');
+                if (formAdminFilterOrders) formAdminFilterOrders.dispatchEvent(new Event('submit'));
+            }
+        });
+    }
+
+    // Livreur PATCH / Actions
+    const formLivreurPatchOrder = document.getElementById('form-livreur-patch-order');
+    if (formLivreurPatchOrder) {
+        formLivreurPatchOrder.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const num = document.getElementById('liv-patch-order-num').value.trim();
+            const type = document.getElementById('liv-patch-type').value;
+
+            let body = {};
+            if (type === 'action-directe') {
+                const action = document.getElementById('liv-patch-action').value;
+                body.action = action;
+                if (action === 'echouer') {
+                    body.motif = document.getElementById('liv-patch-motif').value.trim();
+                }
+            } else {
+                body.statut_paiement = document.getElementById('liv-patch-field-paim').value;
+                body.statut_livraison = document.getElementById('liv-patch-field-liv').value;
+                const motif = document.getElementById('liv-patch-field-motif').value.trim();
+                if (motif) {
+                    body.motif_echec_livraison = motif;
+                }
+            }
+
+            const res = await makeAPIRequest(`/api/v1/orders/commandes/${num}/`, 'PATCH', body);
+            if (res.ok) {
+                alert('Commande mise à jour par le livreur !');
+            }
+        });
+    }
+
+    // -------------------------------------------------------------------------
     // 12. INITIALIZATION
     // -------------------------------------------------------------------------
     // Register click listeners to switch response panels

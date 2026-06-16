@@ -28,7 +28,7 @@ urlpatterns = [
 
     # Commandes
     path('commandes/', CommandeListView.as_view(), name='commandes-list'),
-    path('commandes/<str:numero>/', CommandeDetailView.as_view(), name='commande-detail'),
     path('commandes/passer/', PasserCommandeView.as_view(), name='commande-passer'),
+    path('commandes/<str:numero>/', CommandeDetailView.as_view(), name='commande-detail'),
 ]
 
