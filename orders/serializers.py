@@ -320,10 +320,10 @@ class CommandeSerializer(serializers.ModelSerializer):
 
 class PasserCommandeSerializer(serializers.Serializer):
     panier_id = serializers.IntegerField(required=False, allow_null=True)
-    livraison_nom_complet = serializers.CharField(max_length=200)
+    livraison_nom_complet = serializers.CharField(max_length=200, required=False, allow_blank=True, default='')
     livraison_quartier = serializers.CharField(max_length=200, required=False, allow_blank=True, default='')
     livraison_ville = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
-    livraison_telephone = serializers.CharField(max_length=20)
+    livraison_telephone = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
     note_client = serializers.CharField(required=False, allow_blank=True, default='')
 
     def validate(self, data):
@@ -344,9 +344,27 @@ class PasserCommandeSerializer(serializers.Serializer):
         )
         if not has_items:
             raise serializers.ValidationError({"detail": "Le panier est vide."})
+        
+        user = request.user
+        
+        # Auto-populate livraison_nom_complet from user if not provided
+        if not data.get('livraison_nom_complet', '').strip():
+            full_name = f"{user.first_name} {user.last_name}".strip()
+            if full_name:
+                data['livraison_nom_complet'] = full_name
+            else:
+                raise serializers.ValidationError({"detail": "Veuillez fournir un nom complet ou complétez votre profil."})
+        
+        # Auto-populate livraison_telephone from user if not provided
+        if not data.get('livraison_telephone', '').strip():
+            if user.telephone:
+                data['livraison_telephone'] = user.telephone
+            else:
+                raise serializers.ValidationError({"detail": "Veuillez fournir un numéro de téléphone ou complétez votre profil."})
             
         data['panier_obj'] = panier
         return data
+
 
     def create(self, validated_data):
         request = self.context.get('request')
