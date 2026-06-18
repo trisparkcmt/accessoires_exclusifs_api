@@ -1478,6 +1478,8 @@ class ThrottledResendEmailVerificationView(ResendEmailVerificationView):
 
 class GoogleLogin(SocialLoginView):
     adapter_class = GoogleOAuth2Adapter
+    client_class = OAuth2Client
+    callback_url = settings.FRONTEND_URL # Doit correspondre EXACTEMENT à l'URI de redirection configurée chez Google
     throttle_classes = [LoginIPThrottle]
 
 
