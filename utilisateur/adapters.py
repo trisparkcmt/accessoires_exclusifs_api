@@ -10,7 +10,11 @@ class CustomAccountAdapter(DefaultAccountAdapter):
         jusqu'à ce qu'il confirme son adresse email.
         """
         from django.conf import settings
-        if getattr(settings, 'ACCOUNT_EMAIL_VERIFICATION', 'optional') == 'mandatory':
+
+        # On ne désactive le compte QUE pour les inscriptions classiques par email.
+        # Pour Google (social), l'email est déjà considéré comme vérifié par le fournisseur.
+        is_social = hasattr(request, 'sociallogin') or getattr(request, '_sociallogin_signup', False)
+        if getattr(settings, 'ACCOUNT_EMAIL_VERIFICATION', 'optional') == 'mandatory' and not is_social:
             user.is_active = False
         return super().save_user(request, user, form, commit=commit)
 

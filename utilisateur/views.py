@@ -101,6 +101,30 @@ class MobileLoginView(LoginView):
     """
     throttle_classes = [LoginIPThrottle, LoginCredentialThrottle]
 
+    def post(self, request, *args, **kwargs):
+        """
+        Vérifie si la requête semble provenir d'un navigateur.
+        Utilise les 'Fetch Metadata' (Sec-Fetch-*) que les navigateurs ne permettent pas de modifier via JS.
+        """
+        user_agent = request.META.get('HTTP_USER_AGENT', '').lower()
+        client_type = request.headers.get('X-Client-Type', '').lower()
+        
+        # Sec-Fetch-Dest est envoyé par les navigateurs modernes. 'empty' est souvent utilisé par fetch/XHR.
+        sec_fetch_dest = request.META.get('HTTP_SEC_FETCH_DEST', '').lower()
+        origin = request.META.get('HTTP_ORIGIN', '').lower()
+
+        # Un navigateur enverra presque toujours un Origin (pour CORS) ou Sec-Fetch-Dest
+        is_browser = any(ua in user_agent for ua in ['mozilla', 'chrome', 'safari', 'firefox', 'edge']) or sec_fetch_dest != ''
+
+        if (is_browser or origin) and client_type != 'mobile':
+            return Response(
+                {
+                    "detail": "Accès refusé. Pour des raisons de sécurité, les navigateurs doivent utiliser '/api/v1/auth/web/login/'."
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().post(request, *args, **kwargs)
+
     def get_response(self):
         response = super().get_response()
         if response.status_code == 200:
@@ -1482,6 +1506,13 @@ class GoogleLogin(SocialLoginView):
     callback_url = settings.FRONTEND_URL # Doit correspondre EXACTEMENT à l'URI de redirection configurée chez Google
     throttle_classes = [LoginIPThrottle]
 
+    def get_response(self):
+        response = super().get_response()
+        if response.status_code == 200:
+            # Si on veut le refresh token dans le corps du JSON (utile pour le mobile)
+            if dj_rest_auth_settings.USE_JWT and hasattr(self, 'refresh_token') and self.refresh_token:
+                response.data['refresh'] = str(self.refresh_token)
+        return response
 
 # ============================================================
 # GESTION DES LIVREURS
