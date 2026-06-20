@@ -1,4 +1,5 @@
 from django.shortcuts import render, get_object_or_404
+from django.http import FileResponse
 import random
 import string
 from rest_framework.views import APIView
@@ -16,7 +17,8 @@ from orders.models import (
     PanierLigneParfumPerso, 
     PanierLigneProduitFiniEssence, 
     PanierLigneEssencePersonnalisee,
-    Commande
+    Commande,
+    Facture
 )
 from orders.utils import get_or_create_panier
 from orders.serializers import (
@@ -28,9 +30,10 @@ from orders.serializers import (
     PanierSerializer,
     AppliquerCodePromoSerializer,
     CommandeSerializer,
-    PasserCommandeSerializer
+    PasserCommandeSerializer,
+    FactureSerializer
 )
-from utilisateur.permissions import CommandePermission
+from utilisateur.permissions import CommandePermission, is_active_serveuse
 
 
 def generate_cmd_code(length=4):
@@ -561,3 +564,136 @@ class PasserCommandeView(APIView):
         
         commande = serializer.save()
         return Response(CommandeSerializer(commande, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+
+class FactureDownloadView(APIView):
+    """
+    Télécharger le PDF d'une facture.
+    Accessible par :
+    - Le client propriétaire de la commande.
+    - L'administrateur (staff / superuser).
+    - La serveuse active.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, numero, *args, **kwargs):
+        commande = get_object_or_404(Commande, numero_commande=numero)
+        
+        # Vérifier si la facture existe
+        if not hasattr(commande, 'facture') or not commande.facture:
+            return Response(
+                {"detail": "Aucune facture disponible pour cette commande. Elle n'est peut-être pas encore payée."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        facture = commande.facture
+        user = request.user
+        
+        # Vérification des droits d'accès
+        is_owner = (commande.client and commande.client.user == user)
+        is_staff_or_admin = user.is_superuser or user.is_staff
+        is_serv = is_active_serveuse(user)
+        
+        if not (is_owner or is_staff_or_admin or is_serv):
+            return Response(
+                {"detail": "Vous n'avez pas la permission de consulter cette facture."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        # Renvoyer le fichier PDF
+        if not facture.fichier_pdf:
+            return Response(
+                {"detail": "Le fichier PDF de la facture est introuvable sur le serveur."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        return FileResponse(facture.fichier_pdf, content_type='application/pdf')
+
+
+class AdminFactureListView(APIView):
+    """
+    Liste toutes les factures.
+    Accessible uniquement par les administrateurs et les serveuses actives.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        is_staff_or_admin = user.is_superuser or user.is_staff
+        is_serv = is_active_serveuse(user)
+        
+        if not (is_staff_or_admin or is_serv):
+            return Response(
+                {"detail": "Accès réservé aux administrateurs et serveuses actives."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        factures = Facture.objects.all().order_by('-date_emission')
+        
+        # Filtres possibles par recherche de numéro de facture ou de commande
+        search = request.query_params.get('search')
+        if search:
+            from django.db.models import Q
+            factures = factures.filter(
+                Q(numero_facture__icontains=search) |
+                Q(commande__numero_commande__icontains=search) |
+                Q(commande__client__user__email__icontains=search)
+            )
+            
+        paginator = CommandePagination() # réutilisation du paginateur de commande
+        page = paginator.paginate_queryset(factures, request, view=self)
+        if page is not None:
+            serializer = FactureSerializer(page, many=True, context={'request': request})
+            return paginator.get_paginated_response(serializer.data)
+            
+        serializer = FactureSerializer(factures, many=True, context={'request': request})
+        return Response(serializer.data)
+
+
+class AdminFactureRenvoyerView(APIView):
+    """
+    Renvoyer la facture PDF d'une commande par email.
+    Accessible uniquement par les administrateurs et les serveuses actives.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, numero_facture, *args, **kwargs):
+        user = request.user
+        is_staff_or_admin = user.is_superuser or user.is_staff
+        is_serv = is_active_serveuse(user)
+        
+        if not (is_staff_or_admin or is_serv):
+            return Response(
+                {"detail": "Accès réservé aux administrateurs et serveuses actives."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+            
+        facture = get_object_or_404(Facture, numero_facture=numero_facture)
+        email_client = facture.commande.client.user.email
+        
+        if not email_client:
+            return Response(
+                {"detail": "Le client n'a pas d'adresse e-mail configurée."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        if not facture.fichier_pdf:
+            return Response(
+                {"detail": "Le fichier PDF de la facture est introuvable sur le serveur."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+            
+        try:
+            from orders.services import envoyer_email_facture
+            # Lire le contenu du fichier PDF
+            pdf_content = facture.fichier_pdf.read()
+            envoyer_email_facture(facture, pdf_content, email_client)
+            return Response(
+                {"detail": f"Facture {facture.numero_facture} renvoyée avec succès à {email_client}."},
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response(
+                {"detail": f"Erreur lors de l'envoi de l'e-mail : {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

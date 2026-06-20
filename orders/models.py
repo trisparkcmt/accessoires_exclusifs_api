@@ -476,6 +476,26 @@ class Commande(models.Model):
         self.traiter_commissions(original)
         self.traiter_livreur_notification(original)
 
+        # 4. Génération / régénération de la facture PDF
+        # Déclenché uniquement quand statut_paiement devient ou reste "payé"
+        if self.statut_paiement == 'payé':
+            vient_detre_paye = (
+                original is None or original.statut_paiement != 'payé'
+            )
+            commande_modifiee_apres_paiement = (
+                original is not None
+                and original.statut_paiement == 'payé'
+                and self.total_ttc != original.total_ttc
+            )
+            if vient_detre_paye or commande_modifiee_apres_paiement:
+                try:
+                    from orders.services import generer_facture
+                    generer_facture(self)
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"[FACTURE] Erreur génération facture pour {self.numero_commande}: {e}")
+
 
 
 class CommandeLigneParfum(models.Model):
@@ -618,3 +638,59 @@ class AffectationLivraison(models.Model):
     
     def __str__(self):
         return f"Livraison #{self.commande.numero_commande} - {self.livreur.nom} ({self.statut})"
+
+
+# ============================================================
+# FACTURE
+# ============================================================
+class Facture(models.Model):
+    """
+    Facture PDF générée automatiquement dès qu'une commande est payée.
+    Le numéro de suivi suit le format FAC-YYYY-NNNN (ex: FAC-2026-0042).
+    """
+    commande = models.OneToOneField(
+        'orders.Commande',
+        on_delete=models.CASCADE,
+        related_name='facture',
+        verbose_name='Commande'
+    )
+    numero_facture = models.CharField(
+        max_length=30,
+        unique=True,
+        verbose_name='Numéro de facture'
+    )
+    fichier_pdf = models.FileField(
+        upload_to='factures/%Y/%m/',
+        verbose_name='Fichier PDF'
+    )
+    date_emission = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Date d'émission"
+    )
+    envoye_par_email = models.BooleanField(
+        default=False,
+        verbose_name='Email envoyé'
+    )
+    email_envoye_a = models.EmailField(
+        blank=True,
+        verbose_name='Email destinataire'
+    )
+    date_modification = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'facture'
+        verbose_name = 'Facture'
+        verbose_name_plural = 'Factures'
+        ordering = ['-date_emission']
+
+    def __str__(self):
+        return f"{self.numero_facture} — {self.commande.numero_commande}"
+
+    @classmethod
+    def generer_numero(cls):
+        """Génère le prochain numéro FAC-YYYY-NNNN auto-incrémenté par année."""
+        from django.utils import timezone
+        annee = timezone.now().year
+        # Compter le nombre de factures de cette année
+        count = cls.objects.filter(numero_facture__startswith=f'FAC-{annee}-').count()
+        return f'FAC-{annee}-{str(count + 1).zfill(4)}'

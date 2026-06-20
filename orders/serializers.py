@@ -14,7 +14,8 @@ from orders.models import (
     CommandeLigneAccessoire,
     CommandeProduitFiniEssence,
     CommandeLigneParfumPerso,
-    CommandeLigneEssencePersonnalisee
+    CommandeLigneEssencePersonnalisee,
+    Facture
 )
 from catalogue.models import Parfum, Accessoire, ProduitFiniEssence
 from laboratoire.models import ParfumPersonnalise, EssencePersonnalisee
@@ -287,12 +288,19 @@ class CommandeLigneEssencePersonnaliseeSerializer(serializers.ModelSerializer):
         fields = ['id', 'essence_personnalise', 'nom', 'quantite', 'prix_snapshot', 'sous_total', 'statut_laboratoire', 'note_laboratoire']
 
 
+class FactureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Facture
+        fields = ['numero_facture', 'date_emission', 'envoye_par_email', 'fichier_pdf']
+
+
 class CommandeSerializer(serializers.ModelSerializer):
     lignes_parfums = CommandeLigneParfumSerializer(many=True, read_only=True)
     lignes_accessoires = CommandeLigneAccessoireSerializer(many=True, read_only=True)
     lignes_produit_fini_essence = CommandeProduitFiniEssenceSerializer(many=True, read_only=True)
     lignes_parfums_perso = CommandeLigneParfumPersoSerializer(many=True, read_only=True)
     lignes_essence_personnalisee = CommandeLigneEssencePersonnaliseeSerializer(many=True, read_only=True)
+    facture = FactureSerializer(read_only=True)
     
     client_email = serializers.CharField(source='client.user.email', read_only=True)
     livreur_nom = serializers.SerializerMethodField()
@@ -309,7 +317,7 @@ class CommandeSerializer(serializers.ModelSerializer):
             'date_livraison_estimee', 'date_livraison_reelle', 'note_client', 'note_interne',
             'motif_echec_livraison', 'date_creation', 'date_modification',
             'lignes_parfums', 'lignes_accessoires', 'lignes_produit_fini_essence',
-            'lignes_parfums_perso', 'lignes_essence_personnalisee'
+            'lignes_parfums_perso', 'lignes_essence_personnalisee', 'facture'
         ]
 
     def get_livreur_nom(self, obj):
