@@ -90,6 +90,11 @@ class WebLoginView(LoginView):
             # Ils sont transmis de façon sécurisée via les cookies HttpOnly (Set-Cookie).
             response.data.pop('access', None)
             response.data.pop('refresh', None)
+            if hasattr(self, 'user') and self.user:
+                from utilisateur.serializers import UserSerializer
+                serializer = UserSerializer(self.user, context={'request': self.request})
+                response.data['user'] = serializer.data
+                response.data['roles'] = serializer.data.get('roles', [])
         return response
 
 
@@ -131,6 +136,11 @@ class MobileLoginView(LoginView):
             # Client Mobile/API : on s'assure que les deux jetons sont présents dans le JSON
             if dj_rest_auth_settings.USE_JWT and hasattr(self, 'refresh_token') and self.refresh_token:
                 response.data['refresh'] = str(self.refresh_token)
+            if hasattr(self, 'user') and self.user:
+                from utilisateur.serializers import UserSerializer
+                serializer = UserSerializer(self.user, context={'request': self.request})
+                response.data['user'] = serializer.data
+                response.data['roles'] = serializer.data.get('roles', [])
             
             # Suppression des cookies de la réponse pour le client mobile
             if hasattr(response, 'cookies'):
@@ -163,7 +173,6 @@ class CustomLogoutView(LogoutView):
                 cookie_name,
                 path='/',
                 samesite=cookie_samesite,
-                secure=cookie_secure,
                 domain=cookie_domain
             )
         if refresh_cookie_name:
@@ -171,7 +180,6 @@ class CustomLogoutView(LogoutView):
                 refresh_cookie_name,
                 path=refresh_cookie_path,
                 samesite=cookie_samesite,
-                secure=cookie_secure,
                 domain=cookie_domain
             )
         
@@ -1512,6 +1520,11 @@ class GoogleLogin(SocialLoginView):
             # Si on veut le refresh token dans le corps du JSON (utile pour le mobile)
             if dj_rest_auth_settings.USE_JWT and hasattr(self, 'refresh_token') and self.refresh_token:
                 response.data['refresh'] = str(self.refresh_token)
+            if hasattr(self, 'user') and self.user:
+                from utilisateur.serializers import UserSerializer
+                serializer = UserSerializer(self.user, context={'request': self.request})
+                response.data['user'] = serializer.data
+                response.data['roles'] = serializer.data.get('roles', [])
         return response
 
 # ============================================================

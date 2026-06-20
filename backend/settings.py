@@ -281,6 +281,9 @@ FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 
 # Adaptateur personnalisé pour gérer la redirection des emails vers le Frontend
 ACCOUNT_ADAPTER = 'utilisateur.adapters.CustomAccountAdapter'
+
+# Force Allauth to use HTTPS only in production, allow HTTP in development
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'http' if DEBUG else 'https'
 # ============================================================
 # DJANGO REST FRAMEWORK
 # ============================================================
@@ -328,6 +331,7 @@ REST_AUTH = {
     'PASSWORD_CHANGE_SERIALIZER': 'utilisateur.serializers.CustomPasswordChangeSerializer',
     'PASSWORD_RESET_USE_SITES_DOMAIN': False,
     'PASSWORD_RESET_CONFIRM_URL': FRONTEND_URL + '/auth/reset-password-confirm/{uid}/{token}/',
+    'USER_DETAILS_SERIALIZER': 'utilisateur.serializers.UserSerializer',
 }
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

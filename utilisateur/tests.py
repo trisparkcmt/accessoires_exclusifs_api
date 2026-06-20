@@ -3,11 +3,32 @@ from rest_framework.test import APITestCase
 from utilisateur.models import User
 
 
-@override_settings(ACCOUNT_EMAIL_VERIFICATION='none')
+@override_settings(ACCOUNT_EMAIL_VERIFICATION='none', REST_FRAMEWORK={
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'dj_rest_auth.jwt_auth.JWTCookieAuthentication',
+        'rest_framework.authtoken.models.Token',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'login_ip': '999999/day',
+        'login_credential': '999999/day',
+        'register_ip': '999999/day',
+        'register_email': '999999/day',
+    }
+})
 class AuthEndpointsTest(APITestCase):
     def setUp(self):
+        # Désactiver le throttling pour les tests
+        from utilisateur.throttles import (
+            LoginIPThrottle, LoginCredentialThrottle,
+            RegisterIPThrottle, RegisterEmailThrottle,
+        )
+        LoginIPThrottle.rate = '999999/day'
+        LoginCredentialThrottle.rate = '999999/day'
+        RegisterIPThrottle.rate = '999999/day'
+        RegisterEmailThrottle.rate = '999999/day'
+
         self.registration_url = '/api/v1/auth/registration/'
-        self.login_url = '/api/v1/auth/login/'
+        self.login_url = '/api/v1/auth/mobile/login/'
         self.me_url = '/api/v1/auth/me/'
         self.logout_url = '/api/v1/auth/logout/'
         self.apply_prestataire_url = '/api/v1/auth/prestataire/apply/'
@@ -24,26 +45,25 @@ class AuthEndpointsTest(APITestCase):
         self.assertEqual(response.status_code, 200, response.content.decode())
         return response.data['access']
 
-    def test_registration_requires_username(self):
+    def test_registration_requires_matching_passwords(self):
         payload = {
             'email': 'newuser+copilot@example.com',
             'telephone': '+2250700000002',
-            'password1': self.password,
-            'password2': self.password,
+            'password': self.password,
+            'password_confirm': 'DifferentPass123!',
             'first_name': 'Test',
             'last_name': 'User'
         }
         response = self.client.post(self.registration_url, payload, format='json')
         self.assertEqual(response.status_code, 400)
-        self.assertIn('username', response.data)
+        self.assertIn('password_confirm', response.data)
 
     def test_registration_creates_user_and_returns_tokens(self):
         payload = {
-            'username': 'copilot_newuser',
             'email': 'newuser+copilot@example.com',
             'telephone': '+2250700000002',
-            'password1': self.password,
-            'password2': self.password,
+            'password': self.password,
+            'password_confirm': self.password,
             'first_name': 'Test',
             'last_name': 'User'
         }
@@ -53,11 +73,63 @@ class AuthEndpointsTest(APITestCase):
         self.assertIn('refresh', response.data)
         self.assertTrue(User.objects.filter(email='newuser+copilot@example.com').exists())
 
+    def test_registration_fails_with_duplicate_telephone(self):
+        User.objects.create_user(
+            username='user_existing_phone',
+            email='existing_phone@example.com',
+            password=self.password,
+            telephone='+2250700000002'
+        )
+        payload = {
+            'email': 'another_user@example.com',
+            'telephone': '+2250700000002',
+            'password': self.password,
+            'password_confirm': self.password,
+            'first_name': 'Test',
+            'last_name': 'User'
+        }
+        response = self.client.post(self.registration_url, payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('telephone', response.data)
+        self.assertEqual(response.data['telephone'][0], "Ce numéro de téléphone est déjà utilisé.")
+
+    def test_registration_atomic_rollback_on_failure(self):
+        User.objects.create_user(
+            username='user_existing_phone_atomic',
+            email='existing_phone_atomic@example.com',
+            password=self.password,
+            telephone='+2250700000002'
+        )
+        payload = {
+            'email': 'should_not_exist@example.com',
+            'telephone': '+2250700000002',
+            'password': self.password,
+            'password_confirm': self.password,
+            'first_name': 'Test',
+            'last_name': 'User'
+        }
+        user_count_before = User.objects.count()
+        from utilisateur.models import Client
+        client_count_before = Client.objects.count()
+
+        response = self.client.post(self.registration_url, payload, format='json')
+        self.assertEqual(response.status_code, 400)
+
+        # Check rollback
+        self.assertEqual(User.objects.count(), user_count_before)
+        self.assertEqual(Client.objects.count(), client_count_before)
+        self.assertFalse(User.objects.filter(email='should_not_exist@example.com').exists())
+
     def test_login_with_email_succeeds(self):
         payload = {'email': self.user.email, 'password': self.password}
         response = self.client.post(self.login_url, payload, format='json')
         self.assertEqual(response.status_code, 200)
         self.assertIn('access', response.data)
+        # Verify roles injection
+        self.assertIn('roles', response.data)
+        self.assertEqual(response.data['roles'], ['client'])
+        self.assertIn('user', response.data)
+        self.assertEqual(response.data['user']['email'], self.user.email)
 
     def test_patch_me_updates_telephone_and_allows_phone_login(self):
         access_token = self.authenticate({'email': self.user.email, 'password': self.password})
@@ -85,8 +157,8 @@ class AuthEndpointsTest(APITestCase):
 
         response = self.client.get(self.me_url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['user']['email'], self.user.email)
-        self.assertEqual(response.data['user']['role'], 'client')
+        self.assertEqual(response.data['email'], self.user.email)
+        self.assertEqual(response.data['roles'], ['client'])
 
     def test_logout_returns_200(self):
         access_token = self.authenticate({'email': self.user.email, 'password': self.password})

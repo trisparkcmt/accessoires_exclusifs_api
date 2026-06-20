@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.conf import settings
+from django.db import transaction
 from django.contrib.auth import authenticate
 from django.urls import reverse
 from dj_rest_auth.serializers import LoginSerializer, PasswordChangeSerializer
@@ -124,6 +125,16 @@ class CustomRegisterSerializer(RegisterSerializer):
         self.fields.pop('password1', None)
         self.fields.pop('password2', None)
 
+    def validate_telephone(self, value):
+        if value:
+            value = value.strip()
+            if not value:
+                return None
+            if User.objects.filter(telephone=value).exists():
+                raise serializers.ValidationError("Ce numéro de téléphone est déjà utilisé.")
+            return value
+        return None
+
     def validate(self, attrs):
         # Validation manuelle de la correspondance des mots de passe
         if attrs.get('password') != attrs.get('password_confirm'):
@@ -156,15 +167,20 @@ class CustomRegisterSerializer(RegisterSerializer):
 
     def custom_signup(self, request, user):
         # Enregistre les données supplémentaires sur l'objet User
-        user.first_name = self.validated_data.get('first_name', '')
-        user.last_name = self.validated_data.get('last_name', '')
-        user.telephone = self.validated_data.get('telephone', '')
+        user.first_name = self.validated_data.get('first_name', '').strip()
+        user.last_name = self.validated_data.get('last_name', '').strip()
+        telephone = self.validated_data.get('telephone')
+        user.telephone = telephone if telephone else None
         
         from django.conf import settings
         if getattr(settings, 'ACCOUNT_EMAIL_VERIFICATION', 'optional') == 'mandatory':
             user.is_active = False  # Par sécurité
             
         user.save()
+
+    @transaction.atomic
+    def save(self, request):
+        return super().save(request)
 
 @extend_schema_serializer(
     exclude_fields=['new_password1', 'new_password2'],
