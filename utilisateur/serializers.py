@@ -698,7 +698,7 @@ class LivreurCommandeSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'numero_commande', 'statut', 'statut_livraison', 
             'livraison_nom_complet', 'livraison_quartier', 'livraison_ville', 
-            'livraison_telephone', 'methode_paiement', 'statut_paiement',
+            'livraison_telephone', 'statut_paiement',
             'total_ttc', 'date_creation', 'date_livraison_reelle', 'note_client',
             'motif_echec_livraison', 'client_nom'
         ]

@@ -117,36 +117,55 @@ def generer_facture(commande):
     return facture
 
 
+from django.template.loader import render_to_string
+from django.core.mail import EmailMultiAlternatives
+from django.conf import settings
+
 def envoyer_email_facture(facture, pdf_content: bytes, email_destinataire: str):
     """
-    Envoie la facture PDF par email au client.
+    Envoie la facture PDF par email au client avec un design HTML Premium.
     """
     commande = facture.commande
     user = commande.client.user
     prenom = user.first_name or 'Cher client'
 
     sujet = f"Votre facture {facture.numero_facture} — Accessoires Exclusifs"
-    corps = f"""Bonjour {prenom},
+    
+    # 1. Version texte brut (Fallback)
+    corps_texte = f"""Bonjour {prenom},
 
 Nous vous remercions pour votre commande {commande.numero_commande}.
-
 Veuillez trouver ci-joint votre facture {facture.numero_facture} d'un montant de {commande.total_ttc:,.0f} FCFA.
 
-Code de suivi de votre facture : {facture.numero_facture}
-
-Pour toute question, n'hésitez pas à nous contacter.
+Pour voir les détails en ligne, visitez : {settings.FRONTEND_URL}/mes-commandes/{commande.numero_commande}
 
 Cordialement,
 L'équipe Accessoires Exclusifs
 redefine your style
 """
 
-    message = EmailMessage(
+    # 2. Construction de l'URL pour le bouton
+    url_commande = f"{settings.FRONTEND_URL.rstrip('/')}/mes-commandes/{commande.numero_commande}"
+
+    # 3. Version HTML générée à partir du template
+    context = {
+        'prenom': prenom,
+        'commande': commande,
+        'facture': facture,
+        'url_commande': url_commande
+    }
+    corps_html = render_to_string('emails/facture_email.html', context)
+
+    # 4. Envoi de l'email avec MultiAlternatives
+    message = EmailMultiAlternatives(
         subject=sujet,
-        body=corps,
+        body=corps_texte,
         from_email=settings.DEFAULT_FROM_EMAIL,
         to=[email_destinataire],
     )
+    message.attach_alternative(corps_html, "text/html")
+    
+    # Ajout du PDF
     message.attach(
         f"facture_{facture.numero_facture}.pdf",
         pdf_content,
@@ -158,4 +177,4 @@ redefine your style
     facture.envoye_par_email = True
     facture.email_envoye_a = email_destinataire
     facture.save(update_fields=['envoye_par_email', 'email_envoye_a'])
-    logger.info(f"[FACTURE] Email {facture.numero_facture} envoyé à {email_destinataire}")
+    logger.info(f"[FACTURE] Email HTML {facture.numero_facture} envoyé à {email_destinataire}")

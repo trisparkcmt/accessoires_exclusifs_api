@@ -58,6 +58,8 @@ VERCEL_API_DOMAIN = os.getenv('VERCEL_API_DOMAIN')  # ex: "api.votre-site.com"
 if VERCEL_API_DOMAIN:
     ALLOWED_HOSTS.append(VERCEL_API_DOMAIN)
 
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://accessoires-exclusifs.vercel.app')
+
 # Autoriser les requêtes POST/PUT depuis ngrok et Render (indispensable pour l'auth)
 CSRF_TRUSTED_ORIGINS = ["https://integral-logically-gator.ngrok-free.app","https://accessoires-exclusifs-api.onrender.com","https://accessoires-exclusifs.vercel.app"]
 if RENDER_EXTERNAL_HOSTNAME:

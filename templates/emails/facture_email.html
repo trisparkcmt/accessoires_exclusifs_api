@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Votre facture Accessoire Exclusif</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            color: #333333;
+        }
+        .email-wrapper {
+            width: 100%;
+            background-color: #f4f4f4;
+            padding: 40px 0;
+        }
+        .email-content {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        }
+        .header {
+            background-color: #1a1a1a;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            color: #D4AF37; /* Or/Doré premium */
+            margin: 0;
+            font-size: 24px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        .body-content {
+            padding: 40px 30px;
+        }
+        .body-content h2 {
+            font-size: 20px;
+            color: #1a1a1a;
+            margin-top: 0;
+        }
+        .body-content p {
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+        .invoice-details {
+            background-color: #f9f9f9;
+            border-left: 4px solid #D4AF37;
+            padding: 15px 20px;
+            margin: 30px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .invoice-details p {
+            margin: 5px 0;
+            font-size: 15px;
+        }
+        .invoice-details strong {
+            color: #1a1a1a;
+        }
+        .cta-container {
+            text-align: center;
+            margin: 40px 0;
+        }
+        .cta-button {
+            display: inline-block;
+            background-color: #D4AF37;
+            color: #1a1a1a !important;
+            text-decoration: none;
+            padding: 14px 30px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .footer {
+            background-color: #f9f9f9;
+            padding: 20px;
+            text-align: center;
+            font-size: 14px;
+            color: #888888;
+            border-top: 1px solid #eeeeee;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-wrapper">
+        <div class="email-content">
+            <div class="header">
+                <h1>Accessoires Exclusifs</h1>
+            </div>
+            
+            <div class="body-content">
+                <h2>Bonjour {{ prenom }},</h2>
+                <p>Nous vous remercions pour votre achat. Votre commande <strong>{{ commande.numero_commande }}</strong> a bien été traitée et réglée avec succès.</p>
+                
+                <p>Veuillez trouver ci-joint à cet e-mail votre facture détaillée au format PDF.</p>
+                
+                <div class="invoice-details">
+                    <p><strong>N° Facture :</strong> {{ facture.numero_facture }}</p>
+                    <p><strong>Date :</strong> {{ facture.date_emission|date:"d M Y" }}</p>
+                    <p><strong>Montant Total :</strong> {{ commande.total_ttc|floatformat:"0" }} FCFA</p>
+                </div>
+                
+                <div class="cta-container">
+                    <a href="{{ url_commande }}" class="cta-button">Voir ma commande en ligne</a>
+                </div>
+                
+                <p>Pour toute question ou assistance, n'hésitez pas à contacter notre service client.</p>
+                <p>Merci pour votre confiance.</p>
+            </div>
+            
+            <div class="footer">
+                <p>L'équipe Accessoires Exclusifs</p>
+                <p><em>Redefine your style</em></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

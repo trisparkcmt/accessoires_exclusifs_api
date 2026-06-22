@@ -29,7 +29,7 @@ from .serializers import (
     PrestataireValidationSerializer, MeSerializer, MeUpdateSerializer,
     NotificationSerializer, PayoutTransactionSerializer, PayoutRequestSerializer,
     LivreurSerializer, LivreurUpdateSerializer, LivreurCommandeSerializer,
-    ServeusesSerializer, ServeusesUpdateSerializer, DepenseSerializer
+    ServeusesSerializer, ServeusesUpdateSerializer, DepenseSerializer, ClientSerializer
 )
 from .models import Prestataire, User, Notification, PayoutTransaction, CommissionLog, Livreur, Serveuse, Client, Depense
 from orders.models import Commande
@@ -980,12 +980,19 @@ def detail_prestataire_request(request, pk):
     return Response(serializer.data)
 
 @api_view(['GET'])
-@permission_classes([IsSuperadminOrActiveServeuse])
-def admin_notifications(request):
-    """Liste des notifications destinées à l'admin connecté."""
-    notifications = Notification.objects.filter(
-        Q(recipient=request.user) | Q(is_global_admin=True)
-    ).order_by('-created_at')
+@permission_classes([IsAuthenticated])
+def user_notifications(request):
+    """Liste des notifications destinées à l'utilisateur connecté."""
+    user = request.user
+    from utilisateur.permissions import is_active_serveuse
+    # Si l'utilisateur est admin ou serveuse, il voit aussi les notifications globales
+    if user.is_superuser or is_active_serveuse(user) or user.is_staff:
+        notifications = Notification.objects.filter(
+            Q(recipient=user) | Q(is_global_admin=True)
+        ).order_by('-created_at')
+    else:
+        notifications = Notification.objects.filter(recipient=user).order_by('-created_at')
+        
     serializer = NotificationSerializer(notifications, many=True)
     return Response(serializer.data)
 
@@ -1612,9 +1619,8 @@ def livreur_update_delivery_status(request, pk):
             commande.statut = 'livrée'
             commande.date_livraison_reelle = timezone.now()
             
-            # Si le paiement est cash, valider le paiement
-            if commande.methode_paiement == 'cash':
-                commande.statut_paiement = 'payé'
+            # Valider automatiquement le paiement si le livreur livre
+            commande.statut_paiement = 'payé'
                 
             commande.save()
             
@@ -1947,3 +1953,78 @@ class DepenseViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save(updated_by=self.request.user)
+
+from django.db.models import Count, Sum, Q
+
+@api_view(['GET'])
+@permission_classes([IsSuperadminOrActiveServeuse])
+def admin_best_clients(request):
+    """
+    Retourne la liste des meilleurs clients, filtrés selon les critères de l'administrateur.
+    Query params:
+    - filter_by: 'orders' (le plus de commandes payées) ou 'spent' (ayant dépensé le plus). Par défaut 'spent'.
+    - limit: Le nombre de clients à retourner. Si non précisé, retourne tout avec pagination de 100.
+    """
+    filter_by = request.GET.get('filter_by', 'spent')
+    limit_param = request.GET.get('limit', None)
+    
+    clients = Client.objects.annotate(
+        total_paid_orders=Count('commandes', filter=Q(commandes__statut_paiement='payé')),
+        total_spent=Sum('commandes__total_ttc', filter=Q(commandes__statut_paiement='payé'))
+    )
+    
+    if filter_by == 'orders':
+        clients = clients.order_by('-total_paid_orders')
+    else:
+        # Trier par dépense (ceux qui n'ont rien dépensé auront NULL, on gère avec fallback si nécessaire, 
+        # mais order_by gère les NULL en Django)
+        clients = clients.order_by('-total_spent', '-total_paid_orders')
+        
+    if limit_param and limit_param.isdigit():
+        clients = clients[:int(limit_param)]
+        # Sérialisation directe sans pagination si limit est spécifié
+        serializer = ClientSerializer(clients, many=True)
+        return Response(serializer.data)
+        
+    # Pagination par défaut si pas de limit
+    paginator = PageNumberPagination()
+    paginator.page_size = 100
+    paginated_clients = paginator.paginate_queryset(clients, request)
+    serializer = ClientSerializer(paginated_clients, many=True)
+    return paginator.get_paginated_response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsSuperadminOrActiveServeuse])
+def admin_best_prestataires(request):
+    """
+    Retourne la liste des meilleurs prestataires, filtrés selon les critères de l'administrateur.
+    Query params:
+    - filter_by: 'orders' (le plus de commandes payées) ou 'gains' (plus grand montant de commission). Par défaut 'gains'.
+    - limit: Le nombre de prestataires à retourner. Si non précisé, retourne tout avec pagination de 100.
+    """
+    filter_by = request.GET.get('filter_by', 'gains')
+    limit_param = request.GET.get('limit', None)
+    
+    prestataires = Prestataire.objects.annotate(
+        total_paid_orders=Count('commandes', filter=Q(commandes__statut_paiement='payé')),
+        total_gains=Sum('commandes__commission_montant', filter=Q(commandes__statut_paiement='payé'))
+    )
+    
+    if filter_by == 'orders':
+        prestataires = prestataires.order_by('-total_paid_orders')
+    else:
+        # Trier par gains (montant total des commissions)
+        prestataires = prestataires.order_by('-total_gains', '-total_paid_orders')
+        
+    if limit_param and limit_param.isdigit():
+        prestataires = prestataires[:int(limit_param)]
+        # Sérialisation directe sans pagination si limit est spécifié
+        serializer = PrestataireSerializer(prestataires, many=True)
+        return Response(serializer.data)
+        
+    # Pagination par défaut si pas de limit
+    paginator = PageNumberPagination()
+    paginator.page_size = 100
+    paginated_prestataires = paginator.paginate_queryset(prestataires, request)
+    serializer = PrestataireSerializer(paginated_prestataires, many=True)
+    return paginator.get_paginated_response(serializer.data)

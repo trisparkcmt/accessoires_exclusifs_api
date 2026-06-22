@@ -457,6 +457,14 @@ class Commande(models.Model):
                 original = Commande.objects.get(pk=self.pk)
             except Commande.DoesNotExist:
                 pass
+                
+        # Passage automatique à livrée si la commande est payée
+        if self.statut_paiement == 'payé':
+            self.statut_livraison = 'livrée'
+            self.statut = 'livrée'
+            from django.utils import timezone
+            if not self.date_livraison_reelle:
+                self.date_livraison_reelle = timezone.now()
         
         # 1. Recalculer le total
         # Remarque : recalculer_commande s'appuie sur les relations inverses. Si la commande est nouvelle,

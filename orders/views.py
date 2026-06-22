@@ -477,7 +477,7 @@ class CommandeDetailView(APIView):
             # Liste des champs modifiables par admin/serveuse
             allowed_fields = {
                 'statut', 'statut_livraison', 'livreur', 'date_livraison_estimee', 
-                'note_interne', 'motif_echec_livraison', 'frais_livraison'
+                'note_interne', 'motif_echec_livraison', 'frais_livraison', 'statut_paiement'
             }
             update_data = {k: v for k, v in data.items() if k in allowed_fields}
             
