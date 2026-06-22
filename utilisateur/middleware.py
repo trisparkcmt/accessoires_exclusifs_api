@@ -4,7 +4,10 @@ _thread_locals = threading.local()
 
 def get_current_user():
     """Récupère l'utilisateur connecté à l'origine de la requête en cours."""
-    return getattr(_thread_locals, 'user', None)
+    user = getattr(_thread_locals, 'user', None)
+    if user and user.is_authenticated:
+        return user
+    return None
 
 class CurrentUserMiddleware:
     """Middleware pour capturer l'utilisateur connecté dans chaque thread de requête."""

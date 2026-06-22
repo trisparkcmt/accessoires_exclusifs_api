@@ -124,8 +124,10 @@ def _enregistrer_mouvement(type_produit, instance, nom_produit, quantite_avant, 
     from utilisateur.middleware import get_current_user
     from .models import MouvementStock
 
+    utilisateur = get_current_user()  # None si appel hors contexte HTTP (ex: signal JWT)
+
     MouvementStock.objects.create(
-        utilisateur=get_current_user(),
+        utilisateur=utilisateur,  # Peut être None : le champ doit être null=True, blank=True
         type_produit=type_produit,
         produit_id=instance.pk,
         nom_produit=nom_produit,
