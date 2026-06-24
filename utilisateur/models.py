@@ -330,3 +330,45 @@ class Depense(models.Model):
 
     def __str__(self):
         return f"{self.titre} - {self.montant} FCFA"
+
+
+class FCMDevice(models.Model):
+    """Token d'appareil Firebase Cloud Messaging associé à un utilisateur."""
+    PLATFORM_CHOICES = [
+        ('android', 'Android'),
+        ('ios', 'iOS'),
+        ('web', 'Web'),
+    ]
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='fcm_devices',
+        help_text='Utilisateur propriétaire du token.'
+    )
+    registration_token = models.CharField(
+        max_length=500,
+        unique=True,
+        help_text='Token FCM fourni par Firebase SDK côté client.'
+    )
+    platform = models.CharField(
+        max_length=20,
+        choices=PLATFORM_CHOICES,
+        default='web',
+        help_text='Plateforme de l\'appareil.'
+    )
+    active = models.BooleanField(
+        default=True,
+        help_text='Désactiver lors de la déconnexion sans supprimer le token.'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'fcm_device'
+        verbose_name = 'Appareil FCM'
+        verbose_name_plural = 'Appareils FCM'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.email} — {self.platform} ({'actif' if self.active else 'inactif'})"

@@ -89,3 +89,79 @@ def send_google_welcome_email(sender, request, sociallogin, **kwargs):
     """Envoie le mail de bienvenue quand un compte Google est créé ou lié."""
     if sociallogin.account.provider == 'google':
         send_accessoire_welcome_email(sociallogin.user)
+
+
+# ============================================================
+# SIGNAL FCM — Push automatique sur chaque nouvelle Notification
+# ============================================================
+
+import logging as _logging
+_fcm_logger = _logging.getLogger(__name__)
+
+
+@receiver(post_save, sender=Notification)
+def envoyer_push_fcm_sur_notification(sender, instance, created, **kwargs):
+    """
+    Déclenche un push FCM à chaque nouvelle Notification créée en base de données.
+    Ne s'exécute PAS lors des mises à jour (ex: marquage comme lu).
+    """
+    if not created:
+        return  # Push uniquement pour les nouvelles notifications
+
+    from utilisateur.fcm_service import send_fcm_notification
+
+    # Métadonnées transmises au frontend (toutes les valeurs doivent être des strings)
+    extra_data = {
+        'notification_id': str(instance.pk),
+        'type': str(instance.type or 'general'),
+        'url': str(instance.url or ''),
+    }
+    if instance.metadata:
+        for k, v in instance.metadata.items():
+            extra_data[str(k)] = str(v)
+
+    if instance.is_global_admin:
+        # Push vers tous les admins (is_superuser ou is_staff) et serveuses actives
+        admin_users = list(User.objects.filter(is_superuser=True, is_active=True))
+        staff_users = list(User.objects.filter(is_staff=True, is_active=True))
+
+        try:
+            from utilisateur.models import Serveuse  # noqa
+            serveuse_users = list(
+                User.objects.filter(client__serveuse__actif=True, is_active=True)
+            )
+        except Exception:
+            serveuse_users = []
+
+        # Dédupliquer les utilisateurs cibles
+        seen = set()
+        all_users = []
+        for user in admin_users + staff_users + serveuse_users:
+            if user.pk not in seen:
+                seen.add(user.pk)
+                all_users.append(user)
+
+        if all_users:
+            send_fcm_notification(
+                users=all_users,
+                title=instance.title,
+                message=instance.message,
+                data=extra_data,
+            )
+            _fcm_logger.info(
+                "[Signal FCM] Notif globale admin #%d → %d utilisateurs.",
+                instance.pk, len(all_users),
+            )
+
+    elif instance.recipient:
+        # Push vers un utilisateur spécifique
+        send_fcm_notification(
+            users=[instance.recipient],
+            title=instance.title,
+            message=instance.message,
+            data=extra_data,
+        )
+        _fcm_logger.info(
+            "[Signal FCM] Notif #%d → %s.",
+            instance.pk, instance.recipient.email,
+        )

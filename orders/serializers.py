@@ -15,7 +15,8 @@ from orders.models import (
     CommandeProduitFiniEssence,
     CommandeLigneParfumPerso,
     CommandeLigneEssencePersonnalisee,
-    Facture
+    Facture,
+    CodePromoAdmin
 )
 from catalogue.models import Parfum, Accessoire, ProduitFiniEssence
 from laboratoire.models import ParfumPersonnalise, EssencePersonnalisee
@@ -244,14 +245,49 @@ class AppliquerCodePromoSerializer(serializers.Serializer):
 
     def validate(self, data):
         code = data['code_promo'].strip()
+        
+        # 1. Chercher si c'est un prestataire actif
         try:
             from utilisateur.models import Prestataire
             prestataire = Prestataire.objects.get(code_promo=code, statut='actif')
+            data['prestataire_obj'] = prestataire
+            return data
         except Prestataire.DoesNotExist:
+            pass
+            
+        # 2. Chercher si c'est un code promo admin
+        try:
+            promo_admin = CodePromoAdmin.objects.get(code__iexact=code, est_actif=True)
+        except CodePromoAdmin.DoesNotExist:
             raise serializers.ValidationError({"code_promo": "Code promotionnel invalide ou inactif."})
             
-        data['prestataire_obj'] = prestataire
+        # Pour un code promo admin, l'utilisateur doit être connecté et avoir un profil client
+        request = self.context.get('request')
+        user = request.user if request else None
+        if not user or not user.is_authenticated:
+            raise serializers.ValidationError({"code_promo": "Vous devez être connecté pour utiliser ce code promo."})
+            
+        try:
+            client = user.client
+        except AttributeError:
+            raise serializers.ValidationError({"code_promo": "Profil client introuvable."})
+            
+        # Vérifier si le client est dans la liste autorisée
+        if not promo_admin.clients_autorises.filter(pk=client.pk).exists():
+            raise serializers.ValidationError({"code_promo": "Vous n'êtes pas autorisé à utiliser ce code promo."})
+            
+        # Vérifier l'usage unique
+        if Commande.objects.filter(client=client, code_promo_utilise__iexact=code).exclude(statut__in=['annulée', 'remboursée']).exists():
+            raise serializers.ValidationError({"code_promo": "Vous avez déjà utilisé ce code promo."})
+            
+        data['promo_admin_obj'] = promo_admin
         return data
+
+
+class CodePromoAdminSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CodePromoAdmin
+        fields = ['id', 'code', 'reduction_pourcentage', 'est_actif', 'clients_autorises', 'date_creation', 'date_modification']
 
 
 class CommandeLigneParfumSerializer(serializers.ModelSerializer):

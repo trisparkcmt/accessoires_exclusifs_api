@@ -77,3 +77,4 @@ websockets==16.0
 whitenoise==6.12.0
 dj-database-url==2.3.0
 xhtml2pdf==0.2.17
+firebase-admin==6.5.0

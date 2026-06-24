@@ -5,7 +5,7 @@ from django.utils.safestring import mark_safe
 from .models import (
     Panier, PanierLigneParfum, PanierLigneParfumPerso, PanierLigneAccessoire,
     Commande, CommandeLigneParfum, CommandeLigneParfumPerso, CommandeLigneAccessoire,
-    AffectationLivraison
+    AffectationLivraison, CodePromoAdmin
 )
 
 
@@ -259,3 +259,11 @@ class CommandeLigneParfumPersoAdmin(admin.ModelAdmin):
 class CommandeLigneAccessoireAdmin(admin.ModelAdmin):
     list_display = ('id', 'commande', 'nom_snapshot', 'quantite', 'remise_ligne', 'sous_total')
     autocomplete_fields = ('commande',)
+
+
+@admin.register(CodePromoAdmin)
+class CodePromoAdminAdmin(admin.ModelAdmin):
+    list_display = ('code', 'reduction_pourcentage', 'est_actif', 'date_creation')
+    list_filter = ('est_actif', 'date_creation')
+    search_fields = ('code',)
+    filter_horizontal = ('clients_autorises',)

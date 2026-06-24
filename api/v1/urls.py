@@ -6,4 +6,5 @@ urlpatterns = [
     path('lab/', include('api.v1.urls.lab_urls')),     # DIY, IA, Essences
     path('orders/', include('api.v1.urls.order_urls')), # Paniers, Livraisons
     path('utilisateur/', include('utilisateur.urls')), # Notifications et gestion prestataire
+    path('pos/', include('api.v1.urls.pos_urls')),     # Point de Vente (POS)
 ]

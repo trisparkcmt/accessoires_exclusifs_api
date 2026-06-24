@@ -2028,3 +2028,69 @@ def admin_best_prestataires(request):
     paginated_prestataires = paginator.paginate_queryset(prestataires, request)
     serializer = PrestataireSerializer(paginated_prestataires, many=True)
     return paginator.get_paginated_response(serializer.data)
+
+
+# ============================================================
+# GESTION DES TOKENS FCM (Firebase Cloud Messaging)
+# ============================================================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def register_fcm_device(request):
+    """
+    Enregistre ou met à jour le token FCM de l'appareil connecté.
+
+    À appeler côté frontend après chaque connexion réussie, dès que
+    Firebase SDK a fourni un token d'enregistrement.
+
+    Body JSON attendu :
+      {
+        "registration_token": "<token FCM>",
+        "platform": "web" | "android" | "ios"
+      }
+    """
+    from utilisateur.serializers import FCMDeviceSerializer
+    serializer = FCMDeviceSerializer(data=request.data)
+    if serializer.is_valid():
+        device = serializer.save(user=request.user)
+        return Response(
+            {
+                "detail": "Token FCM enregistré avec succès.",
+                "platform": device.platform,
+                "active": device.active,
+            },
+            status=status.HTTP_200_OK,
+        )
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def unregister_fcm_device(request):
+    """
+    Désactive le token FCM de l'appareil lors de la déconnexion.
+
+    Le token n'est pas supprimé mais marqué inactif, ce qui stoppe les pushs
+    sans perdre l'historique. Il sera réactivé lors de la prochaine connexion.
+
+    Body JSON attendu :
+      {
+        "registration_token": "<token FCM>"
+      }
+    """
+    from utilisateur.models import FCMDevice
+    token = request.data.get('registration_token')
+    if not token:
+        return Response(
+            {"detail": "Le champ 'registration_token' est requis."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    updated = FCMDevice.objects.filter(
+        registration_token=token,
+        user=request.user,
+    ).update(active=False)
+
+    if updated:
+        return Response({"detail": "Token FCM désactivé avec succès."}, status=status.HTTP_200_OK)
+    return Response({"detail": "Token introuvable."}, status=status.HTTP_404_NOT_FOUND)

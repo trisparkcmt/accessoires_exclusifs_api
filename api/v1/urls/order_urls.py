@@ -1,4 +1,5 @@
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from orders.views import (
     PanierDetailView,
     AjouterParfumView,
@@ -14,8 +15,12 @@ from orders.views import (
     PasserCommandeView,
     FactureDownloadView,
     AdminFactureListView,
-    AdminFactureRenvoyerView
+    AdminFactureRenvoyerView,
+    AdminCodePromoViewSet
 )
+
+router = DefaultRouter()
+router.register(r'admin/codes-promo', AdminCodePromoViewSet, basename='admin-codes-promo')
 
 urlpatterns = [
     # Panier
@@ -38,5 +43,8 @@ urlpatterns = [
     path('commandes/<str:numero>/facture/', FactureDownloadView.as_view(), name='commande-facture-download'),
     path('admin/factures/', AdminFactureListView.as_view(), name='admin-factures-list'),
     path('admin/factures/<str:numero_facture>/renvoyer/', AdminFactureRenvoyerView.as_view(), name='admin-facture-renvoyer'),
+    
+    # Routeur Admin
+    path('', include(router.urls)),
 ]
 

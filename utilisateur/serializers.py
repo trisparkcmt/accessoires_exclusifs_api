@@ -743,3 +743,38 @@ class DepenseSerializer(serializers.ModelSerializer):
         read_only_fields = ['cree_par', 'date_creation', 'date_modification']
 
 
+class FCMDeviceSerializer(serializers.Serializer):
+    """
+    Sérialiseur pour enregistrer ou mettre à jour un token FCM d'appareil.
+
+    Le frontend doit appeler POST /api/v1/auth/devices/register/ après chaque
+    connexion pour associer le token FCM de l'appareil à l'utilisateur connecté.
+    """
+    registration_token = serializers.CharField(
+        max_length=500,
+        help_text="Token FCM fourni par Firebase SDK côté client."
+    )
+    platform = serializers.ChoiceField(
+        choices=['android', 'ios', 'web'],
+        default='web',
+        help_text="Plateforme de l'appareil : 'android', 'ios' ou 'web'."
+    )
+
+    def save(self, user):
+        """
+        Crée ou met à jour l'appareil FCM.
+        Si le token existe déjà (autre utilisateur), il est réassigné à cet utilisateur.
+        """
+        from utilisateur.models import FCMDevice
+        token = self.validated_data['registration_token']
+        platform = self.validated_data['platform']
+
+        device, created = FCMDevice.objects.update_or_create(
+            registration_token=token,
+            defaults={
+                'user': user,
+                'platform': platform,
+                'active': True,
+            }
+        )
+        return device

@@ -18,7 +18,8 @@ from orders.models import (
     PanierLigneProduitFiniEssence, 
     PanierLigneEssencePersonnalisee,
     Commande,
-    Facture
+    Facture,
+    CodePromoAdmin
 )
 from orders.utils import get_or_create_panier
 from orders.serializers import (
@@ -31,9 +32,12 @@ from orders.serializers import (
     AppliquerCodePromoSerializer,
     CommandeSerializer,
     PasserCommandeSerializer,
-    FactureSerializer
+    FactureSerializer,
+    CodePromoAdminSerializer
 )
 from utilisateur.permissions import CommandePermission, is_active_serveuse
+from rest_framework import viewsets
+from rest_framework.permissions import AllowAny, IsAuthenticated, BasePermission
 
 
 def generate_cmd_code(length=4):
@@ -353,14 +357,19 @@ class AppliquerCodePromoView(APIView):
         serializer.is_valid(raise_exception=True)
         
         panier_id = serializer.validated_data.get('panier_id')
-        prestataire = serializer.validated_data['prestataire_obj']
+        prestataire = serializer.validated_data.get('prestataire_obj')
+        promo_admin = serializer.validated_data.get('promo_admin_obj')
         code_promo = serializer.validated_data['code_promo'].strip()
         
         with transaction.atomic():
             panier = get_or_create_panier(request, panier_id)
             panier.code_promo_applique = code_promo
-            panier.prestataire = prestataire
-            panier.remise_pourcentage = prestataire.reduction_client_pourcentage
+            if prestataire:
+                panier.prestataire = prestataire
+                panier.remise_pourcentage = prestataire.reduction_client_pourcentage
+            elif promo_admin:
+                panier.prestataire = None
+                panier.remise_pourcentage = promo_admin.reduction_pourcentage
             panier.recalculer_total()
             
         return Response(PanierSerializer(panier, context={'request': request}).data, status=status.HTTP_200_OK)
@@ -696,4 +705,63 @@ class AdminFactureRenvoyerView(APIView):
             return Response(
                 {"detail": f"Erreur lors de l'envoi de l'e-mail : {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class IsSuperUser(BasePermission):
+    """
+    Permet l'accès uniquement aux super-utilisateurs.
+    """
+    def has_permission(self, request, view):
+        return request.user and request.user.is_authenticated and request.user.is_superuser
+
+
+class AdminCodePromoViewSet(viewsets.ModelViewSet):
+    """
+    CRUD des codes promo réservé au Super-Admin.
+    Envoie des notifications FCM/Emails à la création.
+    """
+    queryset = CodePromoAdmin.objects.all().order_by('-date_creation')
+    serializer_class = CodePromoAdminSerializer
+    permission_classes = [IsAuthenticated, IsSuperUser]
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        
+        # Envoi de la notification et de l'e-mail uniquement lors de la création
+        from utilisateur.models import Notification
+        from django.core.mail import send_mail
+        from django.conf import settings
+        
+        for client in instance.clients_autorises.all():
+            user = client.user
+            subject = "Nouveau code promo exclusif pour vous !"
+            message = (
+                f"Bonjour {user.get_full_name() or user.username},\n\n"
+                f"Vous avez été sélectionné pour bénéficier d'un code promo exclusif !\n"
+                f"Utilisez le code suivant lors de votre prochaine commande : {instance.code}\n"
+                f"Ce code vous donne droit à une réduction de {instance.reduction_pourcentage}%.\n\n"
+                f"À bientôt chez Accessoires Exclusifs !"
+            )
+            
+            # Notification FCM via base
+            Notification.objects.create(
+                recipient=user,
+                type='code_promo_admin',
+                title='Code promo exclusif disponible !',
+                message=f"Profitez de {instance.reduction_pourcentage}% de réduction avec le code : {instance.code}",
+                url='/api/v1/orders/panier/',
+                metadata={
+                    'code_promo': instance.code,
+                    'reduction_pourcentage': str(instance.reduction_pourcentage)
+                }
+            )
+            
+            # Envoi d'email
+            send_mail(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=True,
             )

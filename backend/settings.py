@@ -410,3 +410,56 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 #     "http://localhost:3000",  # Frontend Web
 #     "http://127.0.0.1:3000",
 # ]
+
+
+# ============================================================
+# FIREBASE ADMIN SDK — Notifications Push (FCM)
+# ============================================================
+# Pour configurer Firebase en production (Render) :
+#
+# OPTION A — Recommandée (JSON en base64 dans une variable d'env) :
+#   1. Téléchargez la clé de compte de service sur Firebase Console.
+#   2. Encodez-la : base64 -w 0 serviceAccountKey.json
+#   3. Copiez la valeur et ajoutez-la dans Render comme variable d'environnement :
+#      FIREBASE_CREDENTIALS_BASE64=<valeur base64>
+#
+# OPTION B — Chemin vers un fichier (moins sécurisé) :
+#   Définir FIREBASE_CREDENTIALS_PATH=/chemin/vers/serviceAccountKey.json
+# ============================================================
+import logging as _logging
+
+_firebase_logger = _logging.getLogger('utilisateur.fcm_service')
+
+try:
+    import firebase_admin
+    from firebase_admin import credentials as firebase_credentials
+
+    if not firebase_admin._apps:  # Éviter la double initialisation en dev (rechargement auto)
+        _fcm_creds_b64 = os.getenv('FIREBASE_CREDENTIALS_BASE64')
+        _fcm_creds_path = os.getenv('FIREBASE_CREDENTIALS_PATH')
+
+        if _fcm_creds_b64:
+            import base64
+            import json as _json
+            _decoded = base64.b64decode(_fcm_creds_b64).decode('utf-8')
+            _cred_dict = _json.loads(_decoded)
+            _cred = firebase_credentials.Certificate(_cred_dict)
+            firebase_admin.initialize_app(_cred)
+            _firebase_logger.info("[FCM] Firebase Admin initialisé via FIREBASE_CREDENTIALS_BASE64.")
+        elif _fcm_creds_path:
+            _cred = firebase_credentials.Certificate(_fcm_creds_path)
+            firebase_admin.initialize_app(_cred)
+            _firebase_logger.info("[FCM] Firebase Admin initialisé via FIREBASE_CREDENTIALS_PATH.")
+        else:
+            _firebase_logger.warning(
+                "[FCM] Aucune variable d'environnement Firebase configurée "
+                "(FIREBASE_CREDENTIALS_BASE64 ou FIREBASE_CREDENTIALS_PATH). "
+                "Les notifications push seront désactivées."
+            )
+except ImportError:
+    _firebase_logger.warning(
+        "[FCM] Le package firebase-admin n'est pas installé. "
+        "Exécutez : pip install firebase-admin==6.5.0"
+    )
+except Exception as _e:
+    _firebase_logger.error("[FCM] Erreur lors de l'initialisation Firebase : %s", _e)

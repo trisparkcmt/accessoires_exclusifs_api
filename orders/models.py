@@ -221,6 +221,14 @@ class Commande(models.Model):
         if self.prestataire:
             self.remise_code_promo = self.sous_total * (self.prestataire.reduction_client_pourcentage / 100)
             self.commission_montant = self.sous_total * (self.prestataire.taux_commission / 100)
+        elif self.code_promo_utilise:
+            # Chercher si c'est un code promo admin
+            promo_admin = CodePromoAdmin.objects.filter(code__iexact=self.code_promo_utilise, est_actif=True).first()
+            if promo_admin and self.client and promo_admin.clients_autorises.filter(pk=self.client.pk).exists():
+                self.remise_code_promo = self.sous_total * (promo_admin.reduction_pourcentage / 100)
+            else:
+                self.remise_code_promo = Decimal('0')
+            self.commission_montant = Decimal('0')
         else:
             self.remise_code_promo = Decimal('0')
             self.commission_montant = Decimal('0')
@@ -702,3 +710,20 @@ class Facture(models.Model):
         # Compter le nombre de factures de cette année
         count = cls.objects.filter(numero_facture__startswith=f'FAC-{annee}-').count()
         return f'FAC-{annee}-{str(count + 1).zfill(4)}'
+
+
+class CodePromoAdmin(models.Model):
+    code = models.CharField(max_length=50, unique=True)
+    reduction_pourcentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    est_actif = models.BooleanField(default=True)
+    clients_autorises = models.ManyToManyField('utilisateur.Client', related_name='codes_promo_admin', blank=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'code_promo_admin'
+        verbose_name = 'Code Promo Admin'
+        verbose_name_plural = 'Codes Promo Admin'
+
+    def __str__(self):
+        return f"{self.code} (-{self.reduction_pourcentage}%)"
