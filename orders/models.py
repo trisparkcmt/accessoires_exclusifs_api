@@ -49,11 +49,30 @@ class Panier(models.Model):
         
         self.sous_total = total_parfums + total_persos + total_accessoires + total_produit_fini_essence + total_essence_personnalisee
         
-        if self.remise_pourcentage:
+        # Recalculate discount: verify promo code validity and reapply discount
+        self.remise_montant = Decimal('0')
+        self.remise_pourcentage = Decimal('0')
+        
+        if self.code_promo_applique:
+            # Lookup the promo code to verify it's still valid
+            promo_admin = CodePromoAdmin.objects.filter(
+                code__iexact=self.code_promo_applique, 
+                est_actif=True
+            ).first()
+            
+            if promo_admin and self.client and promo_admin.clients_autorises.filter(pk=self.client.pk).exists():
+                self.remise_pourcentage = promo_admin.reduction_pourcentage
+                self.remise_montant = self.sous_total * (self.remise_pourcentage / 100)
+            else:
+                # Code promo is invalid or inactive, clear it
+                self.code_promo_applique = ""
+        elif self.prestataire:
+            # Apply prestataire discount if no promo code
+            self.remise_pourcentage = self.prestataire.reduction_client_pourcentage
             self.remise_montant = self.sous_total * (self.remise_pourcentage / 100)
         
         self.total = self.sous_total - self.remise_montant + self.frais_livraison
-        self.save(update_fields=['sous_total', 'remise_montant', 'total'])
+        self.save(update_fields=['sous_total', 'remise_montant', 'remise_pourcentage', 'code_promo_applique', 'total'])
         return self.total
 
 
@@ -266,7 +285,7 @@ class Commande(models.Model):
                 if ligne.produit_fini_essence:
                     prod = ligne.produit_fini_essence
                     prod.stock_disponible += ligne.quantite
-                    prod.save(update_fields=['stock_disponible'])
+                    prod.save(update_fields=['stock_disponible'], ajuster_lot=False)
                 ligne.mouvement_stock_genere = False
                 ligne.save(update_fields=['mouvement_stock_genere'])
 
@@ -339,7 +358,7 @@ class Commande(models.Model):
                     if ligne.produit_fini_essence:
                         prod = ligne.produit_fini_essence
                         prod.stock_disponible -= ligne.quantite
-                        prod.save(update_fields=['stock_disponible'])
+                        prod.save(update_fields=['stock_disponible'], ajuster_lot=False)
                     ligne.mouvement_stock_genere = True
                     ligne.save(update_fields=['mouvement_stock_genere'])
 

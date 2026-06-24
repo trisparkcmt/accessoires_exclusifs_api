@@ -1,6 +1,9 @@
 from django.db import models
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.db import transaction
+from django.utils import timezone
 from django.utils.text import slugify
 import random
 import string
@@ -164,6 +167,9 @@ class CategorieParfum(models.Model):
         validators=[MinValueValidator(0), MaxValueValidator(99)],
         help_text="Réduction en % appliquée à tous les parfums de cette catégorie (0 = pas de réduction)"
     )
+    date_debut = models.DateTimeField(null=True, blank=True)
+    date_fin = models.DateTimeField(null=True, blank=True)
+    message_promotion = models.CharField(max_length=255, blank=True)
 
 
     class Meta:
@@ -179,6 +185,16 @@ class CategorieParfum(models.Model):
             random_suffix = ''.join(random.choices(string.digits, k=5))
             self.slug = f"{slugify(self.nom)}-{random_suffix}"
         super().save(*args, **kwargs)
+
+    def promotion_active(self, maintenant=None):
+        if self.taux_reduction <= 0:
+            return False
+        maintenant = maintenant or timezone.now()
+        if self.date_debut and self.date_debut > maintenant:
+            return False
+        if self.date_fin and self.date_fin < maintenant:
+            return False
+        return True
 
 
 class Parfum(models.Model):
@@ -212,6 +228,8 @@ class Parfum(models.Model):
     contenance_ml = models.IntegerField(help_text="30, 50, 75, 100 ml")
     prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
     prix_promotionnel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    date_debut = models.DateTimeField(null=True, blank=True)
+    date_fin = models.DateTimeField(null=True, blank=True)
     stock_quantite = models.IntegerField(default=0)
     seuil_alerte_stock = models.IntegerField(default=5)
     
@@ -265,12 +283,20 @@ class Parfum(models.Model):
     def prix_promotionnel_effectif(self):
         if not self.actif:
             return None
-        if self.prix_promotionnel is not None:
+        if self.prix_promotionnel is not None and self.promotion_article_active():
             return self.prix_promotionnel
-        if self.categorie and self.categorie.taux_reduction > 0:
+        if self.categorie and self.categorie.promotion_active():
             reduction = Decimal(str(self.categorie.taux_reduction)) / Decimal('100')
             return (self.prix_unitaire * (1 - reduction)).quantize(Decimal('0.01'))
         return None
+
+    def promotion_article_active(self, maintenant=None):
+        maintenant = maintenant or timezone.now()
+        if self.date_debut and self.date_debut > maintenant:
+            return False
+        if self.date_fin and self.date_fin < maintenant:
+            return False
+        return True
 
     @property
     def prix_actuel(self):
@@ -525,8 +551,76 @@ class ProduitFiniEssence(models.Model):
         if self.stock_disponible < quantite:
             raise ValueError("Stock insuffisant")
         self.stock_disponible -= quantite
-        self.save()
+        self.save(ajuster_lot=False)
         # Note : aucune décrémentation sur LotEssence car la vente en flacon ne touche pas le stock laboratoire.
+
+    def save(self, *args, **kwargs):
+        ajuster_lot = kwargs.pop('ajuster_lot', True)
+        update_fields = kwargs.get('update_fields')
+        if update_fields is not None and 'stock_disponible' in update_fields and ajuster_lot:
+            # Les commandes/retours de vente gèrent uniquement le stock magasin.
+            ajuster_lot = False
+
+        with transaction.atomic():
+            ancien = None
+            if self.pk:
+                ancien = ProduitFiniEssence.objects.select_for_update().get(pk=self.pk)
+                if ancien.essence_id != self.essence_id:
+                    raise ValidationError("Un produit fini ne peut pas changer d'essence.")
+
+            ancien_stock = ancien.stock_disponible if ancien else 0
+            ancien_taille = ancien.taille_ml if ancien else self.taille_ml
+            delta_ml = Decimal('0')
+            if ajuster_lot:
+                delta_ml = (
+                    Decimal(self.stock_disponible) * Decimal(self.taille_ml)
+                    - Decimal(ancien_stock) * Decimal(ancien_taille)
+                )
+                if delta_ml > 0:
+                    self._prelever_lots(delta_ml)
+                elif delta_ml < 0:
+                    self._restituer_lot(-delta_ml)
+
+            self.stock_precedent = ancien_stock
+            super().save(*args, **kwargs)
+
+    def restituer_stock_lot(self):
+        self._restituer_lot(Decimal(self.stock_disponible) * Decimal(self.taille_ml))
+
+    def _lots_fifo_verrouilles(self):
+        return self.essence.lots.select_for_update().filter(actif=True).order_by('date_reception', 'id')
+
+    def _prelever_lots(self, quantite_ml):
+        restant = Decimal(quantite_ml)
+        lots = list(self._lots_fifo_verrouilles())
+        total_disponible = sum((lot.stock_ml for lot in lots), Decimal('0'))
+        if total_disponible < restant:
+            raise ValidationError(
+                f"Stock insuffisant pour {self.essence.nom_complet}: "
+                f"{restant} ml requis, {total_disponible} ml disponible."
+            )
+
+        for lot in lots:
+            if restant <= 0:
+                break
+            prelevement = min(lot.stock_ml, restant)
+            lot.stock_ml -= prelevement
+            lot.save(update_fields=['stock_ml'])
+            restant -= prelevement
+
+    def _restituer_lot(self, quantite_ml):
+        if quantite_ml <= 0:
+            return
+        lot = (
+            self.essence.lots.select_for_update()
+            .filter(actif=True)
+            .order_by('-date_reception', '-id')
+            .first()
+        )
+        if lot is None:
+            raise ValidationError(f"Aucun lot actif disponible pour restituer {self.essence.nom_complet}.")
+        lot.stock_ml += Decimal(quantite_ml)
+        lot.save(update_fields=['stock_ml'])
 
 # ============================================================
 # ACCESSOIRES
@@ -551,6 +645,9 @@ class TypeAccessoire(models.Model):
         validators=[MinValueValidator(0), MaxValueValidator(99)],
         help_text="Réduction en % appliquée à tous les accessoires de ce type (0 = pas de réduction)"
     )
+    date_debut = models.DateTimeField(null=True, blank=True)
+    date_fin = models.DateTimeField(null=True, blank=True)
+    message_promotion = models.CharField(max_length=255, blank=True)
 
     
     class Meta:
@@ -567,6 +664,16 @@ class TypeAccessoire(models.Model):
             self.slug = f"{slugify(self.nom)}-{random_suffix}"
         super().save(*args, **kwargs)
 
+    def promotion_active(self, maintenant=None):
+        if self.taux_reduction <= 0:
+            return False
+        maintenant = maintenant or timezone.now()
+        if self.date_debut and self.date_debut > maintenant:
+            return False
+        if self.date_fin and self.date_fin < maintenant:
+            return False
+        return True
+
 
 class Accessoire(models.Model):
     type_accessoire = models.ForeignKey(TypeAccessoire, on_delete=models.SET_NULL, null=True, related_name='accessoires')
@@ -581,6 +688,8 @@ class Accessoire(models.Model):
     taille = models.CharField(max_length=50, blank=True)
     prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
     prix_promotionnel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    date_debut = models.DateTimeField(null=True, blank=True)
+    date_fin = models.DateTimeField(null=True, blank=True)
     stock_quantite = models.IntegerField(default=0)
     seuil_alerte_stock = models.IntegerField(default=3)
     image_principale = models.ImageField(
@@ -618,12 +727,20 @@ class Accessoire(models.Model):
     def prix_promotionnel_effectif(self):
         if not self.actif:
             return None
-        if self.prix_promotionnel is not None:
+        if self.prix_promotionnel is not None and self.promotion_article_active():
             return self.prix_promotionnel
-        if self.type_accessoire and self.type_accessoire.taux_reduction > 0:
+        if self.type_accessoire and self.type_accessoire.promotion_active():
             reduction = Decimal(str(self.type_accessoire.taux_reduction)) / Decimal('100')
             return (self.prix_unitaire * (1 - reduction)).quantize(Decimal('0.01'))
         return None
+
+    def promotion_article_active(self, maintenant=None):
+        maintenant = maintenant or timezone.now()
+        if self.date_debut and self.date_debut > maintenant:
+            return False
+        if self.date_fin and self.date_fin < maintenant:
+            return False
+        return True
 
     @property
     def prix_actuel(self):

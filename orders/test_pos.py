@@ -4,7 +4,7 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 from decimal import Decimal
 
-from catalogue.models import Parfum, Accessoire, ProduitFiniEssence, Essence
+from catalogue.models import Parfum, Accessoire, ProduitFiniEssence, Essence, LotEssence
 from orders.models import Commande, Facture
 from utilisateur.models import Client, Serveuse, Prestataire
 from allauth.account.models import EmailAddress
@@ -101,6 +101,10 @@ class POSTestCase(APITestCase):
             nom="Essence Lavande",
             code_reference="ESS-LAV-01",
             actif=True
+        )
+        LotEssence.objects.create(
+            essence=self.essence_base,
+            stock_ml=Decimal("1000.00"),
         )
         self.essence_produit = ProduitFiniEssence.objects.create(
             essence=self.essence_base,

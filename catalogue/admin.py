@@ -155,6 +155,7 @@ class CategorieParfumAdmin(admin.ModelAdmin):
     list_display        = (
         'id', 'nom', 'slug', 'ordre_affichage',
         'badge_taux_reduction',
+        'message_promotion',
         'nb_parfums_en_promo',
         'actif', 'date_creation'
     )
@@ -174,7 +175,7 @@ class CategorieParfumAdmin(admin.ModelAdmin):
                 '⚠️ Définir un taux ici mettra automatiquement à jour le prix promotionnel '
                 'de TOUS les parfums actifs de cette catégorie. Mettre à 0 pour désactiver.'
             ),
-            'fields': ('taux_reduction',),
+            'fields': ('taux_reduction', 'date_debut', 'date_fin', 'message_promotion'),
         }),
         ('Affichage', {
             'fields': ('ordre_affichage', 'actif')
@@ -206,7 +207,7 @@ class ParfumAdmin(admin.ModelAdmin):
     list_display = (
         'id', 'apercu_image_col', 'nom', 'marque', 'categorie',
         'contenance_ml', 'prix_unitaire', 'prix_promotionnel',
-        'badge_taux', 'statut_stock', 'actif',
+        'date_debut', 'date_fin', 'badge_taux', 'statut_stock', 'actif',
         'est_nouveau', 'est_bestseller'
     )
     list_filter = (
@@ -244,7 +245,7 @@ class ParfumAdmin(admin.ModelAdmin):
                 'Le prix promotionnel peut être défini manuellement ici, '
                 'ou calculé automatiquement via la réduction de la catégorie.'
             ),
-            'fields': ('prix_unitaire', 'prix_promotionnel', 'stock_quantite', 'seuil_alerte_stock')
+            'fields': ('prix_unitaire', 'prix_promotionnel', 'date_debut', 'date_fin', 'stock_quantite', 'seuil_alerte_stock')
         }),
         ('Images', {
             'fields': ('image_principale', 'image_supp_1',"image_supp_2","image_supp_3", 'image_supp_4')
@@ -450,6 +451,7 @@ class TypeAccessoireAdmin(admin.ModelAdmin):
     list_display        = (
         'id', 'nom', 'slug',
         'badge_taux_reduction',
+        'message_promotion',
         'nb_accessoires_en_promo',
         'actif', 'date_creation'
     )
@@ -468,7 +470,7 @@ class TypeAccessoireAdmin(admin.ModelAdmin):
                 '⚠️ Définir un taux ici mettra automatiquement à jour le prix promotionnel '
                 'de TOUS les accessoires actifs de ce type. Mettre à 0 pour désactiver.'
             ),
-            'fields': ('taux_reduction',),
+            'fields': ('taux_reduction', 'date_debut', 'date_fin', 'message_promotion'),
         }),
         ('Statut', {
             'fields': ('actif',)
@@ -500,7 +502,7 @@ class AccessoireAdmin(admin.ModelAdmin):
     list_display = (
         'id', 'apercu_image_col', 'nom', 'marque', 'type_accessoire',
         'matiere', 'prix_unitaire', 'prix_promotionnel',
-        'badge_taux', 'statut_stock', 'actif'
+        'date_debut', 'date_fin', 'badge_taux', 'statut_stock', 'actif'
     )
     list_filter         = ('marque', 'type_accessoire', 'matiere', 'couleur', 'actif', 'date_creation')
     search_fields       = ('marque', 'nom', 'slug', 'reference_sku', 'description_courte')
@@ -520,7 +522,7 @@ class AccessoireAdmin(admin.ModelAdmin):
             'fields': ('matiere', 'couleur', 'taille', 'poids_grammes')
         }),
         ('Prix', {
-            'fields': ('prix_unitaire', 'prix_promotionnel', 'stock_quantite', 'seuil_alerte_stock')
+            'fields': ('prix_unitaire', 'prix_promotionnel', 'date_debut', 'date_fin', 'stock_quantite', 'seuil_alerte_stock')
         }),
         ('Images', {
             'fields': ('image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')

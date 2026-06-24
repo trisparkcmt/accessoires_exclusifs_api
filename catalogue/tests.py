@@ -6,11 +6,12 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APITestCase
 from django.test import TestCase, override_settings
 from django.conf import settings
+from django.utils import timezone
 import tempfile, os
 from .utils import get_similar_products
 
 from .models import (
-    Tag, Parfum, Essence, Accessoire, Flacon,
+    Tag, Parfum, Essence, Accessoire, Flacon, LotEssence, ProduitFiniEssence,
     CategorieParfum, TypeAccessoire, TypeFlacon
 )
 
@@ -116,6 +117,76 @@ class AccessoireImageTest(APITestCase):
 # ============================================================
 # TESTS SIGNALS & RÉDUCTIONS
 # ============================================================
+class ProduitFiniEssenceStockLotTest(TestCase):
+    def setUp(self):
+        self.essence = Essence.objects.create(
+            marque="Maison Test",
+            nom="Oud Royal",
+            categorie="premium",
+            code_reference="ESS-STOCK-001",
+        )
+        self.lot_ancien = LotEssence.objects.create(
+            essence=self.essence,
+            stock_ml=Decimal('100.00'),
+            seuil_alerte_ml=Decimal('20.00'),
+        )
+        self.lot_recent = LotEssence.objects.create(
+            essence=self.essence,
+            stock_ml=Decimal('80.00'),
+            seuil_alerte_ml=Decimal('20.00'),
+        )
+
+    def test_creation_preleve_sur_lots_fifo(self):
+        ProduitFiniEssence.objects.create(
+            essence=self.essence,
+            taille_ml=30,
+            prix=Decimal('5000'),
+            stock_disponible=4,
+        )
+        self.lot_ancien.refresh_from_db()
+        self.lot_recent.refresh_from_db()
+        self.assertEqual(self.lot_ancien.stock_ml, Decimal('0.00'))
+        self.assertEqual(self.lot_recent.stock_ml, Decimal('60.00'))
+
+    def test_mise_a_jour_stock_preleve_variation_seulement(self):
+        produit = ProduitFiniEssence.objects.create(
+            essence=self.essence,
+            taille_ml=10,
+            prix=Decimal('5000'),
+            stock_disponible=2,
+        )
+        produit.stock_disponible = 5
+        produit.save()
+        produit.refresh_from_db()
+        self.lot_ancien.refresh_from_db()
+        self.assertEqual(produit.stock_precedent, 2)
+        self.assertEqual(self.lot_ancien.stock_ml, Decimal('50.00'))
+
+    def test_vente_ne_touche_pas_le_lot(self):
+        produit = ProduitFiniEssence.objects.create(
+            essence=self.essence,
+            taille_ml=10,
+            prix=Decimal('5000'),
+            stock_disponible=5,
+        )
+        self.lot_ancien.refresh_from_db()
+        stock_lot_apres_fabrication = self.lot_ancien.stock_ml
+        produit.vendre(2)
+        self.lot_ancien.refresh_from_db()
+        self.assertEqual(self.lot_ancien.stock_ml, stock_lot_apres_fabrication)
+
+    def test_suppression_restitue_stock_restant(self):
+        produit = ProduitFiniEssence.objects.create(
+            essence=self.essence,
+            taille_ml=10,
+            prix=Decimal('5000'),
+            stock_disponible=5,
+        )
+        produit.delete()
+        self.lot_recent.refresh_from_db()
+        self.assertEqual(self.lot_recent.stock_ml, Decimal('130.00'))
+
+
 class ReductionCategorieParfumTest(TestCase):
 
     def setUp(self):
@@ -201,6 +272,14 @@ class ReductionCategorieParfumTest(TestCase):
         self.categorie.save()
         self.parfum_a.refresh_from_db()
         self.assertEqual(self.parfum_a.prix_promotionnel_effectif, prix_avant)
+
+    def test_reduction_categorie_expiree_non_appliquee(self):
+        now = timezone.now()
+        self.categorie.taux_reduction = Decimal('20')
+        self.categorie.date_debut = now - timezone.timedelta(days=3)
+        self.categorie.date_fin = now - timezone.timedelta(days=1)
+        self.categorie.save()
+        self.assertIsNone(self.parfum_a.prix_promotionnel_effectif)
 
 
 class ReductionTypeAccessoireTest(TestCase):
@@ -324,6 +403,51 @@ class AccessoirePromotionAPITest(APITestCase):
         self.assertEqual(response.data['prix_actuel'], '10200.00')
 
 
+class PromotionEndpointAPITest(APITestCase):
+    def setUp(self):
+        self.categorie = CategorieParfum.objects.create(
+            nom="Oriental",
+            slug="oriental-promo",
+            taux_reduction=Decimal('20'),
+            message_promotion="Offre spéciale",
+        )
+        self.parfum = Parfum.objects.create(
+            nom="Rose Promo",
+            slug="rose-promo",
+            reference_sku="SKU-PROMO-001",
+            contenance_ml=50,
+            prix_unitaire=Decimal('25000'),
+            categorie=self.categorie,
+            actif=True,
+        )
+        self.type_accessoire = TypeAccessoire.objects.create(
+            nom="Diffuseur Promo",
+            slug="diffuseur-promo",
+            taux_reduction=Decimal('10'),
+            message_promotion="Semaine diffuseur",
+        )
+        self.accessoire = Accessoire.objects.create(
+            nom="Diffuseur Promo",
+            slug="diffuseur-promo-item",
+            reference_sku="ACC-PROMO-001",
+            type_accessoire=self.type_accessoire,
+            prix_unitaire=Decimal('10000'),
+            stock_quantite=5,
+            actif=True,
+        )
+
+    def test_endpoint_promotions_unifie_et_trie(self):
+        response = self.client.get('/api/v1/shop/promotions/')
+        self.assertEqual(response.status_code, 200)
+        resultats = response.data['resultats']
+        self.assertEqual(len(resultats), 2)
+        self.assertEqual(resultats[0]['type_article'], 'parfum')
+        self.assertEqual(resultats[0]['message_promotion'], 'Offre spéciale')
+        self.assertEqual(float(resultats[0]['taux_reduction']), 20.0)
+        self.assertEqual(resultats[1]['type_article'], 'accessoire')
+        self.assertEqual(resultats[1]['message_promotion'], 'Semaine diffuseur')
+
+
 # ============================================================
 # TESTS API EXISTANTS
 # ============================================================
@@ -415,15 +539,13 @@ class EssenceAPITest(APITestCase):
         self.tag_floral = Tag.objects.create(nom="Floral", type="famille_olfactive")
         self.tag_lion   = Tag.objects.create(nom="Lion",   type="signe_astrologique")
         self.essence_active = Essence.objects.create(
-            nom="Oud Royal", code_reference="ESS001",
-            prix_unitaire_fini=5000, contenance_ml=10,
-            stock_flacon=2, stock_ouvert_ml=0, actif=True
+            marque="Maison Test", nom="Oud Royal", code_reference="ESS001",
+            categorie="premium", prix_par_ml=Decimal('500.00'), actif=True
         )
         self.essence_active.tags.add(self.tag_floral, self.tag_lion)
         self.essence_inactive = Essence.objects.create(
-            nom="Musc Blanc", code_reference="ESS002",
-            prix_unitaire_fini=3000, contenance_ml=10,
-            stock_flacon=0, stock_ouvert_ml=0, actif=False
+            marque="Maison Test", nom="Musc Blanc", code_reference="ESS002",
+            categorie="premium", prix_par_ml=Decimal('300.00'), actif=False
         )
 
     def test_liste_essences_actives_uniquement(self):
@@ -432,7 +554,7 @@ class EssenceAPITest(APITestCase):
         self.assertEqual(len(response.data['resultats']), 1)
 
     def test_essence_inactive_invisible(self):
-        response = self.client.get(f'/api/v1/lab/essences/{self.essence_inactive.pk}/')
+        response = self.client.get(f'/api/v1/lab/essences/{self.essence_inactive.slug}/')
         self.assertEqual(response.status_code, 404)
 
     def test_filtre_par_signe_astrologique(self):

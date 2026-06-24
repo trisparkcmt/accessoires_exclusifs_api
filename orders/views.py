@@ -56,6 +56,8 @@ class PanierDetailView(APIView):
     def get(self, request, *args, **kwargs):
         panier_id = request.query_params.get('panier_id')
         panier = get_or_create_panier(request, panier_id)
+        # Recalculate totals to ensure promo codes are applied correctly
+        panier.recalculer_total()
         return Response(PanierSerializer(panier, context={'request': request}).data)
 
 

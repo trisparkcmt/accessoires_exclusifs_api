@@ -25,7 +25,8 @@ from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Fl
 from .serializers import (
     AccessoireAdminDetailSerializer, AccessoireAdminListSerializer, AccessoirePublicDetailSerializer, AccessoirePublicListSerializer, AccessoireSimilaireSerializer, CategorieParfumSerializer, EssenceLaboDetailSerializer, EssenceLaboListSerializer, LotEssenceSerializer, ParfumAdminDetailSerializer, ParfumAdminListSerializer, ParfumPublicDetailSerializer, ParfumPublicListSerializer, ParfumSerializer, EssenceSerializer,
     AccessoireSerializer, FlaconSerializer, FlaconPublicSerializer, ParfumSimilaireSerializer, EssenceCreateFullSerializer,
-    IngredientSerializer, FavoriSerializer, ProduitFiniEssencePublicSerializer, ProduitFiniEssenceSerializer, TagSelectSerializer, TagSerializer, TypeAccessoireSerializer, TypeFlaconSerializer, NotificationCatalogueSerializer, NotificationCatalogueUpdateSerializer,
+    IngredientSerializer, FavoriSerializer, ProduitFiniEssencePublicSerializer, ProduitFiniEssenceSerializer, PromotionSerializer, TagSelectSerializer, TagSerializer, TypeAccessoireSerializer, TypeFlaconSerializer, NotificationCatalogueSerializer, NotificationCatalogueUpdateSerializer,
+    get_image_url,
 )
 from django.db.models import Case, When
 from .filters import (
@@ -484,6 +485,123 @@ class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return ProduitFiniEssence.objects.filter(actif=True, stock_disponible__gt=0).select_related('essence')
+
+
+class PromotionViewSet(viewsets.GenericViewSet):
+    serializer_class = PromotionSerializer
+    pagination_class = StandardPagination
+    permission_classes = [AllowAny]
+
+    def list(self, request, *args, **kwargs):
+        promotions = []
+
+        parfums = Parfum.objects.filter(actif=True).select_related('categorie')
+        for parfum in parfums:
+            item = self._promotion_parfum(parfum, request)
+            if item:
+                promotions.append(item)
+
+        accessoires = Accessoire.objects.filter(actif=True).select_related('type_accessoire')
+        for accessoire in accessoires:
+            item = self._promotion_accessoire(accessoire, request)
+            if item:
+                promotions.append(item)
+
+        produits_essence = ProduitFiniEssence.objects.filter(
+            actif=True,
+            stock_disponible__gt=0,
+            prix_promotionnel__isnull=False,
+        ).select_related('essence')
+        for produit in produits_essence:
+            item = self._promotion_produit_essence(produit, request)
+            if item:
+                promotions.append(item)
+
+        promotions.sort(key=lambda item: item['taux_reduction'], reverse=True)
+        page = self.paginate_queryset(promotions)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(promotions, many=True)
+        return Response(serializer.data)
+
+    def _promotion_parfum(self, parfum, request):
+        promo = parfum.prix_promotionnel_effectif
+        if promo is None or promo >= parfum.prix_unitaire:
+            return None
+
+        manuel = parfum.prix_promotionnel is not None and parfum.promotion_article_active() and promo == parfum.prix_promotionnel
+        source = parfum if manuel else parfum.categorie
+        return self._build_item(
+            type_article='parfum',
+            identifiant=parfum.id,
+            slug=parfum.slug,
+            nom=parfum.nom,
+            marque=parfum.marque,
+            image=get_image_url(request, parfum.image_principale),
+            prix_original=parfum.prix_unitaire,
+            prix_promotionnel=promo,
+            message='' if manuel or source is None else source.message_promotion,
+            date_debut=getattr(source, 'date_debut', None),
+            date_fin=getattr(source, 'date_fin', None),
+        )
+
+    def _promotion_accessoire(self, accessoire, request):
+        promo = accessoire.prix_promotionnel_effectif
+        if promo is None or promo >= accessoire.prix_unitaire:
+            return None
+
+        manuel = accessoire.prix_promotionnel is not None and accessoire.promotion_article_active() and promo == accessoire.prix_promotionnel
+        source = accessoire if manuel else accessoire.type_accessoire
+        return self._build_item(
+            type_article='accessoire',
+            identifiant=accessoire.id,
+            slug=accessoire.slug,
+            nom=accessoire.nom,
+            marque=accessoire.marque,
+            image=get_image_url(request, accessoire.image_principale),
+            prix_original=accessoire.prix_unitaire,
+            prix_promotionnel=promo,
+            message='' if manuel or source is None else source.message_promotion,
+            date_debut=getattr(source, 'date_debut', None),
+            date_fin=getattr(source, 'date_fin', None),
+        )
+
+    def _promotion_produit_essence(self, produit, request):
+        promo = produit.prix_promotionnel
+        if promo is None or promo >= produit.prix:
+            return None
+
+        return self._build_item(
+            type_article='produit_essence',
+            identifiant=produit.id,
+            slug=None,
+            nom=f"{produit.essence.nom} {produit.taille_ml}ml",
+            marque=produit.essence.marque,
+            image=get_image_url(request, produit.image_principale),
+            prix_original=produit.prix,
+            prix_promotionnel=promo,
+            message='',
+            date_debut=None,
+            date_fin=None,
+        )
+
+    def _build_item(self, type_article, identifiant, slug, nom, marque, image, prix_original, prix_promotionnel, message, date_debut, date_fin):
+        taux = (1 - prix_promotionnel / prix_original) * 100
+        return {
+            'type_article': type_article,
+            'id': identifiant,
+            'slug': slug,
+            'nom': nom,
+            'marque': marque or '',
+            'image_principale': image,
+            'prix_original': prix_original,
+            'prix_promotionnel': prix_promotionnel,
+            'taux_reduction': round(float(taux), 1),
+            'message_promotion': message or '',
+            'date_debut': date_debut,
+            'date_fin': date_fin,
+        }
     
 
 class EssenceLaboViewSet(viewsets.GenericViewSet):

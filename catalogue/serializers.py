@@ -1,5 +1,6 @@
 # serializers.py
 from decimal import Decimal
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 from drf_spectacular.types import OpenApiTypes
@@ -116,6 +117,7 @@ class ParfumSerializer(serializers.ModelSerializer):
             'id', 'marque','nom', 'slug', 'reference_sku',
             'description_courte', 'contenance_ml',
             'prix_unitaire', 'prix_actuel',
+            'prix_promotionnel', 'date_debut', 'date_fin',
             'taux_reduction', 'en_promotion',
             'genre_cible', 'intensite',
             'notes_tete', 'notes_coeur', 'notes_fond',
@@ -123,7 +125,7 @@ class ParfumSerializer(serializers.ModelSerializer):
             'occasions', 'saisons_compatibles',
             'est_nouveau', 'est_bestseller',
             'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',  'stock_quantite',
-            'date_creation','produits_similaires', 'is_favori', 'categorie','prix_promotionnel'
+            'date_creation','produits_similaires', 'is_favori', 'categorie'
         ]
 
     def to_representation(self, instance):
@@ -357,12 +359,18 @@ class ProduitFiniEssenceSerializer(serializers.ModelSerializer):
             return self.update(existing, validated_data)
         
         validated_data['stock_precedent'] = 0
-        return super().create(validated_data)
+        try:
+            return super().create(validated_data)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message_dict if hasattr(exc, 'message_dict') else exc.messages)
 
     def update(self, instance, validated_data):
         if 'stock_disponible' in validated_data:
             instance.stock_precedent = instance.stock_disponible
-        return super().update(instance, validated_data)
+        try:
+            return super().update(instance, validated_data)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message_dict if hasattr(exc, 'message_dict') else exc.messages)
 
 class _LotEssenceInputSerializer(serializers.ModelSerializer):
     class Meta:
@@ -386,14 +394,17 @@ class EssenceCreateFullSerializer(EssenceSerializer):
         prods_data = validated_data.pop('produits_finis', [])
         tags = validated_data.pop('tags', [])
         
-        with transaction.atomic():
-            essence = Essence.objects.create(**validated_data)
-            if tags:
-                essence.tags.set(tags)
-            if lot_data:
-                LotEssence.objects.create(essence=essence, stock_precedent_ml=0, **lot_data)
-            for prod in prods_data:
-                ProduitFiniEssence.objects.create(essence=essence, stock_precedent=0, **prod)
+        try:
+            with transaction.atomic():
+                essence = Essence.objects.create(**validated_data)
+                if tags:
+                    essence.tags.set(tags)
+                if lot_data:
+                    LotEssence.objects.create(essence=essence, stock_precedent_ml=0, **lot_data)
+                for prod in prods_data:
+                    ProduitFiniEssence.objects.create(essence=essence, stock_precedent=0, **prod)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message_dict if hasattr(exc, 'message_dict') else exc.messages)
         return essence
         
 class EssenceLaboSerializer(serializers.Serializer):
@@ -419,7 +430,8 @@ class TypeAccessoireSerializer(serializers.ModelSerializer):
         model  = TypeAccessoire
         fields = [
             'id', 'nom', 'slug', 'description', 'icone',
-            'actif', 'taux_reduction', 'date_creation'
+            'actif', 'taux_reduction', 'date_debut', 'date_fin',
+            'message_promotion', 'date_creation'
         ]
         read_only_fields = ['date_creation']
 
@@ -451,6 +463,7 @@ class AccessoireSerializer(serializers.ModelSerializer):
             'description_courte', 'description_longue',
             'matiere', 'couleur', 'taille',
             'prix_unitaire', 'prix_promotionnel', 'prix_actuel',
+            'date_debut', 'date_fin',
             'taux_reduction', 'en_promotion',
             'stock_quantite', 'seuil_alerte_stock', 'poids_grammes',
             'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',
@@ -649,8 +662,27 @@ class FavoriSerializer(serializers.ModelSerializer):
 class CategorieParfumSerializer(serializers.ModelSerializer):
     class Meta:
         model = CategorieParfum
-        fields = ['id', 'nom', 'slug', 'description', 'image', 'ordre_affichage', 'actif', 'taux_reduction', 'date_creation']
+        fields = [
+            'id', 'nom', 'slug', 'description', 'image', 'ordre_affichage',
+            'actif', 'taux_reduction', 'date_debut', 'date_fin',
+            'message_promotion', 'date_creation'
+        ]
         read_only_fields = ['date_creation']
+
+
+class PromotionSerializer(serializers.Serializer):
+    type_article = serializers.CharField()
+    id = serializers.IntegerField()
+    slug = serializers.CharField(allow_null=True)
+    nom = serializers.CharField()
+    marque = serializers.CharField(allow_blank=True)
+    image_principale = serializers.CharField(allow_null=True)
+    prix_original = serializers.DecimalField(max_digits=10, decimal_places=2)
+    prix_promotionnel = serializers.DecimalField(max_digits=10, decimal_places=2)
+    taux_reduction = serializers.FloatField()
+    message_promotion = serializers.CharField(allow_blank=True)
+    date_debut = serializers.DateTimeField(allow_null=True)
+    date_fin = serializers.DateTimeField(allow_null=True)
 
 
 # ============================================================

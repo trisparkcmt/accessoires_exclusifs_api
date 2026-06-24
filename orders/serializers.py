@@ -283,7 +283,7 @@ class AppliquerCodePromoSerializer(serializers.Serializer):
         data['promo_admin_obj'] = promo_admin
         return data
 
-
+  
 class CodePromoAdminSerializer(serializers.ModelSerializer):
     class Meta:
         model = CodePromoAdmin

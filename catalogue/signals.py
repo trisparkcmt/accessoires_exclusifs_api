@@ -1,6 +1,7 @@
 # catalogue/signals.py
 from decimal import Decimal
-from django.db.models.signals import post_save, pre_save
+from django.db import transaction
+from django.db.models.signals import post_save, pre_delete, pre_save
 from django.dispatch import receiver
 from .models import (
     CategorieParfum, TypeAccessoire, TypeFlacon, Essence,
@@ -360,3 +361,9 @@ def enregistrer_mouvement_produit_fini(sender, instance, created, **kwargs):
         quantite_avant=ancien_stock,
         quantite_apres=instance.stock_disponible,
     )
+
+
+@receiver(pre_delete, sender=ProduitFiniEssence)
+def restituer_stock_produit_fini(sender, instance, **kwargs):
+    with transaction.atomic():
+        instance.restituer_stock_lot()
