@@ -54,25 +54,49 @@ class Panier(models.Model):
         self.remise_pourcentage = Decimal('0')
         
         if self.code_promo_applique:
-            # Lookup the promo code to verify it's still valid
+            # 1. Chercher si c'est un code promo admin actif
             promo_admin = CodePromoAdmin.objects.filter(
                 code__iexact=self.code_promo_applique, 
                 est_actif=True
             ).first()
             
-            if promo_admin and self.client and promo_admin.clients_autorises.filter(pk=self.client.pk).exists():
+            # 2. Chercher si c'est un code prestataire actif
+            from utilisateur.models import Prestataire
+            prestataire = Prestataire.objects.filter(
+                code_promo__iexact=self.code_promo_applique,
+                statut='actif'
+            ).first()
+            
+            # Vérifier l'usage unique pour le code admin
+            usage_unique_ok = True
+            if promo_admin and self.client:
+                usage_unique_ok = not Commande.objects.filter(
+                    client=self.client, 
+                    code_promo_utilise__iexact=self.code_promo_applique
+                ).exclude(statut__in=['annulée', 'remboursée']).exists()
+            
+            if promo_admin and self.client and usage_unique_ok and promo_admin.clients_autorises.filter(pk=self.client.pk).exists():
+                self.prestataire = None
                 self.remise_pourcentage = promo_admin.reduction_pourcentage
                 self.remise_montant = self.sous_total * (self.remise_pourcentage / 100)
+            elif prestataire:
+                self.prestataire = prestataire
+                self.remise_pourcentage = prestataire.reduction_client_pourcentage
+                self.remise_montant = self.sous_total * (self.remise_pourcentage / 100)
             else:
-                # Code promo is invalid or inactive, clear it
+                # Code promo invalide, expiré, déjà utilisé ou non autorisé
                 self.code_promo_applique = ""
+                self.prestataire = None
         elif self.prestataire:
             # Apply prestataire discount if no promo code
-            self.remise_pourcentage = self.prestataire.reduction_client_pourcentage
-            self.remise_montant = self.sous_total * (self.remise_pourcentage / 100)
+            if self.prestataire.statut == 'actif':
+                self.remise_pourcentage = self.prestataire.reduction_client_pourcentage
+                self.remise_montant = self.sous_total * (self.remise_pourcentage / 100)
+            else:
+                self.prestataire = None
         
         self.total = self.sous_total - self.remise_montant + self.frais_livraison
-        self.save(update_fields=['sous_total', 'remise_montant', 'remise_pourcentage', 'code_promo_applique', 'total'])
+        self.save(update_fields=['sous_total', 'remise_montant', 'remise_pourcentage', 'code_promo_applique', 'prestataire', 'total'])
         return self.total
 
 
@@ -187,7 +211,7 @@ class Commande(models.Model):
 
     
     numero_commande = models.CharField(max_length=50, unique=True)
-    client = models.ForeignKey('utilisateur.Client', on_delete=models.CASCADE, related_name='commandes')
+    client = models.ForeignKey('utilisateur.Client', on_delete=models.SET_NULL, null=True, blank=True, related_name='commandes')
     prestataire = models.ForeignKey('utilisateur.Prestataire', on_delete=models.SET_NULL, null=True, blank=True, related_name='commandes')
     panier = models.ForeignKey('orders.Panier', on_delete=models.SET_NULL, null=True, blank=True, related_name='commande_associee')
     livreur = models.ForeignKey('utilisateur.Livreur', on_delete=models.SET_NULL, null=True, blank=True, related_name='commandes')
@@ -226,7 +250,8 @@ class Commande(models.Model):
         verbose_name_plural = 'Commandes'
     
     def __str__(self):
-        return f"{self.numero_commande} - {self.client.user.email} - {self.statut}"
+        email = self.client.user.email if self.client else "Invité"
+        return f"{self.numero_commande} - {email} - {self.statut}"
 
     def recalculer_commande(self):
         total_parfums = sum(ligne.sous_total for ligne in self.lignes_parfums.all())
@@ -243,7 +268,16 @@ class Commande(models.Model):
         elif self.code_promo_utilise:
             # Chercher si c'est un code promo admin
             promo_admin = CodePromoAdmin.objects.filter(code__iexact=self.code_promo_utilise, est_actif=True).first()
-            if promo_admin and self.client and promo_admin.clients_autorises.filter(pk=self.client.pk).exists():
+            
+            # Vérifier l'usage unique pour le code admin (en excluant cette commande elle-même)
+            usage_unique_ok = True
+            if promo_admin and self.client:
+                usage_unique_ok = not Commande.objects.filter(
+                    client=self.client, 
+                    code_promo_utilise__iexact=self.code_promo_utilise
+                ).exclude(pk=self.pk).exclude(statut__in=['annulée', 'remboursée']).exists()
+                
+            if promo_admin and self.client and usage_unique_ok and promo_admin.clients_autorises.filter(pk=self.client.pk).exists():
                 self.remise_code_promo = self.sous_total * (promo_admin.reduction_pourcentage / 100)
             else:
                 self.remise_code_promo = Decimal('0')
@@ -393,7 +427,7 @@ class Commande(models.Model):
                         recipient=self.prestataire.user,
                         type='commission',
                         title="Nouvelle commission !",
-                        message=f"Félicitations ! Vous avez reçu une commission de {self.commission_montant} € pour la commande {self.numero_commande}."
+                        message=f"Félicitations ! Vous avez reçu une commission de {self.commission_montant} FCFA pour la commande {self.numero_commande}."
                     )
                 elif self.commission_statut == 'versée' and self.commission_montant != prev_commission_montant:
                     # Ajustement si modification de la commande
@@ -423,19 +457,36 @@ class Commande(models.Model):
                     )
                     self.commission_statut = 'annulée'
                     Commande.objects.filter(pk=self.pk).update(commission_statut='annulée')
+                    
+                    # Notification prestataire pour annulation/retrait
+                    Notification.objects.create(
+                        recipient=original.prestataire.user,
+                        type='commission',
+                        title="Commission retirée",
+                        message=f"La commission de {prev_commission_montant} FCFA pour la commande {self.numero_commande} a été retirée suite à la modification du code promo."
+                    )
         else:
             # Commande non payée, annulée ou remboursée
             if self.commission_statut == 'versée':
-                if self.prestataire:
-                    self.prestataire.solde_commission -= prev_commission_montant
-                    self.prestataire.save(update_fields=['solde_commission'])
+                prestataire_obj = self.prestataire or (original.prestataire if original else None)
+                if prestataire_obj:
+                    prestataire_obj.solde_commission -= prev_commission_montant
+                    prestataire_obj.save(update_fields=['solde_commission'])
                     
                     CommissionLog.objects.create(
-                        prestataire=self.prestataire,
+                        prestataire=prestataire_obj,
                         type_operation='bonus',
                         montant=-prev_commission_montant,
                         reference_commande=self.numero_commande,
                         description=f"Annulation de commission suite à l'annulation/remboursement de la commande {self.numero_commande}"
+                    )
+                    
+                    # Notification prestataire pour remboursement / annulation
+                    Notification.objects.create(
+                        recipient=prestataire_obj.user,
+                        type='commission',
+                        title="Commission annulée",
+                        message=f"La commission de {prev_commission_montant} FCFA pour la commande {self.numero_commande} a été retirée suite à l'annulation ou au remboursement de la commande."
                     )
                 self.commission_statut = 'annulée'
                 Commande.objects.filter(pk=self.pk).update(commission_statut='annulée')

@@ -33,7 +33,8 @@ from orders.serializers import (
     CommandeSerializer,
     PasserCommandeSerializer,
     FactureSerializer,
-    CodePromoAdminSerializer
+    CodePromoAdminSerializer,
+    CommanderCompositionDirecteSerializer
 )
 from utilisateur.permissions import CommandePermission, is_active_serveuse
 from rest_framework import viewsets
@@ -205,6 +206,48 @@ class AjouterParfumPersonnaliseView(APIView):
         panier_id = serializer.validated_data.get('panier_id')
         parfum_perso = serializer.validated_data['parfum_perso_obj']
         quantite = serializer.validated_data['quantite']
+        note_client = serializer.validated_data.get('note_client', '')
+        
+        with transaction.atomic():
+            panier = get_or_create_panier(request, panier_id)
+            
+            ligne, created = PanierLigneParfumPerso.objects.get_or_create(
+                panier=panier,
+                parfum_personnalise=parfum_perso,
+                defaults={
+                    'prix_calcule': parfum_perso.prix_total,
+                    'quantite': quantite,
+                    'sous_total': parfum_perso.prix_total * quantite,
+                    'note_client': note_client
+                }
+            )
+            
+            if not created:
+                ligne.quantite += quantite
+                ligne.prix_calcule = parfum_perso.prix_total
+                if note_client:
+                    ligne.note_client = note_client
+                ligne.save()
+            
+            panier.recalculer_total()
+            
+        return Response(PanierSerializer(panier, context={'request': request}).data, status=status.HTTP_200_OK)
+
+
+class CommanderCompositionDirecteView(APIView):
+    """
+    Crée un parfum personnalisé et l'ajoute directement au panier (LIA & Borne boutique).
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = CommanderCompositionDirecteSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        
+        parfum_perso = serializer.save()
+        
+        panier_id = serializer.validated_data.get('panier_id')
+        quantite = serializer.validated_data.get('quantite', 1)
         note_client = serializer.validated_data.get('note_client', '')
         
         with transaction.atomic():
@@ -567,7 +610,7 @@ class CommandeDetailView(APIView):
 
 
 class PasserCommandeView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
         serializer = PasserCommandeSerializer(data=request.data, context={'request': request})

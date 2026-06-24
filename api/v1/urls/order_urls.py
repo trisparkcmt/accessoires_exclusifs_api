@@ -16,7 +16,8 @@ from orders.views import (
     FactureDownloadView,
     AdminFactureListView,
     AdminFactureRenvoyerView,
-    AdminCodePromoViewSet
+    AdminCodePromoViewSet,
+    CommanderCompositionDirecteView
 )
 
 router = DefaultRouter()
@@ -30,6 +31,7 @@ urlpatterns = [
     path('panier/ajouter/produit-fini-essence/', AjouterProduitFiniEssenceView.as_view(), name='panier-ajouter-produit-fini-essence'),
     path('panier/ajouter/parfum-personnalise/', AjouterParfumPersonnaliseView.as_view(), name='panier-ajouter-parfum-personnalise'),
     path('panier/ajouter/essence-personnalisee/', AjouterEssencePersonnaliseeView.as_view(), name='panier-ajouter-essence-personnalisee'),
+    path('panier/ajouter/composition-directe/', CommanderCompositionDirecteView.as_view(), name='panier-ajouter-composition-directe'),
     path('panier/ligne/<str:type_ligne>/<int:ligne_id>/', PanierLigneDetailView.as_view(), name='panier-ligne-detail'),
     path('panier/appliquer-promo/', AppliquerCodePromoView.as_view(), name='panier-appliquer-promo'),
     path('panier/retirer-promo/', RetirerCodePromoView.as_view(), name='panier-retirer-promo'),

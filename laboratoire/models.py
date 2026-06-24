@@ -56,7 +56,7 @@ class ParfumPersonnalise(models.Model):
         ('validé', 'Validé'),
     ]
     
-    client = models.ForeignKey('utilisateur.Client', on_delete=models.CASCADE, related_name='parfums_personnalises')
+    client = models.ForeignKey('utilisateur.Client', on_delete=models.SET_NULL, null=True, blank=True, related_name='parfums_personnalises')
     flacon = models.ForeignKey('catalogue.Flacon', on_delete=models.SET_NULL, null=True, related_name='parfums_personnalises')
     nom = models.CharField(max_length=200, blank=True, null=True)
     description = models.TextField(blank=True)
@@ -76,7 +76,8 @@ class ParfumPersonnalise(models.Model):
         verbose_name_plural = 'Parfums personnalisés'
     
     def __str__(self):
-        return f"{self.nom or 'Parfum sans nom'} - {self.client.user.email}"
+        email = self.client.user.email if self.client else "Invité"
+        return f"{self.nom or 'Parfum sans nom'} - {email}"
     
     def recalculer_prix(self):
         total_essences = sum(ligne.prix_ligne for ligne in self.lignes.all())

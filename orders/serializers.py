@@ -19,7 +19,7 @@ from orders.models import (
     CodePromoAdmin
 )
 from catalogue.models import Parfum, Accessoire, ProduitFiniEssence
-from laboratoire.models import ParfumPersonnalise, EssencePersonnalisee
+from laboratoire.models import ParfumPersonnalise, EssencePersonnalisee, ParfumPersonnaliseLigne
 
 # ============================================================
 # READ SERIALIZERS (Affichage du panier)
@@ -362,6 +362,120 @@ class CommandeSerializer(serializers.ModelSerializer):
         return None
 
 
+class CompositionDirecteLigneSerializer(serializers.Serializer):
+    lot_essence_id = serializers.IntegerField(required=True)
+    quantite_ml = serializers.DecimalField(max_digits=8, decimal_places=3, min_value=Decimal('0.1'))
+
+
+class CommanderCompositionDirecteSerializer(serializers.Serializer):
+    panier_id = serializers.IntegerField(required=False, allow_null=True)
+    quantite = serializers.IntegerField(required=False, default=1, min_value=1)
+    nom = serializers.CharField(required=False, allow_blank=True, max_length=200, default='')
+    note_client = serializers.CharField(required=False, allow_blank=True, default='')
+    flacon_id = serializers.IntegerField(required=True)
+    lignes = CompositionDirecteLigneSerializer(many=True, required=True)
+
+    def validate(self, data):
+        flacon_id = data.get('flacon_id')
+        quantite = data.get('quantite')
+        lignes_data = data.get('lignes')
+        
+        # 1. Valider Flacon
+        from catalogue.models import Flacon
+        try:
+            flacon = Flacon.objects.get(id=flacon_id, actif=True)
+        except Flacon.DoesNotExist:
+            raise serializers.ValidationError({"flacon_id": "Le flacon sélectionné n'existe pas ou n'est pas actif."})
+            
+        if flacon.stock_quantite < quantite:
+            raise serializers.ValidationError({"flacon_id": f"Stock de flacon insuffisant. Disponible : {flacon.stock_quantite}."})
+            
+        # 2. Valider les lots d'essences et les stocks
+        from catalogue.models import LotEssence
+        lot_ids = [ligne['lot_essence_id'] for ligne in lignes_data]
+        lots = LotEssence.objects.filter(id__in=lot_ids, actif=True).select_related('essence')
+        lots_dict = {lot.id: lot for lot in lots}
+        
+        errors = {}
+        total_volume_essences = Decimal('0')
+        validated_lignes = []
+        
+        for idx, ligne in enumerate(lignes_data):
+            l_id = ligne['lot_essence_id']
+            qty = Decimal(str(ligne['quantite_ml']))
+            
+            if l_id not in lots_dict:
+                errors[f'lignes[{idx}].lot_essence_id'] = "Ce lot d'essence n'existe pas ou n'est pas actif."
+                continue
+                
+            lot = lots_dict[l_id]
+            if lot.stock_ml < qty:
+                errors[f'lignes[{idx}].quantite_ml'] = f"Stock d'essence insuffisant pour {lot.essence.nom}. Disponible : {lot.stock_ml}ml."
+                continue
+                
+            total_volume_essences += qty
+            validated_lignes.append((lot, qty))
+            
+        if errors:
+            raise serializers.ValidationError(errors)
+            
+        # 3. Règle des 45%
+        contenance_flacon = Decimal(str(flacon.contenance_ml))
+        volume_max_autorise = contenance_flacon * Decimal('0.45')
+        if total_volume_essences > volume_max_autorise:
+            raise serializers.ValidationError({
+                "lignes": f"Le volume total d'essences ({total_volume_essences} ml) dépasse la limite autorisée de 45% pour le flacon sélectionné ({volume_max_autorise} ml max)."
+            })
+            
+        data['flacon_obj'] = flacon
+        data['validated_lignes'] = validated_lignes
+        return data
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        user = request.user if request else None
+        
+        flacon = validated_data['flacon_obj']
+        nom = validated_data.get('nom') or f"Composition LIA"
+        note_client = validated_data.get('note_client', '')
+        
+        client = None
+        if user and user.is_authenticated:
+            try:
+                client = user.client
+            except AttributeError:
+                pass
+                
+        with transaction.atomic():
+            parfum_perso = ParfumPersonnalise.objects.create(
+                client=client,
+                flacon=flacon,
+                nom=nom,
+                description=note_client,
+                prix_essences=Decimal('0'),
+                prix_flacon_snapshot=flacon.prix_unitaire,
+                prix_total=flacon.prix_unitaire,
+                statut='validé',
+                enregistre=False
+            )
+            
+            # Ajouter les lignes
+            for lot, quantite_ml in validated_data['validated_lignes']:
+                ParfumPersonnaliseLigne.objects.create(
+                    parfum_personnalise=parfum_perso,
+                    essence=lot,
+                    quantite_ml=quantite_ml,
+                    prix_par_ml_snapshot=lot.essence.prix_par_ml,
+                    prix_ligne=lot.essence.prix_par_ml * quantite_ml
+                )
+            
+            # Recalculer
+            parfum_perso.recalculer_prix()
+            
+        validated_data['parfum_perso_obj'] = parfum_perso
+        return parfum_perso
+
+
 class PasserCommandeSerializer(serializers.Serializer):
     panier_id = serializers.IntegerField(required=False, allow_null=True)
     livraison_nom_complet = serializers.CharField(max_length=200, required=False, allow_blank=True, default='')
@@ -369,6 +483,7 @@ class PasserCommandeSerializer(serializers.Serializer):
     livraison_ville = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
     livraison_telephone = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
     note_client = serializers.CharField(required=False, allow_blank=True, default='')
+    client_telephone = serializers.CharField(required=False, allow_blank=True, default='')
 
     def validate(self, data):
         request = self.context.get('request')
@@ -390,38 +505,49 @@ class PasserCommandeSerializer(serializers.Serializer):
             raise serializers.ValidationError({"detail": "Le panier est vide."})
         
         user = request.user
+        is_auth = user and user.is_authenticated
         
         # Auto-populate livraison_nom_complet from user if not provided
         if not data.get('livraison_nom_complet', '').strip():
-            full_name = f"{user.first_name} {user.last_name}".strip()
-            if full_name:
-                data['livraison_nom_complet'] = full_name
+            if is_auth:
+                full_name = f"{user.first_name} {user.last_name}".strip()
+                if full_name:
+                    data['livraison_nom_complet'] = full_name
+                else:
+                    raise serializers.ValidationError({"detail": "Veuillez fournir un nom complet ou complétez votre profil."})
             else:
-                raise serializers.ValidationError({"detail": "Veuillez fournir un nom complet ou complétez votre profil."})
+                raise serializers.ValidationError({"detail": "Veuillez fournir un nom complet pour la livraison."})
         
         # Auto-populate livraison_telephone from user if not provided
         if not data.get('livraison_telephone', '').strip():
-            if user.telephone:
-                data['livraison_telephone'] = user.telephone
+            if is_auth:
+                if getattr(user, 'telephone', None):
+                    data['livraison_telephone'] = user.telephone
+                else:
+                    raise serializers.ValidationError({"detail": "Veuillez fournir un numéro de téléphone ou complétez votre profil."})
             else:
-                raise serializers.ValidationError({"detail": "Veuillez fournir un numéro de téléphone ou complétez votre profil."})
+                raise serializers.ValidationError({"detail": "Veuillez fournir un numéro de téléphone pour la livraison."})
             
         data['panier_obj'] = panier
         return data
-
 
     def create(self, validated_data):
         request = self.context.get('request')
         panier = validated_data['panier_obj']
         
         user = request.user
-        if not user or not user.is_authenticated:
-            raise serializers.ValidationError({"detail": "Vous devez être connecté pour passer une commande."})
+        client = None
         
-        try:
-            client = user.client
-        except AttributeError:
-            raise serializers.ValidationError({"detail": "Profil client introuvable."})
+        if user and user.is_authenticated:
+            try:
+                client = user.client
+            except AttributeError:
+                raise serializers.ValidationError({"detail": "Profil client introuvable."})
+        else:
+            client_telephone = validated_data.get('client_telephone', '').strip()
+            if client_telephone:
+                from utilisateur.models import Client
+                client = Client.objects.filter(user__telephone=client_telephone).first()
             
         with transaction.atomic():
             # Créer la commande

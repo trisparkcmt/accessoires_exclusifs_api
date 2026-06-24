@@ -318,3 +318,95 @@ class AdminPromoTestCase(APITestCase):
         response2 = self.client.post(self.pos_creer_url, payload_pos_success, format='json')
         self.assertEqual(response2.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("déjà utilisé", response2.data['code_promo'][0])
+
+    @patch('django.core.mail.send_mail')
+    def test_prestataire_commission_and_notification(self, mock_send_mail):
+        from utilisateur.models import Prestataire, CommissionLog, Notification
+        
+        # 1. Créer un prestataire avec son code promo et taux de commission
+        # client2.user sera le prestataire
+        prestataire = Prestataire.objects.create(
+            client=self.client2,
+            code_promo="PREST20",
+            reduction_client_pourcentage=Decimal("10.00"),
+            taux_commission=Decimal("5.00"),
+            solde_commission=Decimal("0.00"),
+            statut="actif"
+        )
+        
+        # 2. Créer un panier pour client1 et appliquer le code promo PREST20
+        panier = Panier.objects.create(client=self.client1)
+        from orders.models import PanierLigneParfum
+        PanierLigneParfum.objects.create(
+            panier=panier,
+            parfum=self.parfum,
+            quantite=1,
+            prix_unitaire_snapshot=self.parfum.prix_unitaire,
+            sous_total=self.parfum.prix_unitaire
+        )
+        panier.recalculer_total() # 40000.00
+        
+        # Appliquer le code promo du prestataire
+        self.client.force_authenticate(user=self.client_user1)
+        response = self.client.post(self.appliquer_url, {
+            "code_promo": "PREST20",
+            "panier_id": panier.id
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Rafraîchir le panier pour vérifier qu'il ne s'est pas effacé lors de la réactualisation !
+        response_detail = self.client.get(reverse('panier-detail') + f"?panier_id={panier.id}")
+        self.assertEqual(response_detail.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_detail.data['code_promo_applique'], "PREST20")
+        self.assertEqual(float(response_detail.data['remise_montant']), 4000.0) # 10% de 40000
+        
+        # 3. Passer la commande directement après avoir appliqué le code promo
+        payload_passer = {
+            "panier_id": panier.id,
+            "livraison_nom_complet": "Jean Dupont",
+            "livraison_telephone": "+22503030303"
+        }
+        response_passer = self.client.post(reverse('commande-passer'), payload_passer, format='json')
+        self.assertEqual(response_passer.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response_passer.data['code_promo_utilise'], "PREST20")
+        self.assertEqual(float(response_passer.data['remise_code_promo']), 4000.0)
+        
+        # Récupérer l'objet commande
+        commande = Commande.objects.get(numero_commande=response_passer.data['numero_commande'])
+        self.assertEqual(commande.commission_montant, Decimal("2000.00")) # 5% de 40000
+        self.assertEqual(commande.commission_statut, 'non_versée')
+        self.assertEqual(prestataire.solde_commission, Decimal("0.00"))
+        
+        # 4. Payer la commande (statut_paiement = 'payé')
+        # Nettoyer d'abord les notifications
+        Notification.objects.all().delete()
+        
+        commande.statut_paiement = 'payé'
+        commande.save()
+        
+        # Recharger le prestataire
+        prestataire.refresh_from_db()
+        self.assertEqual(prestataire.solde_commission, Decimal("2000.00"))
+        
+        # Vérifier que le prestataire a reçu une notification de versement
+        notif_versement = Notification.objects.filter(recipient=self.client_user2, type='commission').first()
+        self.assertIsNotNone(notif_versement)
+        self.assertIn("reçu une commission", notif_versement.message)
+        
+        # 5. Rembourser la commande (statut = 'remboursée')
+        # Nettoyer les notifications
+        Notification.objects.all().delete()
+        
+        commande.statut = 'remboursée'
+        commande.statut_paiement = 'échoué' # Ou changer statut pour simuler annulation/remboursement
+        commande.save()
+        
+        # Recharger le prestataire et vérifier que le solde a été récupéré
+        prestataire.refresh_from_db()
+        self.assertEqual(prestataire.solde_commission, Decimal("0.00"))
+        
+        # Vérifier que le prestataire a reçu une notification de remboursement/annulation
+        notif_annulation = Notification.objects.filter(recipient=self.client_user2, type='commission').first()
+        self.assertIsNotNone(notif_annulation)
+        self.assertIn("retirée suite à l'annulation ou au remboursement", notif_annulation.message)
+

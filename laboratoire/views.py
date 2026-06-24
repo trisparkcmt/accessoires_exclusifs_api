@@ -140,12 +140,12 @@ def ia_recommandation(request):
 
     essences_recommandees = []
     essence_ids = [e.get('id') for e in essences_data if isinstance(e, dict)]
-    essences_db = {e.id: e for e in Essence.objects.filter(id__in=essence_ids, actif=True)}
+    essences_db = {e.id: e for e in Essence.objects.filter(id__in=essence_ids, actif=True, prix_par_ml__gt=0)}
     
     # Précharger les lots d'essence actifs correspondants pour le laboratoire
     from catalogue.models import LotEssence
     lots_db = {}
-    for lot in LotEssence.objects.filter(essence_id__in=essence_ids, actif=True).select_related('essence'):
+    for lot in LotEssence.objects.filter(essence_id__in=essence_ids, actif=True, stock_ml__gt=0).select_related('essence'):
         if lot.essence_id not in lots_db:
             lots_db[lot.essence_id] = lot
 
@@ -156,15 +156,16 @@ def ia_recommandation(request):
             if essence_id in essences_db:
                 essence = essences_db[essence_id]
                 lot = lots_db.get(essence.id)
-                essences_recommandees.append({
-                    'id': essence.id,
-                    'lot_essence_id': lot.id if lot else None,
-                    'nom': essence.nom,
-                    'code_reference': essence.code_reference,
-                    'prix_par_ml': str(essence.prix_par_ml),
-                    'quantite_ml': quantite_ml,
-                    'prix_total_quantite': str(essence.prix_par_ml * quantite_ml),
-                })
+                if lot:
+                    essences_recommandees.append({
+                        'id': essence.id,
+                        'lot_essence_id': lot.id,
+                        'nom': essence.nom,
+                        'code_reference': essence.code_reference,
+                        'prix_par_ml': str(essence.prix_par_ml),
+                        'quantite_ml': quantite_ml,
+                        'prix_total_quantite': str(essence.prix_par_ml * quantite_ml),
+                    })
 
     ingredients_recommandes = []
     ingredient_ids = [i.get('id') for i in ingredients_data if isinstance(i, dict)]
