@@ -176,36 +176,6 @@ class AjouterProduitFiniEssenceSerializer(serializers.Serializer):
         return data
 
 
-class AjouterParfumPersonnaliseSerializer(serializers.Serializer):
-    parfum_personnalise_id = serializers.IntegerField()
-    quantite = serializers.IntegerField(min_value=1, default=1)
-    panier_id = serializers.IntegerField(required=False, allow_null=True)
-    note_client = serializers.CharField(required=False, allow_blank=True, default='')
-
-    def validate(self, data):
-        request = self.context.get('request')
-        if not request or not request.user.is_authenticated:
-            raise serializers.ValidationError({"detail": "Vous devez être connecté pour ajouter un parfum personnalisé."})
-        
-        client = getattr(request.user, 'client', None)
-        if not client:
-            raise serializers.ValidationError({"detail": "Profil client introuvable."})
-
-        try:
-            parfum_perso = ParfumPersonnalise.objects.get(
-                id=data['parfum_personnalise_id'],
-                client=client
-            )
-        except ParfumPersonnalise.DoesNotExist:
-            raise serializers.ValidationError({"parfum_personnalise_id": "Parfum personnalisé introuvable ou ne vous appartient pas."})
-        
-        if parfum_perso.statut != 'validé':
-            raise serializers.ValidationError({"parfum_personnalise_id": "Ce parfum personnalisé n'est pas encore validé."})
-        
-        data['parfum_perso_obj'] = parfum_perso
-        return data
-
-
 class AjouterEssencePersonnaliseeSerializer(serializers.Serializer):
     essence_personnalisee_id = serializers.IntegerField()
     quantite = serializers.IntegerField(min_value=1, default=1)
@@ -237,6 +207,7 @@ class AjouterEssencePersonnaliseeSerializer(serializers.Serializer):
         data['essence_perso_obj'] = essence_perso
         data['total_prix'] = total_prix
         return data
+
 
 
 class AppliquerCodePromoSerializer(serializers.Serializer):

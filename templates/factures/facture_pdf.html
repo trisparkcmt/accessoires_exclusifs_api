@@ -1,314 +1,363 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="fr">
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
     <title>Facture {{ facture.numero_facture }}</title>
     <style>
-        @page {
-            size: a4;
-            margin: 2cm;
-        }
-        body {
-            font-family: 'Helvetica', 'Arial', sans-serif;
-            font-size: 10pt;
-            color: #333333;
-            line-height: 1.4;
-        }
-        .header-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }
-        .header-table td {
-            vertical-align: top;
-            border: none;
-        }
-        .logo-container {
-            width: 50%;
-        }
-        .company-details {
-            width: 50%;
-            text-align: right;
-            font-size: 9pt;
-            color: #555555;
-        }
-        .company-name {
-            font-size: 14pt;
-            font-weight: bold;
-            color: #b08d57; /* Couleur dorée premium */
-            margin-bottom: 5px;
-        }
-        .divider {
-            border-bottom: 2px solid #b08d57;
-            margin: 20px 0;
-        }
-        .info-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 30px;
-        }
-        .info-table td {
-            width: 50%;
-            vertical-align: top;
-            border: none;
-        }
-        .info-title {
-            font-size: 11pt;
-            font-weight: bold;
-            color: #b08d57;
-            margin-bottom: 8px;
-            border-bottom: 1px solid #e0e0e0;
-            padding-bottom: 3px;
-        }
-        .info-block {
-            font-size: 9.5pt;
-            color: #333333;
-        }
-        .facture-title {
-            font-size: 18pt;
-            font-weight: bold;
-            color: #333333;
-            margin-bottom: 5px;
-        }
-        .facture-meta {
-            font-size: 10pt;
-            color: #555555;
-            margin-bottom: 20px;
-        }
-        .items-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 30px;
-        }
-        .items-table th {
-            background-color: #f9f9f9;
-            border-bottom: 2px solid #e0e0e0;
-            font-weight: bold;
-            text-align: left;
-            padding: 8px 10px;
-            font-size: 9pt;
-            color: #555555;
-        }
-        .items-table td {
-            border-bottom: 1px solid #eeeeee;
-            padding: 10px;
-            font-size: 9.5pt;
-            vertical-align: middle;
-        }
-        .text-right {
-            text-align: right;
-        }
-        .total-table {
-            width: 40%;
-            margin-left: 60%;
-            border-collapse: collapse;
-            margin-bottom: 30px;
-        }
-        .total-table td {
-            padding: 6px 10px;
-            font-size: 10pt;
-        }
-        .total-label {
-            text-align: left;
-            color: #555555;
-        }
-        .total-value {
-            text-align: right;
-            font-weight: bold;
-        }
-        .total-row-final td {
-            border-top: 2px solid #b08d57;
-            font-size: 12pt;
-            font-weight: bold;
-            color: #b08d57;
-            padding-top: 10px;
-        }
-        .footer {
-            margin-top: 50px;
-            text-align: center;
-            font-size: 8pt;
-            color: #888888;
-            border-top: 1px solid #e0e0e0;
-            padding-top: 15px;
-        }
-        .badge-paid {
-            color: #27ae60;
-            font-weight: bold;
-            font-size: 11pt;
-            border: 1px solid #27ae60;
-            padding: 3px 8px;
-            display: inline-block;
-            margin-top: 5px;
-        }
+      @page {
+        size: a4;
+        margin: 2cm;
+      }
+      body {
+        font-family: "Helvetica", "Arial", sans-serif;
+        font-size: 10pt;
+        color: #333333;
+        line-height: 1.4;
+      }
+      .header-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 20px;
+      }
+      .header-table td {
+        vertical-align: top;
+        border: none;
+      }
+      .logo-container {
+        width: 50%;
+      }
+      .company-details {
+        width: 50%;
+        text-align: right;
+        font-size: 9pt;
+        color: #555555;
+      }
+      .company-name {
+        font-size: 14pt;
+        font-weight: bold;
+        color: #b08d57; /* Couleur dorée premium */
+        margin-bottom: 5px;
+      }
+      .divider {
+        border-bottom: 2px solid #b08d57;
+        margin: 20px 0;
+      }
+      .info-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 30px;
+      }
+      .info-table td {
+        width: 50%;
+        vertical-align: top;
+        border: none;
+      }
+      .info-title {
+        font-size: 11pt;
+        font-weight: bold;
+        color: #b08d57;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #e0e0e0;
+        padding-bottom: 3px;
+      }
+      .info-block {
+        font-size: 9.5pt;
+        color: #333333;
+      }
+      .facture-title {
+        font-size: 18pt;
+        font-weight: bold;
+        color: #333333;
+        margin-bottom: 5px;
+      }
+      .facture-meta {
+        font-size: 10pt;
+        color: #555555;
+        margin-bottom: 20px;
+      }
+      .items-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 30px;
+      }
+      .items-table th {
+        background-color: #f9f9f9;
+        border-bottom: 2px solid #e0e0e0;
+        font-weight: bold;
+        text-align: left;
+        padding: 8px 10px;
+        font-size: 9pt;
+        color: #555555;
+      }
+      .items-table td {
+        border-bottom: 1px solid #eeeeee;
+        padding: 10px;
+        font-size: 9.5pt;
+        vertical-align: middle;
+      }
+      .text-right {
+        text-align: right;
+      }
+      .total-table {
+        width: 40%;
+        margin-left: 60%;
+        border-collapse: collapse;
+        margin-bottom: 30px;
+      }
+      .total-table td {
+        padding: 6px 10px;
+        font-size: 10pt;
+      }
+      .total-label {
+        text-align: left;
+        color: #555555;
+      }
+      .total-value {
+        text-align: right;
+        font-weight: bold;
+      }
+      .total-row-final td {
+        border-top: 2px solid #b08d57;
+        font-size: 12pt;
+        font-weight: bold;
+        color: #b08d57;
+        padding-top: 10px;
+      }
+      .footer {
+        margin-top: 50px;
+        text-align: center;
+        font-size: 8pt;
+        color: #888888;
+        border-top: 1px solid #e0e0e0;
+        padding-top: 15px;
+      }
+      .badge-paid {
+        color: #27ae60;
+        font-weight: bold;
+        font-size: 11pt;
+        border: 1px solid #27ae60;
+        padding: 3px 8px;
+        display: inline-block;
+        margin-top: 5px;
+      }
     </style>
-</head>
-<body>
-
+  </head>
+  <body>
     <!-- En-tête -->
     <table class="header-table">
-        <tr>
-            <td class="logo-container">
-                {% if logo_path %}
-                    <img src="{{ logo_path }}" width="150" alt="Logo" />
-                {% else %}
-                    <div class="company-name">Accessoires Exclusifs</div>
-                {% endif %}
-            </td>
-            <td class="company-details">
-                <div class="company-name">Accessoires Exclusifs</div>
-                <div>Prestige & Parfumerie Fine</div>
-                <div>Abidjan, Côte d'Ivoire</div>
-                <div>Téléphone : +225 00 00 00 00</div>
-                <div>Email : contact@accessoiresexclusifs.com</div>
-            </td>
-        </tr>
+      <tr>
+        <td class="logo-container">
+          {% if logo_path %}
+          <img src="{{ logo_path }}" width="150" alt="Logo" />
+          {% else %}
+          <div class="company-name">Accessoires Exclusifs</div>
+          {% endif %}
+        </td>
+        <td class="company-details">
+          <div class="company-name">Accessoires Exclusifs</div>
+          <div>Prestige & Parfumerie Fine</div>
+          <div>Yaoundé, Cameroun</div>
+          <div>Téléphone : a modifier lorsque jaurai le vrai num</div>
+          <div>Email : ca aussi</div>
+        </td>
+      </tr>
     </table>
 
     <div class="divider"></div>
 
     <!-- Informations Facture & Client -->
     <table class="info-table">
-        <tr>
-            <td>
-                <div class="info-title">Facture</div>
-                <div class="info-block">
-                    <div class="facture-title">FACTURE</div>
-                    <div><strong>Numéro :</strong> {{ facture.numero_facture }}</div>
-                    <div><strong>Code de suivi :</strong> {{ facture.numero_facture }}</div>
-                    <div><strong>Date d'émission :</strong> {{ facture.date_emission|date:"d/m/Y H:i" }}</div>
-                    <div><strong>Statut :</strong> <span class="badge-paid">PAYÉE</span></div>
-                </div>
-            </td>
-            <td>
-                <div class="info-title">Facturé à</div>
-                <div class="info-block">
-                    <div><strong>Client :</strong> {{ commande.livraison_nom_complet }}</div>
-                    {% if user.email %}
-                        <div><strong>Email :</strong> {{ user.email }}</div>
-                    {% endif %}
-                    <div><strong>Téléphone :</strong> {{ commande.livraison_telephone }}</div>
-                    {% if commande.livraison_ville %}
-                        <div><strong>Ville :</strong> {{ commande.livraison_ville }}</div>
-                    {% endif %}
-                    {% if commande.livraison_quartier %}
-                        <div><strong>Quartier :</strong> {{ commande.livraison_quartier }}</div>
-                    {% endif %}
-                </div>
-            </td>
-        </tr>
+      <tr>
+        <td>
+          <div class="info-title">Facture</div>
+          <div class="info-block">
+            <div class="facture-title">FACTURE</div>
+            <div><strong>Numéro :</strong> {{ facture.numero_facture }}</div>
+            <div>
+              <strong>Code de suivi :</strong> {{ facture.numero_facture }}
+            </div>
+            <div>
+              <strong>Date d'émission :</strong> {{
+              facture.date_emission|date:"d/m/Y H:i" }}
+            </div>
+            <div>
+              <strong>Statut :</strong> <span class="badge-paid">PAYÉE</span>
+            </div>
+          </div>
+        </td>
+        <td>
+          <div class="info-title">Facturé à</div>
+          <div class="info-block">
+            <div>
+              <strong>Client :</strong> {{ commande.livraison_nom_complet }}
+            </div>
+            {% if user.email %}
+            <div><strong>Email :</strong> {{ user.email }}</div>
+            {% endif %}
+            <div>
+              <strong>Téléphone :</strong> {{ commande.livraison_telephone }}
+            </div>
+            {% if commande.livraison_ville %}
+            <div><strong>Ville :</strong> {{ commande.livraison_ville }}</div>
+            {% endif %} {% if commande.livraison_quartier %}
+            <div>
+              <strong>Quartier :</strong> {{ commande.livraison_quartier }}
+            </div>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
     </table>
 
     <!-- Articles -->
     <table class="items-table">
-        <thead>
-            <tr>
-                <th>Désignation</th>
-                <th class="text-right" style="width: 15%;">Prix Unitaire</th>
-                <th class="text-right" style="width: 12%;">Quantité</th>
-                <th class="text-right" style="width: 20%;">Total</th>
-            </tr>
-        </thead>
-        <tbody>
-            <!-- Parfums standard -->
-            {% for ligne in lignes_parfums %}
-            <tr>
-                <td>
-                    <strong>{{ ligne.nom_snapshot }}</strong>
-                    {% if ligne.parfum.contenance_ml %}
-                        <br/><small style="color: #666;">Contenance : {{ ligne.parfum.contenance_ml }} ml</small>
-                    {% endif %}
-                </td>
-                <td class="text-right">{{ ligne.prix_unitaire_snapshot|floatformat:0 }} {{ DEVISE }}</td>
-                <td class="text-right">{{ ligne.quantite }}</td>
-                <td class="text-right">{{ ligne.sous_total|floatformat:0 }} {{ DEVISE }}</td>
-            </tr>
-            {% endfor %}
+      <thead>
+        <tr>
+          <th>Désignation</th>
+          <th class="text-right" style="width: 15%">Prix Unitaire</th>
+          <th class="text-right" style="width: 12%">Quantité</th>
+          <th class="text-right" style="width: 20%">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Parfums standard -->
+        {% for ligne in lignes_parfums %}
+        <tr>
+          <td>
+            <strong>{{ ligne.nom_snapshot }}</strong>
+            {% if ligne.parfum.contenance_ml %}
+            <br /><small style="color: #666"
+              >Contenance : {{ ligne.parfum.contenance_ml }} ml</small
+            >
+            {% endif %}
+          </td>
+          <td class="text-right">
+            {{ ligne.prix_unitaire_snapshot|floatformat:0 }} {{ DEVISE }}
+          </td>
+          <td class="text-right">{{ ligne.quantite }}</td>
+          <td class="text-right">
+            {{ ligne.sous_total|floatformat:0 }} {{ DEVISE }}
+          </td>
+        </tr>
+        {% endfor %}
 
-            <!-- Accessoires standard -->
-            {% for ligne in lignes_accessoires %}
-            <tr>
-                <td><strong>{{ ligne.nom_snapshot }}</strong></td>
-                <td class="text-right">{{ ligne.prix_unitaire_snapshot|floatformat:0 }} {{ DEVISE }}</td>
-                <td class="text-right">{{ ligne.quantite }}</td>
-                <td class="text-right">{{ ligne.sous_total|floatformat:0 }} {{ DEVISE }}</td>
-            </tr>
-            {% endfor %}
+        <!-- Accessoires standard -->
+        {% for ligne in lignes_accessoires %}
+        <tr>
+          <td><strong>{{ ligne.nom_snapshot }}</strong></td>
+          <td class="text-right">
+            {{ ligne.prix_unitaire_snapshot|floatformat:0 }} {{ DEVISE }}
+          </td>
+          <td class="text-right">{{ ligne.quantite }}</td>
+          <td class="text-right">
+            {{ ligne.sous_total|floatformat:0 }} {{ DEVISE }}
+          </td>
+        </tr>
+        {% endfor %}
 
-            <!-- Produits finis essence standard -->
-            {% for ligne in lignes_produit_fini_essence %}
-            <tr>
-                <td>
-                    <strong>{{ ligne.nom_snapshot }}</strong>
-                    {% if ligne.produit_fini_essence.taille_ml %}
-                        <br/><small style="color: #666;">Taille : {{ ligne.produit_fini_essence.taille_ml }} ml</small>
-                    {% endif %}
-                </td>
-                <td class="text-right">{{ ligne.prix_unitaire_snapshot|floatformat:0 }} {{ DEVISE }}</td>
-                <td class="text-right">{{ ligne.quantite }}</td>
-                <td class="text-right">{{ ligne.sous_total|floatformat:0 }} {{ DEVISE }}</td>
-            </tr>
-            {% endfor %}
+        <!-- Produits finis essence standard -->
+        {% for ligne in lignes_produit_fini_essence %}
+        <tr>
+          <td>
+            <strong>{{ ligne.nom_snapshot }}</strong>
+            {% if ligne.produit_fini_essence.taille_ml %}
+            <br /><small style="color: #666"
+              >Taille : {{ ligne.produit_fini_essence.taille_ml }} ml</small
+            >
+            {% endif %}
+          </td>
+          <td class="text-right">
+            {{ ligne.prix_unitaire_snapshot|floatformat:0 }} {{ DEVISE }}
+          </td>
+          <td class="text-right">{{ ligne.quantite }}</td>
+          <td class="text-right">
+            {{ ligne.sous_total|floatformat:0 }} {{ DEVISE }}
+          </td>
+        </tr>
+        {% endfor %}
 
-            <!-- Parfums personnalisés -->
-            {% for ligne in lignes_parfums_perso %}
-            <tr>
-                <td>
-                    <strong>{{ ligne.nom }} (Parfum Personnalisé)</strong>
-                    {% if ligne.note_laboratoire %}
-                        <br/><small style="color: #666;">Note : {{ ligne.note_laboratoire }}</small>
-                    {% endif %}
-                </td>
-                <td class="text-right">{{ ligne.prix_snapshot|floatformat:0 }} {{ DEVISE }}</td>
-                <td class="text-right">{{ ligne.quantite }}</td>
-                <td class="text-right">{{ ligne.sous_total|floatformat:0 }} {{ DEVISE }}</td>
-            </tr>
-            {% endfor %}
+        <!-- Parfums personnalisés -->
+        {% for ligne in lignes_parfums_perso %}
+        <tr>
+          <td>
+            <strong>{{ ligne.nom }} (Parfum Personnalisé)</strong>
+            {% if ligne.note_laboratoire %}
+            <br /><small style="color: #666"
+              >Note : {{ ligne.note_laboratoire }}</small
+            >
+            {% endif %}
+          </td>
+          <td class="text-right">
+            {{ ligne.prix_snapshot|floatformat:0 }} {{ DEVISE }}
+          </td>
+          <td class="text-right">{{ ligne.quantite }}</td>
+          <td class="text-right">
+            {{ ligne.sous_total|floatformat:0 }} {{ DEVISE }}
+          </td>
+        </tr>
+        {% endfor %}
 
-            <!-- Essences personnalisées -->
-            {% for ligne in lignes_essence_personnalisee %}
-            <tr>
-                <td>
-                    <strong>{{ ligne.nom }} (Essence Personnalisée)</strong>
-                    {% if ligne.note_laboratoire %}
-                        <br/><small style="color: #666;">Note : {{ ligne.note_laboratoire }}</small>
-                    {% endif %}
-                </td>
-                <td class="text-right">{{ ligne.prix_snapshot|floatformat:0 }} {{ DEVISE }}</td>
-                <td class="text-right">{{ ligne.quantite }}</td>
-                <td class="text-right">{{ ligne.sous_total|floatformat:0 }} {{ DEVISE }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
+        <!-- Essences personnalisées -->
+        {% for ligne in lignes_essence_personnalisee %}
+        <tr>
+          <td>
+            <strong>{{ ligne.nom }} (Essence Personnalisée)</strong>
+            {% if ligne.note_laboratoire %}
+            <br /><small style="color: #666"
+              >Note : {{ ligne.note_laboratoire }}</small
+            >
+            {% endif %}
+          </td>
+          <td class="text-right">
+            {{ ligne.prix_snapshot|floatformat:0 }} {{ DEVISE }}
+          </td>
+          <td class="text-right">{{ ligne.quantite }}</td>
+          <td class="text-right">
+            {{ ligne.sous_total|floatformat:0 }} {{ DEVISE }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
     </table>
 
     <!-- Totaux -->
     <table class="total-table">
-        <tr>
-            <td class="total-label">Sous-total :</td>
-            <td class="total-value">{{ commande.sous_total|floatformat:0 }} {{ DEVISE }}</td>
-        </tr>
-        {% if commande.remise_code_promo > 0 %}
-        <tr>
-            <td class="total-label">Remise {% if commande.code_promo_utilise %}({{ commande.code_promo_utilise }}){% endif %} :</td>
-            <td class="total-value" style="color: #c0392b;">-{{ commande.remise_code_promo|floatformat:0 }} {{ DEVISE }}</td>
-        </tr>
-        {% endif %}
-        <tr>
-            <td class="total-label">Livraison :</td>
-            <td class="total-value">{{ commande.frais_livraison|floatformat:0 }} {{ DEVISE }}</td>
-        </tr>
-        <tr class="total-row-final">
-            <td class="total-label">Total Net :</td>
-            <td class="total-value">{{ commande.total_ttc|floatformat:0 }} {{ DEVISE }}</td>
-        </tr>
+      <tr>
+        <td class="total-label">Sous-total :</td>
+        <td class="total-value">
+          {{ commande.sous_total|floatformat:0 }} {{ DEVISE }}
+        </td>
+      </tr>
+      {% if commande.remise_code_promo > 0 %}
+      <tr>
+        <td class="total-label">
+          Remise {% if commande.code_promo_utilise %}({{
+          commande.code_promo_utilise }}){% endif %} :
+        </td>
+        <td class="total-value" style="color: #c0392b">
+          -{{ commande.remise_code_promo|floatformat:0 }} {{ DEVISE }}
+        </td>
+      </tr>
+      {% endif %}
+      <tr>
+        <td class="total-label">Livraison :</td>
+        <td class="total-value">
+          {{ commande.frais_livraison|floatformat:0 }} {{ DEVISE }}
+        </td>
+      </tr>
+      <tr class="total-row-final">
+        <td class="total-label">Total Net :</td>
+        <td class="total-value">
+          {{ commande.total_ttc|floatformat:0 }} {{ DEVISE }}
+        </td>
+      </tr>
     </table>
 
     <!-- Pied de page -->
     <div class="footer">
-        <p>Merci pour votre confiance !</p>
-        <p>Accessoires Exclusifs — SARL au capital de 1 000 000 FCFA — RC Abidjan n° 123456</p>
-        <p>Cette facture tient lieu de preuve d'achat et de paiement.</p>
+      <p>Merci pour votre confiance !</p>
+      <p>Accessoires Exclusifs</p>
+      <p>Cette facture tient lieu de preuve d'achat et de paiement.</p>
     </div>
-
-</body>
+  </body>
 </html>

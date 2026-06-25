@@ -2,6 +2,7 @@ from django.shortcuts import render, get_object_or_404
 from django.http import FileResponse
 import random
 import string
+from decimal import Decimal
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -21,12 +22,12 @@ from orders.models import (
     Facture,
     CodePromoAdmin
 )
+from laboratoire.models import ParfumPersonnalise
 from orders.utils import get_or_create_panier
 from orders.serializers import (
     AjouterParfumSerializer,
     AjouterAccessoireSerializer,
     AjouterProduitFiniEssenceSerializer,
-    AjouterParfumPersonnaliseSerializer,
     AjouterEssencePersonnaliseeSerializer,
     PanierSerializer,
     AppliquerCodePromoSerializer,
@@ -184,49 +185,6 @@ class AjouterProduitFiniEssenceView(APIView):
                     )
                 ligne.quantite = total_quantite
                 ligne.prix_unitaire_snapshot = produit.prix_actuel
-                ligne.save()
-            
-            panier.recalculer_total()
-            
-        return Response(PanierSerializer(panier, context={'request': request}).data, status=status.HTTP_200_OK)
-
-
-class AjouterParfumPersonnaliseView(APIView):
-    """
-    Ajoute un parfum personnalisé au panier actif (requiert d'être connecté).
-    """
-    # Note: La permission_classes est à AllowAny mais la validation du serializer 
-    # lèvera une exception si l'utilisateur n'est pas connecté. Cela évite les erreurs de pré-requête CORS.
-    permission_classes = [AllowAny]
-
-    def post(self, request, *args, **kwargs):
-        serializer = AjouterParfumPersonnaliseSerializer(data=request.data, context={'request': request})
-        serializer.is_valid(raise_exception=True)
-        
-        panier_id = serializer.validated_data.get('panier_id')
-        parfum_perso = serializer.validated_data['parfum_perso_obj']
-        quantite = serializer.validated_data['quantite']
-        note_client = serializer.validated_data.get('note_client', '')
-        
-        with transaction.atomic():
-            panier = get_or_create_panier(request, panier_id)
-            
-            ligne, created = PanierLigneParfumPerso.objects.get_or_create(
-                panier=panier,
-                parfum_personnalise=parfum_perso,
-                defaults={
-                    'prix_calcule': parfum_perso.prix_total,
-                    'quantite': quantite,
-                    'sous_total': parfum_perso.prix_total * quantite,
-                    'note_client': note_client
-                }
-            )
-            
-            if not created:
-                ligne.quantite += quantite
-                ligne.prix_calcule = parfum_perso.prix_total
-                if note_client:
-                    ligne.note_client = note_client
                 ligne.save()
             
             panier.recalculer_total()
