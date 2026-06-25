@@ -10,6 +10,32 @@ from .models import (
 
 
 # ============================================================
+# NOTIFICATIONS PROMOTIONS — clients
+# ============================================================
+def _notifier_clients_promotion(title, message, url, metadata=None):
+    """Envoie une notification in-app (+ FCM) à tous les clients actifs."""
+    from utilisateur.models import Client, Notification
+
+    if metadata is None:
+        metadata = {}
+
+    clients = Client.objects.select_related('user').filter(user__is_active=True)
+    for client in clients:
+        Notification.objects.create(
+            recipient=client.user,
+            type='promotion_catalogue',
+            title=title,
+            message=message,
+            url=url,
+            metadata=metadata,
+        )
+
+
+def _promotion_vient_de_devenir_active(etait_active, est_active):
+    return est_active and not etait_active
+
+
+# ============================================================
 # HELPER — calcul du prix après réduction
 # ============================================================
 def appliquer_reduction(prix_unitaire, taux):
@@ -27,10 +53,13 @@ def capturer_ancien_aux_categorie(sender, instance, **kwargs):
         try:
             ancien = CategorieParfum.objects.get(pk=instance.pk)
             instance._ancien_taux_reduction = ancien.taux_reduction
+            instance._promotion_etait_active = ancien.promotion_active()
         except CategorieParfum.DoesNotExist:
             instance._ancien_taux_reduction = Decimal('0')
+            instance._promotion_etait_active = False
     else:
         instance._ancien_taux_reduction = Decimal('0')
+        instance._promotion_etait_active = False
 
 
 @receiver(pre_save, sender=TypeAccessoire)
@@ -39,10 +68,13 @@ def capturer_ancien_taux_accessoire(sender, instance, **kwargs):
         try:
             ancien = TypeAccessoire.objects.get(pk=instance.pk)
             instance._ancien_taux_reduction = ancien.taux_reduction
+            instance._promotion_etait_active = ancien.promotion_active()
         except TypeAccessoire.DoesNotExist:
             instance._ancien_taux_reduction = Decimal('0')
+            instance._promotion_etait_active = False
     else:
         instance._ancien_taux_reduction = Decimal('0')
+        instance._promotion_etait_active = False
 
 
 @receiver(pre_save, sender=TypeFlacon)
@@ -63,13 +95,39 @@ def capturer_ancien_taux_flacon(sender, instance, **kwargs):
 @receiver(post_save, sender=CategorieParfum)
 def mettre_a_jour_prix_parfums(sender, instance, **kwargs):
     """Les réductions de catégories sont maintenant calculées dynamiquement."""
-    pass
+    etait_active = getattr(instance, '_promotion_etait_active', False)
+    est_active = instance.promotion_active()
+    if _promotion_vient_de_devenir_active(etait_active, est_active):
+        msg = instance.message_promotion or f"-{instance.taux_reduction}% sur tous les parfums de cette catégorie"
+        _notifier_clients_promotion(
+            title=f"Promotion : {instance.nom}",
+            message=f"Bonne nouvelle ! {msg}.",
+            url=f'/api/v1/shop/parfums/?categorie={instance.slug}',
+            metadata={
+                'cible': 'categorie_parfum',
+                'categorie_id': instance.pk,
+                'taux_reduction': str(instance.taux_reduction),
+            },
+        )
 
 
 @receiver(post_save, sender=TypeAccessoire)
 def mettre_a_jour_prix_accessoires(sender, instance, **kwargs):
     """Les réductions de types d'accessoires sont maintenant calculées dynamiquement."""
-    pass
+    etait_active = getattr(instance, '_promotion_etait_active', False)
+    est_active = instance.promotion_active()
+    if _promotion_vient_de_devenir_active(etait_active, est_active):
+        msg = instance.message_promotion or f"-{instance.taux_reduction}% sur tous les accessoires de ce type"
+        _notifier_clients_promotion(
+            title=f"Promotion : {instance.nom}",
+            message=f"Bonne nouvelle ! {msg}.",
+            url=f'/api/v1/shop/accessoires/?type={instance.slug}',
+            metadata={
+                'cible': 'type_accessoire',
+                'type_id': instance.pk,
+                'taux_reduction': str(instance.taux_reduction),
+            },
+        )
 
 
 @receiver(post_save, sender=TypeFlacon)
@@ -191,10 +249,13 @@ def capturer_ancien_stock_accessoire(sender, instance, **kwargs):
         try:
             ancien = Accessoire.objects.get(pk=instance.pk)
             instance._ancien_stock_quantite = ancien.stock_quantite
+            instance._promotion_etait_active = ancien.prix_promotionnel_effectif is not None
         except Accessoire.DoesNotExist:
             instance._ancien_stock_quantite = None
+            instance._promotion_etait_active = False
     else:
         instance._ancien_stock_quantite = None
+        instance._promotion_etait_active = False
 
 
 @receiver(post_save, sender=Accessoire)
@@ -222,6 +283,25 @@ def verifier_alerte_accessoire(sender, instance, created, **kwargs):
         quantite_avant=ancien_stock,
         quantite_apres=instance.stock_quantite,
     )
+
+    etait_active = getattr(instance, '_promotion_etait_active', False)
+    est_active = instance.prix_promotionnel_effectif is not None
+    if _promotion_vient_de_devenir_active(etait_active, est_active) and instance.actif:
+        prix_promo = instance.prix_promotionnel_effectif
+        _notifier_clients_promotion(
+            title=f"Promotion : {instance.nom}",
+            message=(
+                f"L'accessoire {instance.nom} est en promotion à {prix_promo} FCFA "
+                f"(au lieu de {instance.prix_unitaire} FCFA)."
+            ),
+            url=f'/api/v1/shop/accessoires/{instance.slug}/',
+            metadata={
+                'cible': 'accessoire',
+                'accessoire_id': instance.pk,
+                'prix_promotionnel': str(prix_promo),
+                'prix_unitaire': str(instance.prix_unitaire),
+            },
+        )
 
 
 # ============================================================
@@ -318,10 +398,13 @@ def capturer_ancien_stock_parfum(sender, instance, **kwargs):
         try:
             ancien = Parfum.objects.get(pk=instance.pk)
             instance._ancien_stock_quantite = ancien.stock_quantite
+            instance._promotion_etait_active = ancien.prix_promotionnel_effectif is not None
         except Parfum.DoesNotExist:
             instance._ancien_stock_quantite = None
+            instance._promotion_etait_active = False
     else:
         instance._ancien_stock_quantite = None
+        instance._promotion_etait_active = False
 
 
 @receiver(post_save, sender=Parfum)
@@ -334,6 +417,25 @@ def enregistrer_mouvement_parfum(sender, instance, created, **kwargs):
         quantite_avant=ancien_stock,
         quantite_apres=instance.stock_quantite,
     )
+
+    etait_active = getattr(instance, '_promotion_etait_active', False)
+    est_active = instance.prix_promotionnel_effectif is not None
+    if _promotion_vient_de_devenir_active(etait_active, est_active) and instance.actif:
+        prix_promo = instance.prix_promotionnel_effectif
+        _notifier_clients_promotion(
+            title=f"Promotion : {instance.nom}",
+            message=(
+                f"Le parfum {instance.nom} est en promotion à {prix_promo} FCFA "
+                f"(au lieu de {instance.prix_unitaire} FCFA)."
+            ),
+            url=f'/api/v1/shop/parfums/{instance.slug}/',
+            metadata={
+                'cible': 'parfum',
+                'parfum_id': instance.pk,
+                'prix_promotionnel': str(prix_promo),
+                'prix_unitaire': str(instance.prix_unitaire),
+            },
+        )
 
 
 # ============================================================

@@ -423,11 +423,26 @@ class Commande(models.Model):
                     Commande.objects.filter(pk=self.pk).update(commission_statut='versée')
                     
                     # Notification prestataire
+                    code_msg = (
+                        f" grâce à votre code promo {self.code_promo_utilise}"
+                        if self.code_promo_utilise
+                        else ""
+                    )
                     Notification.objects.create(
                         recipient=self.prestataire.user,
                         type='commission',
-                        title="Nouvelle commission !",
-                        message=f"Félicitations ! Vous avez reçu une commission de {self.commission_montant} FCFA pour la commande {self.numero_commande}."
+                        title="Commission reçue !",
+                        message=(
+                            f"Vous avez reçu {self.commission_montant} FCFA de commission"
+                            f"{code_msg} pour la commande {self.numero_commande}."
+                        ),
+                        url=f'/api/v1/orders/commandes/{self.numero_commande}/',
+                        metadata={
+                            'commande_id': self.pk,
+                            'numero_commande': self.numero_commande,
+                            'commission_montant': str(self.commission_montant),
+                            'code_promo': self.code_promo_utilise or '',
+                        },
                     )
                 elif self.commission_statut == 'versée' and self.commission_montant != prev_commission_montant:
                     # Ajustement si modification de la commande
@@ -496,30 +511,103 @@ class Commande(models.Model):
 
     def traiter_livreur_notification(self, original):
         from utilisateur.models import Notification
-        
+
         old_livreur = original.livreur if original else None
-        
+        old_statut = original.statut if original else None
+
         if self.livreur and self.livreur != old_livreur:
-            # Notification livreur
             Notification.objects.create(
                 recipient=self.livreur.user,
-                type='livraison',
-                title="Nouvelle livraison assignée !",
-                message=f"La commande {self.numero_commande} vous a été assignée."
+                type='livreur_commande_assignee',
+                title="Nouvelle commande assignée",
+                message=(
+                    f"La commande {self.numero_commande} vous a été assignée.\n\n"
+                    f"Client : {self.livraison_nom_complet}\n"
+                    f"Adresse : {self.livraison_quartier}, {self.livraison_ville}\n"
+                    f"Téléphone : {self.livraison_telephone}\n"
+                    f"Total : {self.total_ttc} FCFA"
+                ),
+                url=f'/api/v1/orders/commandes/{self.numero_commande}/',
+                metadata={
+                    'commande_id': self.pk,
+                    'numero_commande': self.numero_commande,
+                    'livreur_id': self.livreur.pk,
+                    'montant': str(self.total_ttc),
+                },
             )
-            
-            # Créer l'affectation
+
             from orders.models import AffectationLivraison
             AffectationLivraison.objects.get_or_create(
                 commande=self,
                 livreur=self.livreur,
-                defaults={'statut': 'assignée'}
+                defaults={'statut': 'assignée'},
             )
-            
-            # Mettre à jour automatiquement le statut de livraison de la commande
+
             if not self.statut_livraison or self.statut_livraison == 'en_attente_affectation':
                 self.statut_livraison = 'assignée'
                 Commande.objects.filter(pk=self.pk).update(statut_livraison='assignée')
+
+        livreur_annulation = self.livreur or old_livreur
+        if (
+            self.statut == 'annulée'
+            and old_statut != 'annulée'
+            and livreur_annulation
+        ):
+            Notification.objects.create(
+                recipient=livreur_annulation.user,
+                type='livreur_commande_annulee',
+                title="Commande annulée",
+                message=(
+                    f"La commande {self.numero_commande} qui vous était assignée a été annulée.\n\n"
+                    f"Client : {self.livraison_nom_complet}"
+                ),
+                url=f'/api/v1/orders/commandes/{self.numero_commande}/',
+                metadata={
+                    'commande_id': self.pk,
+                    'numero_commande': self.numero_commande,
+                    'livreur_id': livreur_annulation.pk,
+                },
+            )
+
+    def traiter_notification_parfum_perso(self, original):
+        """Notifie le laboratoire quand une commande avec parfum personnalisé est validée."""
+        from django.contrib.auth import get_user_model
+        from utilisateur.models import Notification
+
+        old_statut = original.statut if original else None
+        if self.statut != 'validé' or old_statut == 'validé':
+            return
+
+        has_parfum_perso = (
+            self.lignes_parfums_perso.exists()
+            or self.lignes_essence_personnalisee.exists()
+        )
+        if not has_parfum_perso:
+            return
+
+        User = get_user_model()
+        admin_users = User.objects.filter(is_staff=True, is_active=True)
+        client_email = self.client.user.email if self.client else 'Invité'
+
+        for admin in admin_users:
+            Notification.objects.create(
+                recipient=admin,
+                type='commande_parfum_perso',
+                title="Commande parfum personnalisé à traiter",
+                message=(
+                    f"La commande {self.numero_commande} contient un parfum personnalisé "
+                    f"et vient d'être validée.\n\n"
+                    f"Client : {client_email}\n"
+                    f"Montant : {self.total_ttc} FCFA\n"
+                    f"À traiter par le laboratoire."
+                ),
+                url=f'/api/v1/orders/commandes/{self.numero_commande}/',
+                metadata={
+                    'commande_id': self.pk,
+                    'numero_commande': self.numero_commande,
+                    'client_email': client_email,
+                },
+            )
 
     def save(self, *args, **kwargs):
         if not self.numero_commande:
@@ -561,6 +649,7 @@ class Commande(models.Model):
         # 3. Commissions et Notifications
         self.traiter_commissions(original)
         self.traiter_livreur_notification(original)
+        self.traiter_notification_parfum_perso(original)
 
         # 4. Génération / régénération de la facture PDF
         # Déclenché uniquement quand statut_paiement devient ou reste "payé"

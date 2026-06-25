@@ -391,7 +391,8 @@ class AdminPromoTestCase(APITestCase):
         # Vérifier que le prestataire a reçu une notification de versement
         notif_versement = Notification.objects.filter(recipient=self.client_user2, type='commission').first()
         self.assertIsNotNone(notif_versement)
-        self.assertIn("reçu une commission", notif_versement.message)
+        self.assertIn("FCFA de commission", notif_versement.message)
+        self.assertIn("PREST20", notif_versement.message)
         
         # 5. Rembourser la commande (statut = 'remboursée')
         # Nettoyer les notifications
