@@ -1,9 +1,14 @@
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from .views import (
     user_notifications, detail_prestataire_request, list_prestataire_requests,
     admin_best_clients, admin_best_prestataires,
     register_fcm_device, unregister_fcm_device,
+    DepenseViewSet,
 )
+
+router = DefaultRouter()
+router.register(r'depenses', DepenseViewSet, basename='depense')
 
 urlpatterns = [
     path('notifications/', user_notifications, name='user-notifications'),
@@ -14,4 +19,5 @@ urlpatterns = [
     # FCM Push Notifications
     path('devices/register/', register_fcm_device, name='fcm-device-register'),
     path('devices/unregister/', unregister_fcm_device, name='fcm-device-unregister'),
+    path('', include(router.urls)),
 ]

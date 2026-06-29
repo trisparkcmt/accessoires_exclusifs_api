@@ -29,6 +29,8 @@ class POSCommandeCreateSerializer(serializers.Serializer):
     client_email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
     client_telephone = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     client_nom_complet = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    livraison_nom_complet = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    livraison_telephone = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     code_promo = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     note_interne = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     lignes = POSCommandLineSerializer(many=True, required=True)
@@ -135,9 +137,12 @@ class POSCommandeCreateSerializer(serializers.Serializer):
         return data
 
     def create(self, validated_data):
+        request = self.context.get('request')
         client_email = validated_data.get('client_email')
         client_telephone = validated_data.get('client_telephone')
         client_nom_complet = validated_data.get('client_nom_complet')
+        livraison_nom_complet = (validated_data.get('livraison_nom_complet') or '').strip()
+        livraison_telephone = (validated_data.get('livraison_telephone') or '').strip()
         code_promo = validated_data.get('code_promo')
         note_interne = validated_data.get('note_interne', '')
 
@@ -265,10 +270,38 @@ class POSCommandeCreateSerializer(serializers.Serializer):
 
             # 2. Préparation de la commande
             prestataire = validated_data.get('prestataire_obj')
-            
-            # Déterminer les informations à afficher sur la facture
-            display_name = client_nom_complet.strip() if client_nom_complet else f"{client_obj.user.first_name} {client_obj.user.last_name}"
-            display_phone = client_telephone.strip() if client_telephone else client_obj.user.telephone or "00000000"
+
+            # Livraison : champs optionnels ; si client connecté / résolu, remplir depuis le profil
+            connected_user = request.user if request and request.user.is_authenticated else None
+            if connected_user and hasattr(connected_user, 'client'):
+                if client_obj and client_obj.user_id == connected_user.id:
+                    if not livraison_nom_complet:
+                        livraison_nom_complet = f"{connected_user.first_name} {connected_user.last_name}".strip()
+                    if not livraison_telephone and connected_user.telephone:
+                        livraison_telephone = connected_user.telephone
+
+            if client_obj and client_obj.user:
+                client_user = client_obj.user
+                if not livraison_nom_complet:
+                    livraison_nom_complet = f"{client_user.first_name} {client_user.last_name}".strip()
+                if not livraison_telephone and client_user.telephone:
+                    livraison_telephone = client_user.telephone
+
+            display_name = livraison_nom_complet
+            if not display_name and client_nom_complet:
+                display_name = client_nom_complet.strip()
+            if not display_name and client_obj and client_obj.user:
+                display_name = f"{client_obj.user.first_name} {client_obj.user.last_name}".strip()
+            if not display_name:
+                display_name = "Client Boutique"
+
+            display_phone = livraison_telephone
+            if not display_phone and client_telephone:
+                display_phone = client_telephone.strip()
+            if not display_phone and client_obj and client_obj.user and client_obj.user.telephone:
+                display_phone = client_obj.user.telephone
+            if not display_phone:
+                display_phone = "00000000"
 
             # Créer la Commande (les totaux initiaux sont mis à 0, recalculer_commande s'en occupera)
             commande = Commande.objects.create(

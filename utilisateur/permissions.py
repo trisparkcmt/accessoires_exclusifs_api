@@ -111,16 +111,35 @@ class IsSuperadminOnly(permissions.BasePermission):
 
 class DepensePermission(permissions.BasePermission):
     """
-    Permission d'accès à la table Dépense :
-    - Superadmin : accès complet (CRUD).
-    - Autres rôles : aucun accès.
+    Dépenses :
+    - GET (list/detail) : superadmin voit tout ; serveuse active voit ses dépenses (queryset).
+    - POST : serveuse active uniquement.
+    - PUT/PATCH : serveuse active, uniquement sur ses propres dépenses.
+    - DELETE : superadmin uniquement (pas de modification admin).
     """
     def has_permission(self, request, view):
         user = request.user
         if not user or not user.is_authenticated:
             return False
+        action = view.action
+
         if user.is_superuser:
-            return True
+            if action in ('create', 'update', 'partial_update'):
+                return False
+            return action in ('list', 'retrieve', 'destroy')
+
+        if is_active_serveuse(user):
+            return action in ('list', 'retrieve', 'create', 'update', 'partial_update')
+
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if user.is_superuser:
+            return view.action in ('retrieve', 'destroy')
+        if is_active_serveuse(user):
+            if view.action in ('retrieve', 'update', 'partial_update'):
+                return obj.cree_par_id == user.id
         return False
 
 

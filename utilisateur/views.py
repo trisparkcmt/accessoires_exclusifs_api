@@ -11,7 +11,7 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from .permissions import (
     IsSuperadmin, IsActiveSuperadmin, IsActiveServeuse, IsSuperadminOrActiveServeuse,
     IsActivePrestataire, IsActiveLivreur, IsActiveClient, DepensePermission,
-    IsSuperadminOrServeuseReadOnly, IsSuperadminOnly
+    IsSuperadminOrServeuseReadOnly, IsSuperadminOnly, is_active_serveuse,
 )
 from rest_framework.response import Response
 from rest_framework import status
@@ -979,22 +979,35 @@ def detail_prestataire_request(request, pk):
     serializer = PrestataireSerializer(prestataire)
     return Response(serializer.data)
 
-@api_view(['GET'])
+@api_view(['GET', 'POST', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def user_notifications(request):
-    """Liste des notifications destinées à l'utilisateur connecté."""
+    """
+    GET : Liste des notifications destinées à l'utilisateur connecté (et globales pour admin/serveuse).
+    POST / PATCH : Marque toutes les notifications personnelles de l'utilisateur connecté comme lues.
+    """
     user = request.user
     from utilisateur.permissions import is_active_serveuse
-    # Si l'utilisateur est admin ou serveuse, il voit aussi les notifications globales
-    if user.is_superuser or is_active_serveuse(user) or user.is_staff:
-        notifications = Notification.objects.filter(
-            Q(recipient=user) | Q(is_global_admin=True)
-        ).order_by('-created_at')
-    else:
-        notifications = Notification.objects.filter(recipient=user).order_by('-created_at')
+    
+    if request.method == 'GET':
+        # Si l'utilisateur est admin ou serveuse, il voit aussi les notifications globales
+        if user.is_superuser or is_active_serveuse(user) or user.is_staff:
+            notifications = Notification.objects.filter(
+                Q(recipient=user) | Q(is_global_admin=True)
+            ).order_by('-created_at')
+        else:
+            notifications = Notification.objects.filter(recipient=user).order_by('-created_at')
+            
+        serializer = NotificationSerializer(notifications, many=True)
+        return Response(serializer.data)
         
-    serializer = NotificationSerializer(notifications, many=True)
-    return Response(serializer.data)
+    elif request.method in ['POST', 'PATCH']:
+        # On ne marque comme lu que les notifications de l'utilisateur connecté
+        updated = Notification.objects.filter(recipient=user, is_read=False).update(is_read=True)
+        return Response({
+            "detail": "Toutes vos notifications ont été marquées comme lues.",
+            "updated": updated
+        }, status=status.HTTP_200_OK)
 
 from django.template.loader import render_to_string
 from django.core.mail import EmailMultiAlternatives
@@ -1599,7 +1612,7 @@ def livreur_commandes_list(request):
     return Response(serializer.data)
 
 
-@api_view(['POST'])
+@api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def livreur_update_delivery_status(request, pk):
     """
@@ -1933,26 +1946,31 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 class DepenseViewSet(viewsets.ModelViewSet):
     """
-    CRUD complet sur les dépenses.
-    Accessible aux admins ET aux serveuses (droits identiques).
-    La serveuse créatrice est automatiquement enregistrée.
+    Dépenses boutique :
+    - POST : serveuse active (cree_par auto).
+    - GET : serveuse → ses dépenses ; superadmin → toutes.
+    - PUT/PATCH : serveuse active, uniquement ses dépenses.
+    - DELETE : superadmin uniquement.
     """
     serializer_class = DepenseSerializer
     permission_classes = [DepensePermission]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['categorie', 'statut', 'date_depense']
-    search_fields = ['libelle', 'description', 'fournisseur']
-    ordering_fields = ['date_depense', 'montant', 'created_at']
+    filterset_fields = ['date_depense']
+    search_fields = ['titre', 'description']
+    ordering_fields = ['date_depense', 'montant', 'date_creation']
     ordering = ['-date_depense']
 
     def get_queryset(self):
-        return Depense.objects.select_related('created_by').all()
+        qs = Depense.objects.select_related('cree_par').all()
+        user = self.request.user
+        if user.is_superuser:
+            return qs
+        if is_active_serveuse(user):
+            return qs.filter(cree_par=user)
+        return Depense.objects.none()
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
-
-    def perform_update(self, serializer):
-        serializer.save(updated_by=self.request.user)
+        serializer.save(cree_par=self.request.user)
 
 from django.db.models import Count, Sum, Q
 

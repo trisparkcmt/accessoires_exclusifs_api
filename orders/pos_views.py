@@ -23,17 +23,23 @@ class POSProductSearchView(APIView):
 
         results = []
 
-        # 1. Recherche des Parfums
+        # 1. Recherche des Parfums (actifs, en stock, prix > 0)
         if not product_type or product_type == 'parfum':
-            parfums = Parfum.objects.filter(actif=True)
+            parfums = Parfum.objects.filter(
+                actif=True,
+                stock_quantite__gt=0,
+                prix_unitaire__gt=0,
+            )
             if q:
                 parfums = parfums.filter(
-                    Q(nom__icontains=q) | 
-                    Q(marque__icontains=q) | 
+                    Q(nom__icontains=q) |
+                    Q(marque__icontains=q) |
                     Q(reference_sku__icontains=q)
                 )
-            # Limiter pour la performance
             for p in parfums[:50]:
+                prix = p.prix_promotionnel if p.prix_promotionnel is not None else p.prix_unitaire
+                if prix <= 0:
+                    continue
                 image_url = request.build_absolute_uri(p.image_principale.url) if p.image_principale else None
                 results.append({
                     "id": p.id,
@@ -41,21 +47,28 @@ class POSProductSearchView(APIView):
                     "nom": p.nom,
                     "marque": p.marque,
                     "reference_sku": p.reference_sku or "",
-                    "prix": float(p.prix_promotionnel if p.prix_promotionnel is not None else p.prix_unitaire),
+                    "prix": float(prix),
                     "stock_disponible": p.stock_quantite,
                     "image_url": image_url
                 })
 
-        # 2. Recherche des Accessoires
+        # 2. Recherche des Accessoires (actifs, en stock, prix > 0)
         if not product_type or product_type == 'accessoire':
-            accessoires = Accessoire.objects.filter(actif=True)
+            accessoires = Accessoire.objects.filter(
+                actif=True,
+                stock_quantite__gt=0,
+                prix_unitaire__gt=0,
+            )
             if q:
                 accessoires = accessoires.filter(
-                    Q(nom__icontains=q) | 
-                    Q(marque__icontains=q) | 
+                    Q(nom__icontains=q) |
+                    Q(marque__icontains=q) |
                     Q(reference_sku__icontains=q)
                 )
             for a in accessoires[:50]:
+                prix = a.prix_promotionnel if a.prix_promotionnel is not None else a.prix_unitaire
+                if prix <= 0:
+                    continue
                 image_url = request.build_absolute_uri(a.image_principale.url) if a.image_principale else None
                 results.append({
                     "id": a.id,
@@ -63,20 +76,27 @@ class POSProductSearchView(APIView):
                     "nom": a.nom,
                     "marque": a.marque,
                     "reference_sku": a.reference_sku or "",
-                    "prix": float(a.prix_promotionnel if a.prix_promotionnel is not None else a.prix_unitaire),
+                    "prix": float(prix),
                     "stock_disponible": a.stock_quantite,
                     "image_url": image_url
                 })
 
-        # 3. Recherche des Produits Finis Essences
+        # 3. Recherche des Produits Finis Essences (actifs, en stock, prix > 0)
         if not product_type or product_type == 'essence':
-            essences = ProduitFiniEssence.objects.filter(actif=True)
+            essences = ProduitFiniEssence.objects.filter(
+                actif=True,
+                stock_disponible__gt=0,
+                prix__gt=0,
+            ).select_related('essence')
             if q:
                 essences = essences.filter(
-                    Q(essence__nom__icontains=q) | 
+                    Q(essence__nom__icontains=q) |
                     Q(essence__marque__icontains=q)
                 )
             for e in essences[:50]:
+                prix = e.prix_promotionnel if e.prix_promotionnel is not None else e.prix
+                if prix <= 0:
+                    continue
                 image_url = request.build_absolute_uri(e.image_principale.url) if e.image_principale else None
                 results.append({
                     "id": e.id,
@@ -84,7 +104,7 @@ class POSProductSearchView(APIView):
                     "nom": f"{e.essence.nom_complet} - {e.taille_ml}ml",
                     "marque": e.essence.marque,
                     "reference_sku": f"ESS-{e.essence.id}-{e.taille_ml}",
-                    "prix": float(e.prix_promotionnel if e.prix_promotionnel is not None else e.prix),
+                    "prix": float(prix),
                     "stock_disponible": e.stock_disponible,
                     "image_url": image_url
                 })

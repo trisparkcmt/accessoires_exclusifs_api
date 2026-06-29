@@ -410,6 +410,21 @@ def capturer_ancien_stock_parfum(sender, instance, **kwargs):
 @receiver(post_save, sender=Parfum)
 def enregistrer_mouvement_parfum(sender, instance, created, **kwargs):
     ancien_stock = getattr(instance, '_ancien_stock_quantite', None)
+    
+    if instance.stock_quantite <= instance.seuil_alerte_stock:
+        if (ancien_stock is None or ancien_stock > instance.seuil_alerte_stock) and instance.actif:
+            creer_notification_alerte(
+                type_produit='parfum',
+                product_id=instance.id,
+                product_name=instance.nom,
+                stock_actuel=instance.stock_quantite,
+                seuil_alerte=instance.seuil_alerte_stock,
+                metadata={
+                    'categorie': instance.categorie.nom if instance.categorie else 'N/A',
+                    'sku': instance.reference_sku,
+                },
+            )
+
     _enregistrer_mouvement(
         type_produit='parfum',
         instance=instance,

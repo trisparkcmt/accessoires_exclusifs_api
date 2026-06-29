@@ -230,7 +230,11 @@ class ParfumViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if self.request.user.is_staff:
             return Parfum.objects.all().select_related('categorie').prefetch_related('tags')
-        return Parfum.objects.filter(actif=True).select_related('categorie').prefetch_related('tags')
+        return Parfum.objects.filter(
+            actif=True,
+            stock_quantite__gt=0,
+            prix_unitaire__gt=0
+        ).select_related('categorie').prefetch_related('tags')
 
     def get_serializer_class(self):
         is_admin = self.request.user.is_staff
@@ -484,7 +488,13 @@ class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
         return ProduitFiniEssencePublicSerializer  # lecture publique
 
     def get_queryset(self):
-        return ProduitFiniEssence.objects.filter(actif=True, stock_disponible__gt=0).select_related('essence')
+        if self.request.user.is_staff:
+            return ProduitFiniEssence.objects.all().select_related('essence')
+        return ProduitFiniEssence.objects.filter(
+            actif=True,
+            stock_disponible__gt=0,
+            prix__gt=0
+        ).select_related('essence')
 
 
 class PromotionViewSet(viewsets.GenericViewSet):
@@ -884,8 +894,12 @@ class AccessoireViewSet(viewsets.ModelViewSet):
         if self.request.user.is_staff:
             # Pour l'admin, afficher tous les accessoires, triés par date de création (du plus récent au plus ancien)
             return Accessoire.objects.all().select_related('type_accessoire').order_by('-date_creation')
-        # Pour les utilisateurs non-admin, afficher uniquement les accessoires actifs, triés aléatoirement
-        return Accessoire.objects.filter(actif=True).select_related('type_accessoire').order_by('?')
+        # Pour les utilisateurs non-admin, afficher uniquement les accessoires actifs, en stock et avec prix > 0, triés aléatoirement
+        return Accessoire.objects.filter(
+            actif=True,
+            stock_quantite__gt=0,
+            prix_unitaire__gt=0
+        ).select_related('type_accessoire').order_by('?')
 
     def get_serializer_class(self):
         is_admin = self.request.user.is_staff
@@ -1092,7 +1106,11 @@ class FlaconViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if self.request.user.is_staff:
             return Flacon.objects.all().select_related('type_flacon')
-        return Flacon.objects.filter(actif=True).select_related('type_flacon')
+        return Flacon.objects.filter(
+            actif=True,
+            stock_quantite__gt=0,
+            prix_unitaire__gt=0
+        ).select_related('type_flacon')
 
     def get_serializer_class(self):
         if self.action == 'list':
