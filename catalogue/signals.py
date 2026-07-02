@@ -257,6 +257,11 @@ def capturer_ancien_stock_accessoire(sender, instance, **kwargs):
         instance._ancien_stock_quantite = None
         instance._promotion_etait_active = False
 
+    # Désactivation automatique uniquement quand le stock vient d'être épuisé (mise à jour)
+    ancien = getattr(instance, '_ancien_stock_quantite', None)
+    if instance.stock_quantite <= 0 and ancien is not None and ancien > 0:
+        instance.actif = False
+
 
 @receiver(post_save, sender=Accessoire)
 def verifier_alerte_accessoire(sender, instance, created, **kwargs):
@@ -317,6 +322,11 @@ def capturer_ancien_stock_flacon(sender, instance, **kwargs):
             instance._ancien_stock_quantite = None
     else:
         instance._ancien_stock_quantite = None
+
+    # Désactivation automatique uniquement quand le stock vient d'être épuisé (mise à jour)
+    ancien = getattr(instance, '_ancien_stock_quantite', None)
+    if instance.stock_quantite <= 0 and ancien is not None and ancien > 0:
+        instance.actif = False
 
 
 @receiver(post_save, sender=Flacon)
@@ -406,6 +416,11 @@ def capturer_ancien_stock_parfum(sender, instance, **kwargs):
         instance._ancien_stock_quantite = None
         instance._promotion_etait_active = False
 
+    # Désactivation automatique uniquement quand le stock vient d'être épuisé (mise à jour)
+    ancien = getattr(instance, '_ancien_stock_quantite', None)
+    if instance.stock_quantite <= 0 and ancien is not None and ancien > 0:
+        instance.actif = False
+
 
 @receiver(post_save, sender=Parfum)
 def enregistrer_mouvement_parfum(sender, instance, created, **kwargs):
@@ -466,6 +481,11 @@ def capturer_ancien_stock_produit_fini(sender, instance, **kwargs):
             instance._ancien_stock_disponible = None
     else:
         instance._ancien_stock_disponible = None
+
+    # Désactivation automatique uniquement quand le stock vient d'être épuisé (mise à jour)
+    ancien = getattr(instance, '_ancien_stock_disponible', None)
+    if instance.stock_disponible <= 0 and ancien is not None and ancien > 0:
+        instance.actif = False
 
 
 @receiver(post_save, sender=ProduitFiniEssence)

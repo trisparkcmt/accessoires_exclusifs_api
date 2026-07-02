@@ -153,18 +153,25 @@ class AnonymousCheckoutTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         panier_id = response.data['id']
 
-        # 2. Tenter de commander sans coordonnées de livraison (doit échouer)
+        # 2. Commander sans coordonnées de livraison (doit réussir désormais)
         payload_cmd_incomplet = {
             "panier_id": panier_id,
             "livraison_nom_complet": "",
             "livraison_telephone": ""
         }
         response_cmd_err = self.client.post(self.passer_commande_url, payload_cmd_incomplet, format='json')
-        self.assertEqual(response_cmd_err.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response_cmd_err.status_code, status.HTTP_201_CREATED)
+        cmd_incomplet = Commande.objects.get(id=response_cmd_err.data['id'])
+        self.assertEqual(cmd_incomplet.livraison_nom_complet, "")
+        self.assertEqual(cmd_incomplet.livraison_telephone, "")
 
-        # 3. Commander avec coordonnées (Client de passage sans téléphone existant)
+        # 3. Recréer un panier pour commander avec coordonnées (Client de passage sans téléphone existant)
+        response_2 = self.client.post(self.composition_directe_url, payload, format='json')
+        self.assertEqual(response_2.status_code, status.HTTP_200_OK)
+        panier_id_2 = response_2.data['id']
+
         payload_cmd = {
-            "panier_id": panier_id,
+            "panier_id": panier_id_2,
             "livraison_nom_complet": "Passant de passage",
             "livraison_telephone": "+22501020304",
             "livraison_ville": "Abidjan",

@@ -226,10 +226,10 @@ class Commande(models.Model):
     commission_montant = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     commission_statut = models.CharField(max_length=20, choices=COMMISSION_STATUT_CHOICES, default='non_versée')
     
-    livraison_nom_complet = models.CharField(max_length=200)
+    livraison_nom_complet = models.CharField(max_length=200, blank=True, default='')
     livraison_quartier = models.CharField(max_length=200, blank=True)
     livraison_ville = models.CharField(max_length=100, blank=True)
-    livraison_telephone = models.CharField(max_length=20)
+    livraison_telephone = models.CharField(max_length=20, blank=True, default='')
     
    
     statut_paiement = models.CharField(max_length=20, choices=STATUT_PAIEMENT_CHOICES, default='en_attente')

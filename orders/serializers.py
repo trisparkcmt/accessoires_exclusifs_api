@@ -255,10 +255,34 @@ class AppliquerCodePromoSerializer(serializers.Serializer):
         return data
 
   
+class UserToClientRelatedField(serializers.PrimaryKeyRelatedField):
+    def __init__(self, **kwargs):
+        from utilisateur.models import User
+        kwargs['queryset'] = User.objects.all()
+        super().__init__(**kwargs)
+
+    def to_representation(self, value):
+        return value.user_id
+
+
 class CodePromoAdminSerializer(serializers.ModelSerializer):
+    clients_autorises = UserToClientRelatedField(many=True, required=False)
+
     class Meta:
         model = CodePromoAdmin
         fields = ['id', 'code', 'reduction_pourcentage', 'est_actif', 'clients_autorises', 'date_creation', 'date_modification']
+
+    def validate_clients_autorises(self, users):
+        clients = []
+        for user in users:
+            try:
+                client = user.client
+                clients.append(client)
+            except AttributeError:
+                from utilisateur.models import Client
+                client = Client.objects.create(user=user)
+                clients.append(client)
+        return clients
 
 
 class CommandeLigneParfumSerializer(serializers.ModelSerializer):
@@ -484,20 +508,12 @@ class PasserCommandeSerializer(serializers.Serializer):
                 full_name = f"{user.first_name} {user.last_name}".strip()
                 if full_name:
                     data['livraison_nom_complet'] = full_name
-                else:
-                    raise serializers.ValidationError({"detail": "Veuillez fournir un nom complet ou complétez votre profil."})
-            else:
-                raise serializers.ValidationError({"detail": "Veuillez fournir un nom complet pour la livraison."})
         
         # Auto-populate livraison_telephone from user if not provided
         if not data.get('livraison_telephone', '').strip():
             if is_auth:
                 if getattr(user, 'telephone', None):
                     data['livraison_telephone'] = user.telephone
-                else:
-                    raise serializers.ValidationError({"detail": "Veuillez fournir un numéro de téléphone ou complétez votre profil."})
-            else:
-                raise serializers.ValidationError({"detail": "Veuillez fournir un numéro de téléphone pour la livraison."})
             
         data['panier_obj'] = panier
         return data
