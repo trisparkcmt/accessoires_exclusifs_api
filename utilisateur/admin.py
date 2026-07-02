@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
 from django import forms
 from django.core.exceptions import ValidationError
-from .models import User, Client, Prestataire, Livreur, CommissionLog, Serveuse
+from .models import User, Client, Prestataire, Livreur, CommissionLog, Serveuse, FCMDevice
 
 
 @admin.register(User)
@@ -430,5 +430,35 @@ class ServeuseAdmin(admin.ModelAdmin):
     def has_change_permission(self, request, obj=None):
         return request.user.is_superuser or request.user.is_staff
         
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser or request.user.is_staff
+
+
+# ============================================================
+# FCM DEVICES — Tokens push notification
+# ============================================================
+@admin.register(FCMDevice)
+class FCMDeviceAdmin(admin.ModelAdmin):
+    list_display = ('user_email', 'platform', 'active', 'token_court', 'created_at', 'updated_at')
+    list_filter = ('platform', 'active')
+    search_fields = ('user__email', 'user__username', 'registration_token')
+    readonly_fields = ('registration_token', 'created_at', 'updated_at')
+    ordering = ('-created_at',)
+    list_per_page = 50
+
+    @admin.display(description='Utilisateur', ordering='user__email')
+    def user_email(self, obj):
+        return obj.user.email
+
+    @admin.display(description='Token (aperçu)')
+    def token_court(self, obj):
+        return f"{obj.registration_token[:40]}…"
+
+    def has_add_permission(self, request):
+        return False  # Les tokens sont créés par le SDK Firebase côté client
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_superuser
+
     def has_delete_permission(self, request, obj=None):
         return request.user.is_superuser or request.user.is_staff
