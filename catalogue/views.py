@@ -26,7 +26,7 @@ from .serializers import (
     AccessoireAdminDetailSerializer, AccessoireAdminListSerializer, AccessoirePublicDetailSerializer, AccessoirePublicListSerializer, AccessoireSimilaireSerializer, CategorieParfumSerializer, EssenceLaboDetailSerializer, EssenceLaboListSerializer, LotEssenceSerializer, ParfumAdminDetailSerializer, ParfumAdminListSerializer, ParfumPublicDetailSerializer, ParfumPublicListSerializer, ParfumSerializer, EssenceSerializer,
     AccessoireSerializer, FlaconSerializer, FlaconPublicSerializer, ParfumSimilaireSerializer, EssenceCreateFullSerializer,
     IngredientSerializer, FavoriSerializer, ProduitFiniEssencePublicSerializer, ProduitFiniEssenceSerializer, PromotionSerializer, TagSelectSerializer, TagSerializer, TypeAccessoireSerializer, TypeFlaconSerializer, NotificationCatalogueSerializer, NotificationCatalogueUpdateSerializer,
-    get_image_url,
+    get_image_url, UnifiedBestsellerHotsellerSerializer,
 )
 from django.db.models import Case, When
 from .filters import (
@@ -228,7 +228,8 @@ class ParfumViewSet(viewsets.ModelViewSet):
     lookup_field       = 'slug'
 
     def get_queryset(self):
-        if self.request.user.is_staff:
+        from utilisateur.permissions import is_active_serveuse
+        if self.request.user.is_staff or is_active_serveuse(self.request.user):
             return Parfum.objects.all().select_related('categorie').prefetch_related('tags')
         return Parfum.objects.filter(
             actif=True,
@@ -246,48 +247,6 @@ class ParfumViewSet(viewsets.ModelViewSet):
             if is_admin:
                 return ParfumAdminDetailSerializer
             return ParfumPublicDetailSerializer
-
- #Hotseller les parfums les plus vendus    
-    @action(detail=False, methods=['get'], url_path='bestsellers')
-    def bestsellers(self, request):
-        """Top 20 parfums les plus vendus (toutes périodes)"""
-        from orders.models import CommandeLigneParfum
-        ventes = (
-            CommandeLigneParfum.objects.filter(parfum__isnull=False)
-            .values('parfum_id')
-            .annotate(total=Sum('quantite'))
-            .order_by('-total')[:20]
-        )
-        ids = [v['parfum_id'] for v in ventes if v['total'] > 0]
-        # Garder l'ordre du classement
-        queryset = Parfum.objects.filter(actif=True, id__in=ids)
-        preserved_order = Case(*[When(id=pk, then=pos) for pos, pk in enumerate(ids)])
-        queryset = Parfum.objects.filter(actif=True, id__in=ids).order_by(preserved_order)
-        serializer = ParfumSimilaireSerializer(queryset, many=True, context={'request': request})
-        return Response(serializer.data)
-
-#Hotseller les parfums les plus vendus du moment 
-    @action(detail=False, methods=['get'], url_path='hotsellers')
-    def hotsellers(self, request):
-        """Top 10 parfums les plus vendus du mois en cours"""
-        from orders.models import CommandeLigneParfum
-        now = timezone.now()
-        debut_mois = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        ventes = (
-            CommandeLigneParfum.objects.filter(
-                parfum__isnull=False,
-                commande__date_creation__gte=debut_mois
-            )
-            .values('parfum_id')
-            .annotate(total=Sum('quantite'))
-            .order_by('-total')[:10]
-        )
-        ids = [v['parfum_id'] for v in ventes if v['total'] > 0]
-        queryset = Parfum.objects.filter(actif=True, id__in=ids)
-        preserved_order = Case(*[When(id=pk, then=pos) for pos, pk in enumerate(ids)])
-        queryset = Parfum.objects.filter(actif=True, id__in=ids).order_by(preserved_order)
-        serializer = ParfumSimilaireSerializer(queryset, many=True, context={'request': request})
-        return Response(serializer.data)
     
     #methodes pour les parfums favoris 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
@@ -488,7 +447,8 @@ class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
         return ProduitFiniEssencePublicSerializer  # lecture publique
 
     def get_queryset(self):
-        if self.request.user.is_staff:
+        from utilisateur.permissions import is_active_serveuse
+        if self.request.user.is_staff or is_active_serveuse(self.request.user):
             return ProduitFiniEssence.objects.all().select_related('essence')
         return ProduitFiniEssence.objects.filter(
             actif=True,
@@ -519,8 +479,6 @@ class PromotionViewSet(viewsets.GenericViewSet):
 
         produits_essence = ProduitFiniEssence.objects.filter(
             actif=True,
-            stock_disponible__gt=0,
-            prix_promotionnel__isnull=False,
         ).select_related('essence')
         for produit in produits_essence:
             item = self._promotion_produit_essence(produit, request)
@@ -551,9 +509,7 @@ class PromotionViewSet(viewsets.GenericViewSet):
             image=get_image_url(request, parfum.image_principale),
             prix_original=parfum.prix_unitaire,
             prix_promotionnel=promo,
-            message='' if manuel or source is None else source.message_promotion,
-            date_debut=getattr(source, 'date_debut', None),
-            date_fin=getattr(source, 'date_fin', None),
+            source=source
         )
 
     def _promotion_accessoire(self, accessoire, request):
@@ -572,9 +528,7 @@ class PromotionViewSet(viewsets.GenericViewSet):
             image=get_image_url(request, accessoire.image_principale),
             prix_original=accessoire.prix_unitaire,
             prix_promotionnel=promo,
-            message='' if manuel or source is None else source.message_promotion,
-            date_debut=getattr(source, 'date_debut', None),
-            date_fin=getattr(source, 'date_fin', None),
+            source=source
         )
 
     def _promotion_produit_essence(self, produit, request):
@@ -591,13 +545,16 @@ class PromotionViewSet(viewsets.GenericViewSet):
             image=get_image_url(request, produit.image_principale),
             prix_original=produit.prix,
             prix_promotionnel=promo,
-            message='',
-            date_debut=None,
-            date_fin=None,
+            source=produit
         )
 
-    def _build_item(self, type_article, identifiant, slug, nom, marque, image, prix_original, prix_promotionnel, message, date_debut, date_fin):
-        taux = (1 - prix_promotionnel / prix_original) * 100
+    def _build_item(self, type_article, identifiant, slug, nom, marque, image, prix_original, prix_promotionnel, source):
+        taux = (1.0 - float(prix_promotionnel) / float(prix_original)) * 100.0
+        
+        message = getattr(source, 'message_promotion', '') or ''
+        date_debut = getattr(source, 'date_debut', None)
+        date_fin = getattr(source, 'date_fin', None)
+        
         return {
             'type_article': type_article,
             'id': identifiant,
@@ -608,11 +565,176 @@ class PromotionViewSet(viewsets.GenericViewSet):
             'prix_original': prix_original,
             'prix_promotionnel': prix_promotionnel,
             'taux_reduction': round(float(taux), 1),
-            'message_promotion': message or '',
+            'message_promotion': message,
             'date_debut': date_debut,
             'date_fin': date_fin,
         }
-    
+
+
+def _build_sales_item(request, type_article, obj, sales_count):
+    if type_article == 'parfum':
+        nom = obj.nom
+        marque = obj.marque
+        slug = obj.slug
+        image = obj.image_principale
+        prix_original = obj.prix_unitaire
+        prix_actuel = obj.prix_actuel
+        stock = obj.stock_quantite
+    elif type_article == 'accessoire':
+        nom = obj.nom
+        marque = obj.marque
+        slug = obj.slug
+        image = obj.image_principale
+        prix_original = obj.prix_unitaire
+        prix_actuel = obj.prix_actuel
+        stock = obj.stock_quantite
+    else:  # produit_essence
+        nom = f"{obj.essence.nom} {obj.taille_ml}ml"
+        marque = obj.essence.marque
+        slug = None
+        image = obj.image_principale
+        prix_original = obj.prix
+        prix_actuel = obj.prix_actuel
+        stock = obj.stock_disponible
+
+    return {
+        'type_article': type_article,
+        'id': obj.id,
+        'slug': slug,
+        'nom': nom,
+        'marque': marque or '',
+        'image_principale_field': image,
+        'prix_original': prix_original,
+        'prix_actuel': prix_actuel,
+        'en_promotion': prix_actuel < prix_original,
+        'stock_quantite': stock,
+        'actif': obj.actif,
+        'ventes': sales_count
+    }
+
+
+def get_unified_sales_items(request, debut_mois=None, limit=20):
+    from orders.models import CommandeLigneParfum, CommandeLigneAccessoire, CommandeProduitFiniEssence
+    from utilisateur.permissions import is_active_serveuse
+
+    is_privileged = request.user.is_staff or is_active_serveuse(request.user)
+
+    parfum_filter = {}
+    accessoire_filter = {}
+    produit_essence_filter = {}
+
+    if debut_mois:
+        parfum_filter['commande__date_creation__gte'] = debut_mois
+        accessoire_filter['commande__date_creation__gte'] = debut_mois
+        produit_essence_filter['commande__date_creation__gte'] = debut_mois
+
+    parfum_sales = (
+        CommandeLigneParfum.objects.filter(parfum__isnull=False, **parfum_filter)
+        .values('parfum_id')
+        .annotate(total=Sum('quantite'))
+        .order_by('-total')
+    )
+
+    accessoire_sales = (
+        CommandeLigneAccessoire.objects.filter(accessoire__isnull=False, **accessoire_filter)
+        .values('accessoire_id')
+        .annotate(total=Sum('quantite'))
+        .order_by('-total')
+    )
+
+    produit_essence_sales = (
+        CommandeProduitFiniEssence.objects.filter(produit_fini_essence__isnull=False, **produit_essence_filter)
+        .values('produit_fini_essence_id')
+        .annotate(total=Sum('quantite'))
+        .order_by('-total')
+    )
+
+    sales_map = {}
+    parfum_ids = []
+    accessoire_ids = []
+    produit_essence_ids = []
+
+    for v in parfum_sales:
+        if v['total'] > 0:
+            sales_map[('parfum', v['parfum_id'])] = v['total']
+            parfum_ids.append(v['parfum_id'])
+
+    for v in accessoire_sales:
+        if v['total'] > 0:
+            sales_map[('accessoire', v['accessoire_id'])] = v['total']
+            accessoire_ids.append(v['accessoire_id'])
+
+    for v in produit_essence_sales:
+        if v['total'] > 0:
+            sales_map[('produit_essence', v['produit_fini_essence_id'])] = v['total']
+            produit_essence_ids.append(v['produit_fini_essence_id'])
+
+    if is_privileged:
+        parfums = Parfum.objects.filter(id__in=parfum_ids).select_related('categorie')
+        accessoires = Accessoire.objects.filter(id__in=accessoire_ids).select_related('type_accessoire')
+        produits = ProduitFiniEssence.objects.filter(id__in=produit_essence_ids).select_related('essence')
+    else:
+        parfums = Parfum.objects.filter(
+            id__in=parfum_ids,
+            actif=True,
+            stock_quantite__gt=0,
+            prix_unitaire__gt=0
+        ).select_related('categorie')
+
+        accessoires = Accessoire.objects.filter(
+            id__in=accessoire_ids,
+            actif=True,
+            stock_quantite__gt=0,
+            prix_unitaire__gt=0
+        ).select_related('type_accessoire')
+
+        produits = ProduitFiniEssence.objects.filter(
+            id__in=produit_essence_ids,
+            actif=True,
+            stock_disponible__gt=0,
+            prix__gt=0
+        ).select_related('essence')
+
+    items = []
+    for p in parfums:
+        sales = sales_map.get(('parfum', p.id), 0)
+        items.append(_build_sales_item(request, 'parfum', p, sales))
+
+    for a in accessoires:
+        sales = sales_map.get(('accessoire', a.id), 0)
+        items.append(_build_sales_item(request, 'accessoire', a, sales))
+
+    for pr in produits:
+        sales = sales_map.get(('produit_essence', pr.id), 0)
+        items.append(_build_sales_item(request, 'produit_essence', pr, sales))
+
+    items.sort(key=lambda x: x['ventes'], reverse=True)
+    return items[:limit]
+
+
+class BestsellerViewSet(viewsets.GenericViewSet):
+    serializer_class = UnifiedBestsellerHotsellerSerializer
+    permission_classes = [AllowAny]
+
+    def list(self, request, *args, **kwargs):
+        """Top 20 produits les plus vendus (toutes périodes)"""
+        items = get_unified_sales_items(request, debut_mois=None, limit=20)
+        serializer = self.get_serializer(items, many=True)
+        return Response(serializer.data)
+
+
+class HotsellerViewSet(viewsets.GenericViewSet):
+    serializer_class = UnifiedBestsellerHotsellerSerializer
+    permission_classes = [AllowAny]
+
+    def list(self, request, *args, **kwargs):
+        """Top 20 produits les plus vendus du mois en cours"""
+        now = timezone.now()
+        debut_mois = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        items = get_unified_sales_items(request, debut_mois=debut_mois, limit=20)
+        serializer = self.get_serializer(items, many=True)
+        return Response(serializer.data)
+
 
 class EssenceLaboViewSet(viewsets.GenericViewSet):
     permission_classes = [AllowAny]
@@ -891,7 +1013,8 @@ class AccessoireViewSet(viewsets.ModelViewSet):
     lookup_field       = 'slug'
 
     def get_queryset(self):
-        if self.request.user.is_staff:
+        from utilisateur.permissions import is_active_serveuse
+        if self.request.user.is_staff or is_active_serveuse(self.request.user):
             # Pour l'admin, afficher tous les accessoires, triés par date de création (du plus récent au plus ancien)
             return Accessoire.objects.all().select_related('type_accessoire').order_by('-date_creation')
         # Pour les utilisateurs non-admin, afficher uniquement les accessoires actifs, en stock et avec prix > 0, triés aléatoirement
@@ -911,46 +1034,6 @@ class AccessoireViewSet(viewsets.ModelViewSet):
             if is_admin:
                 return AccessoireAdminDetailSerializer
             return AccessoirePublicDetailSerializer
-    
-    @action(detail=False, methods=['get'], url_path='bestsellers')
-    def bestsellers(self, request):
-        """Top 20 parfums les plus vendus (toutes périodes)"""
-        from orders.models import CommandeLigneAccessoire
-        ventes = (
-            CommandeLigneAccessoire.objects.filter(accessoire__isnull=False)
-            .values('accessoire_id')
-            .annotate(total=Sum('quantite'))
-            .order_by('-total')[:20]
-        )
-        ids = [v['accessoire_id'] for v in ventes if v['total'] > 0]
-        # Garder l'ordre du classement
-        queryset = Accessoire.objects.filter(actif=True, id__in=ids)
-        order = {id: idx for idx, id in enumerate(ids)}
-        queryset = sorted(queryset, key=lambda p: order.get(p.id, 999))
-        serializer = AccessoireSimilaireSerializer(queryset, many=True, context={'request': request})
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['get'], url_path='hotsellers')
-    def hotsellers(self, request):
-        """Top 10 parfums les plus vendus du mois en cours"""
-        from orders.models import CommandeLigneAccessoire
-        now = timezone.now()
-        debut_mois = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        ventes = (
-            CommandeLigneAccessoire.objects.filter(
-                accessoire__isnull=False,
-                commande__date_creation__gte=debut_mois
-            )
-            .values('accessoire_id')
-            .annotate(total=Sum('quantite'))
-            .order_by('-total')[:10]
-        )
-        ids = [v['accessoire_id'] for v in ventes if v['total'] > 0]
-        queryset = Accessoire.objects.filter(actif=True, id__in=ids)
-        order = {id: idx for idx, id in enumerate(ids)}
-        queryset = sorted(queryset, key=lambda p: order.get(p.id, 999))
-        serializer = AccessoireSimilaireSerializer(queryset, many=True, context={'request': request})
-        return Response(serializer.data)
     #accessoires favoris 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def favori(self, request, slug=None):
@@ -1104,7 +1187,8 @@ class FlaconViewSet(viewsets.ModelViewSet):
     lookup_field       = 'slug'
 
     def get_queryset(self):
-        if self.request.user.is_staff:
+        from utilisateur.permissions import is_active_serveuse
+        if self.request.user.is_staff or is_active_serveuse(self.request.user):
             return Flacon.objects.all().select_related('type_flacon')
         return Flacon.objects.filter(
             actif=True,

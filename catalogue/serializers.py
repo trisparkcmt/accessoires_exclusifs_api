@@ -685,6 +685,26 @@ class PromotionSerializer(serializers.Serializer):
     date_fin = serializers.DateTimeField(allow_null=True)
 
 
+class UnifiedBestsellerHotsellerSerializer(serializers.Serializer):
+    type_article = serializers.CharField()
+    id = serializers.IntegerField()
+    slug = serializers.CharField(allow_null=True)
+    nom = serializers.CharField()
+    marque = serializers.CharField(allow_blank=True, allow_null=True)
+    image_principale = serializers.SerializerMethodField()
+    prix_original = serializers.DecimalField(max_digits=10, decimal_places=2)
+    prix_actuel = serializers.DecimalField(max_digits=10, decimal_places=2)
+    en_promotion = serializers.BooleanField()
+    stock_quantite = serializers.IntegerField()
+    actif = serializers.BooleanField()
+    ventes = serializers.IntegerField()
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_image_principale(self, obj):
+        image_field = obj.get('image_principale_field')
+        return get_image_url(self.context.get('request'), image_field)
+
+
 # ============================================================
 # NOTIFICATIONS CATALOGUE
 # ============================================================

@@ -750,3 +750,69 @@ class SimilarProductsUtilsTest(TestCase):
             p.tags.add(self.tag_floral)
         similaires = get_similar_products(self.p1, Parfum, limit=4)
         self.assertEqual(len(similaires), 4)
+
+
+class UnifiedSalesAPITest(APITestCase):
+    def setUp(self):
+        from catalogue.models import CategorieParfum, Parfum, Accessoire, TypeAccessoire, ProduitFiniEssence, Essence
+        self.cat = CategorieParfum.objects.create(nom="Test Cat", slug="test-cat")
+        self.type_acc = TypeAccessoire.objects.create(nom="Test Type", slug="test-type")
+        self.essence = Essence.objects.create(nom="Test Essence", marque="Brand", code_reference="ESS-TEST")
+        self.lot = LotEssence.objects.create(essence=self.essence, stock_ml=1000.00, seuil_alerte_ml=20)
+
+        self.parfum = Parfum.objects.create(
+            nom="Parfum Test", slug="parfum-test", reference_sku="PARF-1",
+            contenance_ml=50, prix_unitaire=10000, stock_quantite=10,
+            categorie=self.cat, actif=True
+        )
+
+        self.accessoire = Accessoire.objects.create(
+            nom="Accessoire Test", slug="accessoire-test", reference_sku="ACC-1",
+            type_accessoire=self.type_acc, prix_unitaire=5000, stock_quantite=10,
+            actif=True
+        )
+
+        self.produit_essence = ProduitFiniEssence.objects.create(
+            essence=self.essence, taille_ml=30, prix=3000, stock_disponible=10,
+            actif=True
+        )
+
+        from orders.models import Commande, CommandeLigneParfum, CommandeLigneAccessoire, CommandeProduitFiniEssence
+        self.cmd = Commande.objects.create(
+            sous_total=18000,
+            total_ttc=18000, statut='en_cours',
+            livraison_nom_complet="Test User", livraison_telephone="+22501020304"
+        )
+
+        CommandeLigneParfum.objects.create(
+            commande=self.cmd, parfum=self.parfum, quantite=5,
+            prix_unitaire_snapshot=10000, sous_total=50000
+        )
+
+        CommandeLigneAccessoire.objects.create(
+            commande=self.cmd, accessoire=self.accessoire, quantite=3,
+            prix_unitaire_snapshot=5000, sous_total=15000
+        )
+
+        CommandeProduitFiniEssence.objects.create(
+            commande=self.cmd, produit_fini_essence=self.produit_essence, quantite=2,
+            prix_unitaire_snapshot=3000, sous_total=6000
+        )
+
+    def test_bestsellers_unified(self):
+        response = self.client.get('/api/v1/shop/bestsellers/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 3)
+        self.assertEqual(response.data[0]['type_article'], 'parfum')
+        self.assertEqual(response.data[0]['ventes'], 5)
+        self.assertEqual(response.data[1]['type_article'], 'accessoire')
+        self.assertEqual(response.data[1]['ventes'], 3)
+        self.assertEqual(response.data[2]['type_article'], 'produit_essence')
+        self.assertEqual(response.data[2]['ventes'], 2)
+
+    def test_hotsellers_unified(self):
+        response = self.client.get('/api/v1/shop/hotsellers/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 3)
+        self.assertEqual(response.data[0]['type_article'], 'parfum')
+        self.assertEqual(response.data[0]['ventes'], 5)
