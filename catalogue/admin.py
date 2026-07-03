@@ -313,15 +313,13 @@ class IngredientAdmin(admin.ModelAdmin):
 @admin.register(Essence)
 class EssenceAdmin(admin.ModelAdmin):
     list_display = (
-
         'id', 'marque', 'nom', 'code_reference', 'categorie',
-        'intensite', 'genre_cible', 'actif', 'date_creation'
+        'prix_par_ml', 'seuil_alerte_ml', 'intensite', 'genre_cible', 'actif', 'date_creation'
     )
     list_filter = (
         'categorie', 'intensite', 'genre_cible', 'actif',
         'date_creation',
         # Filtres par tags
-
         FamilleOlfactiveEssenceFilter,
         HumeurEssenceFilter,
         SaisonEssenceFilter,
@@ -339,6 +337,9 @@ class EssenceAdmin(admin.ModelAdmin):
         ('Identité', {
             'fields': ('marque', 'nom', 'code_reference', 'categorie')
         }),
+        ('Tarification & Seuil', {
+            'fields': ('prix_par_ml', 'seuil_alerte_ml')
+        }),
         ('Descriptions', {
             'fields': ('description', 'description_ia')
         }),
@@ -347,16 +348,9 @@ class EssenceAdmin(admin.ModelAdmin):
         }),
         ('Caractéristiques olfactives', {
             'fields': ('intensite', 'genre_cible', 'notes_tete', 'notes_coeur', 'notes_fond')
-
         }),
-        # ('Tags', {
-        #     'fields': ('tags',)
-        # }),
         ('Statut', {
-
             'fields': ('actif', )
-
-           
         }),
         ('Dates', {
             'fields': ('date_creation', 'date_modification'),
@@ -372,13 +366,13 @@ class EssenceAdmin(admin.ModelAdmin):
 @admin.register(LotEssence)
 class LotEssenceAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 'essence', 'stock_ml', 'stock_precedent_ml', 'seuil_alerte_ml',
+        'id', 'essence', 'stock_ml', 'stock_precedent_ml',
         'date_reception', 'actif'
     )
     list_filter = ('actif', 'date_reception')
     search_fields = ('essence__marque', 'essence__nom', 'reference_fournisseur')
     list_editable = ('stock_ml', 'actif')
-    readonly_fields = ('date_reception',)
+    readonly_fields = ('date_reception', 'stock_precedent_ml')
     list_per_page = 50
 
     fieldsets = (
@@ -386,7 +380,7 @@ class LotEssenceAdmin(admin.ModelAdmin):
             'fields': ('essence',)
         }),
         ('Caractéristiques du lot', {
-            'fields': ('stock_ml', 'stock_precedent_ml', 'seuil_alerte_ml', 'reference_fournisseur')
+            'fields': ('stock_ml', 'stock_precedent_ml', 'reference_fournisseur')
         }),
         ('Dates', {
             'fields': ('date_reception',)
@@ -395,7 +389,7 @@ class LotEssenceAdmin(admin.ModelAdmin):
             'fields': ('actif',)
         }),
     )
-    readonly_fields = ('date_reception', 'stock_precedent_ml')
+
 
 
 # ============================================================
@@ -405,11 +399,11 @@ class LotEssenceAdmin(admin.ModelAdmin):
 class ProduitFiniEssenceAdmin(admin.ModelAdmin):
     list_display = (
         'id', 'apercu_image_col', 'essence', 'taille_ml', 'prix', 'prix_promotionnel',
-        'prix_actuel', 'stock_disponible', 'stock_precedent', 'actif'
+        'prix_actuel', 'stock_disponible', 'seuil_alerte_stock', 'stock_precedent', 'actif'
     )
     list_filter = ('actif', 'taille_ml', 'essence__categorie')
     search_fields = ('essence__marque', 'essence__nom')
-    list_editable = ('prix', 'prix_promotionnel', 'stock_disponible', 'actif')
+    list_editable = ('prix', 'prix_promotionnel', 'stock_disponible', 'seuil_alerte_stock', 'actif')
     readonly_fields = ('prix_actuel',)
     list_per_page = 50
 
@@ -421,7 +415,7 @@ class ProduitFiniEssenceAdmin(admin.ModelAdmin):
             'fields': ('prix', 'prix_promotionnel', 'prix_actuel')
         }),
         ('Stock', {
-            'fields': ('stock_disponible', 'stock_precedent')
+            'fields': ('stock_disponible', 'seuil_alerte_stock', 'stock_precedent')
         }),
         ('Images', {
             'fields': ('image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')

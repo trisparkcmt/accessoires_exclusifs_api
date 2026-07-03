@@ -139,8 +139,11 @@ def mettre_a_jour_prix_flacons(sender, instance, **kwargs):
 # ALERTS DE STOCK — NOTIFICATIONS CATALOGUE
 # ============================================================
 def creer_notification_alerte(type_produit, product_id, product_name, stock_actuel, seuil_alerte, metadata=None):
-    """Helper pour créer une notification de catalogue."""
+    """Helper pour créer une notification de catalogue ET envoyer un push FCM aux admins."""
     from .models import NotificationCatalogue
+    from utilisateur.fcm_service import send_fcm_notification
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
 
     if metadata is None:
         metadata = {}
@@ -150,6 +153,7 @@ def creer_notification_alerte(type_produit, product_id, product_name, stock_actu
         f"(stock: {stock_actuel}, seuil: {seuil_alerte})"
     )
 
+    # 1. Notification en base (NotificationCatalogue — visible dans l'admin)
     NotificationCatalogue.objects.create(
         type_produit=type_produit,
         product_id=product_id,
@@ -159,6 +163,23 @@ def creer_notification_alerte(type_produit, product_id, product_name, stock_actu
         message=message,
         metadata=metadata,
     )
+
+    # 2. Push FCM vers tous les admins et staff actifs
+    admins = User.objects.filter(is_active=True, is_staff=True)
+    if admins.exists():
+        send_fcm_notification(
+            users=admins,
+            title=f"⚠️ Alerte stock — {product_name}",
+            message=message,
+            data={
+                'type': 'alerte_stock',
+                'type_produit': str(type_produit),
+                'product_id': str(product_id),
+                'product_name': product_name,
+                'stock_actuel': str(stock_actuel),
+                'seuil_alerte': str(seuil_alerte),
+            },
+        )
 
 
 # ============================================================
@@ -197,6 +218,66 @@ def _enregistrer_mouvement(type_produit, instance, nom_produit, quantite_avant, 
 
 
 # ============================================================
+# ESSENCE
+# ============================================================
+@receiver(pre_save, sender=Essence)
+def capturer_ancien_seuil_essence(sender, instance, **kwargs):
+    if instance.pk:
+        try:
+            ancien = Essence.objects.get(pk=instance.pk)
+            instance._ancien_seuil_alerte_ml = ancien.seuil_alerte_ml
+        except Essence.DoesNotExist:
+            instance._ancien_seuil_alerte_ml = None
+    else:
+        instance._ancien_seuil_alerte_ml = None
+
+
+@receiver(post_save, sender=Essence)
+def verifier_alerte_essence(sender, instance, created, **kwargs):
+    """Alerte quand le seuil est AUGMENTÉ et passe au-dessus du stock existant.
+    
+    On ne déclenche PAS d'alerte à la création de l'essence : il n'y a pas
+    encore de lots, c'est un état initial attendu.
+    """
+    # À la création, aucun lot n'existe encore → pas d'alerte
+    if created:
+        return
+
+    ancien_seuil = getattr(instance, '_ancien_seuil_alerte_ml', None)
+
+    if instance.seuil_alerte_ml is None:
+        return
+
+    # Alerte uniquement si le seuil a été augmenté (et qu'il dépasse le stock actuel)
+    if ancien_seuil is None or instance.seuil_alerte_ml <= ancien_seuil:
+        return
+
+    total_stock = instance.stock_total_ml()
+    if total_stock <= instance.seuil_alerte_ml:
+        from django.utils import timezone
+        from .models import NotificationCatalogue
+        minute_ago = timezone.now() - timezone.timedelta(minutes=1)
+        exists = NotificationCatalogue.objects.filter(
+            type_produit='essence',
+            product_id=instance.id,
+            created_at__gte=minute_ago
+        ).exists()
+        if not exists:
+            creer_notification_alerte(
+                type_produit='essence',
+                product_id=instance.id,
+                product_name=instance.nom_complet,
+                stock_actuel=total_stock,
+                seuil_alerte=instance.seuil_alerte_ml,
+                metadata={
+                    'essence_id': instance.id,
+                    'essence_name': instance.nom_complet,
+                },
+            )
+
+
+
+# ============================================================
 # LOT ESSENCE
 # ============================================================
 @receiver(pre_save, sender=LotEssence)
@@ -215,19 +296,25 @@ def capturer_ancien_stock_lot_essence(sender, instance, **kwargs):
 def verifier_alerte_lot_essence(sender, instance, created, **kwargs):
     ancien_stock = getattr(instance, '_ancien_stock_ml', None)
 
-    if (instance.seuil_alerte_ml is not None
-            and instance.stock_ml <= instance.seuil_alerte_ml):
-        if ancien_stock is None or ancien_stock > instance.seuil_alerte_ml:
+    # Alerte de stock global au niveau de l'essence (Alternative 1)
+    seuil_alerte = instance.essence.seuil_alerte_ml
+    if seuil_alerte is not None:
+        total_stock = instance.essence.stock_total_ml()
+        delta_lot = instance.stock_ml - (ancien_stock if ancien_stock is not None else Decimal('0'))
+        ancien_total = total_stock - delta_lot
+
+        # On alerte uniquement si le stock vient de FRANCHIR le seuil à la baisse
+        # (passage de ancien_total > seuil à total_stock <= seuil)
+        if ancien_total > seuil_alerte and total_stock <= seuil_alerte:
             creer_notification_alerte(
-                type_produit='lot_essence',
-                product_id=instance.id,
-                product_name=f"{instance.essence.nom_complet} (Lot)",
-                stock_actuel=instance.stock_ml,
-                seuil_alerte=instance.seuil_alerte_ml,
+                type_produit='essence',
+                product_id=instance.essence.id,
+                product_name=instance.essence.nom_complet,
+                stock_actuel=total_stock,
+                seuil_alerte=seuil_alerte,
                 metadata={
-                    'essence_id': instance.essence_id,
+                    'essence_id': instance.essence.id,
                     'essence_name': instance.essence.nom_complet,
-                    'lot_id': instance.id,
                 },
             )
 
@@ -491,10 +578,29 @@ def capturer_ancien_stock_produit_fini(sender, instance, **kwargs):
 @receiver(post_save, sender=ProduitFiniEssence)
 def enregistrer_mouvement_produit_fini(sender, instance, created, **kwargs):
     ancien_stock = getattr(instance, '_ancien_stock_disponible', None)
+    nom_produit = f"{instance.essence.nom_complet} {instance.taille_ml}ml"
+
+    # Alerte stock (manquait pour ProduitFiniEssence)
+    if (instance.seuil_alerte_stock is not None
+            and instance.stock_disponible <= instance.seuil_alerte_stock):
+        if ancien_stock is None or ancien_stock > instance.seuil_alerte_stock:
+            creer_notification_alerte(
+                type_produit='produit_fini_essence',
+                product_id=instance.id,
+                product_name=nom_produit,
+                stock_actuel=instance.stock_disponible,
+                seuil_alerte=instance.seuil_alerte_stock,
+                metadata={
+                    'essence_id': instance.essence_id,
+                    'essence_name': instance.essence.nom_complet,
+                    'taille_ml': instance.taille_ml,
+                },
+            )
+
     _enregistrer_mouvement(
         type_produit='produit_fini_essence',
         instance=instance,
-        nom_produit=f"{instance.essence.nom_complet} {instance.taille_ml}ml",
+        nom_produit=nom_produit,
         quantite_avant=ancien_stock,
         quantite_apres=instance.stock_disponible,
     )

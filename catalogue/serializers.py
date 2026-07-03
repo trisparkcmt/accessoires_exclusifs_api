@@ -250,7 +250,7 @@ class EssenceSerializer(serializers.ModelSerializer):
             'tags', 'tag_ids', 'famille_olfactive', 'humeurs_compatibles',
             'occasions', 'saisons_compatibles',
             'signes_astrologiques_compatibles', 'moments_journee',
-            'prix_par_ml', 'actif', 'date_creation', 'date_modification'
+            'prix_par_ml', 'seuil_alerte_ml', 'actif', 'date_creation', 'date_modification'
         ]
 
     def create(self, validated_data):
@@ -315,7 +315,7 @@ class LotEssenceSerializer(serializers.ModelSerializer):
         model = LotEssence
         fields = [
             'id', 'essence', 'essence_details', 'stock_ml', 
-            'stock_precedent_ml', 'seuil_alerte_ml', 'actif', 
+            'stock_precedent_ml', 'actif', 
             'date_reception', 'reference_fournisseur'
         ]
         read_only_fields = ['date_reception']
@@ -336,7 +336,7 @@ class ProduitFiniEssenceSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'essence', 'essence_details', 'taille_ml',
             'prix', 'prix_promotionnel', 'prix_actuel', 'prix_par_ml',
-            'stock_disponible', 'stock_precedent', 'actif',
+            'stock_disponible', 'stock_precedent', 'seuil_alerte_stock', 'actif',
             'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4'
         ]
 
@@ -375,12 +375,12 @@ class ProduitFiniEssenceSerializer(serializers.ModelSerializer):
 class _LotEssenceInputSerializer(serializers.ModelSerializer):
     class Meta:
         model = LotEssence
-        fields = ['stock_ml', 'seuil_alerte_ml', 'reference_fournisseur']
+        fields = ['stock_ml', 'reference_fournisseur']
 
 class _ProduitFiniInputSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProduitFiniEssence
-        fields = ['taille_ml', 'prix', 'prix_promotionnel', 'stock_disponible']
+        fields = ['taille_ml', 'prix', 'prix_promotionnel', 'stock_disponible', 'seuil_alerte_stock']
 
 class EssenceCreateFullSerializer(EssenceSerializer):
     initial_lot = _LotEssenceInputSerializer(write_only=True, required=False)

@@ -124,16 +124,15 @@ class ProduitFiniEssenceStockLotTest(TestCase):
             nom="Oud Royal",
             categorie="premium",
             code_reference="ESS-STOCK-001",
+            seuil_alerte_ml=Decimal('50.00'),  # seuil global sur l'essence
         )
         self.lot_ancien = LotEssence.objects.create(
             essence=self.essence,
             stock_ml=Decimal('100.00'),
-            seuil_alerte_ml=Decimal('20.00'),
         )
         self.lot_recent = LotEssence.objects.create(
             essence=self.essence,
             stock_ml=Decimal('80.00'),
-            seuil_alerte_ml=Decimal('20.00'),
         )
 
     def test_creation_preleve_sur_lots_fifo(self):
@@ -758,7 +757,7 @@ class UnifiedSalesAPITest(APITestCase):
         self.cat = CategorieParfum.objects.create(nom="Test Cat", slug="test-cat")
         self.type_acc = TypeAccessoire.objects.create(nom="Test Type", slug="test-type")
         self.essence = Essence.objects.create(nom="Test Essence", marque="Brand", code_reference="ESS-TEST")
-        self.lot = LotEssence.objects.create(essence=self.essence, stock_ml=1000.00, seuil_alerte_ml=20)
+        self.lot = LotEssence.objects.create(essence=self.essence, stock_ml=1000.00)
 
         self.parfum = Parfum.objects.create(
             nom="Parfum Test", slug="parfum-test", reference_sku="PARF-1",
@@ -816,3 +815,92 @@ class UnifiedSalesAPITest(APITestCase):
         self.assertEqual(len(response.data), 3)
         self.assertEqual(response.data[0]['type_article'], 'parfum')
         self.assertEqual(response.data[0]['ventes'], 5)
+
+
+# ============================================================
+# TESTS ALERTES SEUIL GLOBAL ESSENCE
+# ============================================================
+class EssenceAlertStockTest(TestCase):
+    """Valide la logique de seuil d'alerte global au niveau de l'essence."""
+
+    def setUp(self):
+        from catalogue.models import NotificationCatalogue
+        NotificationCatalogue.objects.all().delete()
+        self.essence = Essence.objects.create(
+            marque="Test",
+            nom="Oud Test",
+            categorie="premium",
+            code_reference="ESS-ALERT-001",
+            seuil_alerte_ml=Decimal('100.00'),
+        )
+        # Le stock total est 150 ml (au-dessus du seuil de 100 ml)
+        self.lot1 = LotEssence.objects.create(
+            essence=self.essence,
+            stock_ml=Decimal('100.00'),
+        )
+        self.lot2 = LotEssence.objects.create(
+            essence=self.essence,
+            stock_ml=Decimal('50.00'),
+        )
+
+    def test_stock_total_au_dessus_du_seuil(self):
+        """Aucune notification ne doit exister si le stock total > seuil."""
+        from catalogue.models import NotificationCatalogue
+        self.assertEqual(self.essence.stock_total_ml(), Decimal('150.00'))
+        count = NotificationCatalogue.objects.filter(
+            type_produit='essence', product_id=self.essence.id
+        ).count()
+        self.assertEqual(count, 0)
+
+    def test_alerte_declenchee_quand_stock_franchit_seuil(self):
+        """Une notification doit être créée quand le stock total passe sous le seuil."""
+        from catalogue.models import NotificationCatalogue
+        NotificationCatalogue.objects.all().delete()
+        # On réduit lot1 pour faire passer le total sous le seuil (150→80)
+        self.lot1.stock_ml = Decimal('30.00')
+        self.lot1.save()
+        self.assertEqual(self.essence.stock_total_ml(), Decimal('80.00'))
+        count = NotificationCatalogue.objects.filter(
+            type_produit='essence', product_id=self.essence.id
+        ).count()
+        self.assertGreaterEqual(count, 1)
+
+    def test_pas_de_double_notification_si_deja_sous_seuil(self):
+        """Si le stock était déjà sous le seuil avant la modification, pas de nouvelle alerte."""
+        from catalogue.models import NotificationCatalogue
+        # Franchir le seuil une première fois
+        self.lot1.stock_ml = Decimal('30.00')
+        self.lot1.save()
+        count_after_first = NotificationCatalogue.objects.filter(
+            type_produit='essence', product_id=self.essence.id
+        ).count()
+        # Réduire encore (total reste sous seuil : pas de nouveau franchissement)
+        self.lot2.stock_ml = Decimal('45.00')  # total : 30+45=75, toujours sous 100
+        self.lot2.save()
+        count_after_second = NotificationCatalogue.objects.filter(
+            type_produit='essence', product_id=self.essence.id
+        ).count()
+        self.assertEqual(count_after_first, count_after_second)
+
+    def test_alerte_si_seuil_mis_a_jour_au_dessus_stock(self):
+        """Si le seuil est augmenté au-dessus du stock actuel, une alerte doit être créée."""
+        from catalogue.models import NotificationCatalogue
+        NotificationCatalogue.objects.all().delete()
+        # Stock total = 150 ml → on monte le seuil à 200 ml
+        self.essence.seuil_alerte_ml = Decimal('200.00')
+        self.essence.save()
+        count = NotificationCatalogue.objects.filter(
+            type_produit='essence', product_id=self.essence.id
+        ).count()
+        self.assertGreaterEqual(count, 1)
+
+    def test_propriete_stock_insuffisant_sur_lot(self):
+        """La propriété stock_insuffisant sur LotEssence doit refléter le seuil global."""
+        # Stock total = 150 ml, seuil = 100 ml → suffisant
+        self.assertFalse(self.lot1.stock_insuffisant)
+        # On réduit le total sous le seuil
+        self.lot1.stock_ml = Decimal('30.00')
+        self.lot1.save()
+        self.lot1.refresh_from_db()
+        # Total = 80 ml < 100 ml → insuffisant
+        self.assertTrue(self.lot1.stock_insuffisant)

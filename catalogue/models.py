@@ -422,6 +422,7 @@ class Essence(models.Model):
 
     # Prix pour le laboratoire (au ml)
     prix_par_ml = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Prix au ml utilisé dans le laboratoire")
+    seuil_alerte_ml = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text="Alerte si stock total de l'essence <= seuil")
 
     # Statut
     actif = models.BooleanField(default=True)
@@ -488,7 +489,6 @@ class LotEssence(models.Model):
     essence = models.ForeignKey(Essence, on_delete=models.CASCADE, related_name='lots')
     stock_ml = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Quantité en ml disponible pour le laboratoire")
     stock_precedent_ml = models.DecimalField(max_digits=12, decimal_places=2, default=0, editable=False, help_text="Stock total de l'essence avant cet ajout")
-    seuil_alerte_ml = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text="Alerte si stock ≤ seuil")
     actif = models.BooleanField(default=True)
     date_reception = models.DateTimeField(auto_now_add=True)   # optionnel, pour traçabilité
     reference_fournisseur = models.CharField(max_length=100, blank=True)
@@ -504,7 +504,8 @@ class LotEssence(models.Model):
 
     @property
     def stock_insuffisant(self):
-        return self.seuil_alerte_ml is not None and self.stock_ml <= self.seuil_alerte_ml
+        return (self.essence.seuil_alerte_ml is not None 
+                and self.essence.stock_total_ml() <= self.essence.seuil_alerte_ml)
    # ============================================================
 # PRODUIT FINI (essence vendue en flacon)
 # ============================================================
@@ -515,6 +516,10 @@ class ProduitFiniEssence(models.Model):
     prix_promotionnel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     stock_disponible = models.PositiveIntegerField(default=0)
     stock_precedent = models.PositiveIntegerField(default=0, editable=False, help_text="Stock de ce format avant la mise à jour")
+    seuil_alerte_stock = models.PositiveIntegerField(
+        default=5,
+        help_text="Envoyer une alerte quand le stock tombe à ce seuil ou en-dessous."
+    )
     
     image_principale = models.ImageField(
         upload_to=upload_to_essence,
