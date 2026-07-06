@@ -439,15 +439,11 @@ class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['essence', 'taille_ml']
-    search_fields = ['essence__marque', 'essence__nom'] 
-    
-    def get_serializer_class(self):
-        if self.action in ['create', 'update', 'partial_update']:
-             return ProduitFiniEssenceSerializer   # sérialiseur d'écriture
-        return ProduitFiniEssencePublicSerializer  # lecture publique
+    search_fields = ['essence__marque', 'essence__nom']
 
     def get_queryset(self):
         from utilisateur.permissions import is_active_serveuse
+
         if self.request.user.is_staff or is_active_serveuse(self.request.user):
             return ProduitFiniEssence.objects.all().select_related('essence')
         return ProduitFiniEssence.objects.filter(
@@ -455,6 +451,16 @@ class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
             stock_disponible__gt=0,
             prix__gt=0
         ).select_related('essence')
+
+    def get_serializer_class(self):
+        from utilisateur.permissions import is_active_serveuse
+
+        if self.action in ['create', 'update', 'partial_update']:
+            return ProduitFiniEssenceSerializer   # sérialiseur d'écriture
+
+        if self.request.user.is_staff or is_active_serveuse(self.request.user):
+            return ProduitFiniEssenceSerializer
+        return ProduitFiniEssencePublicSerializer
 
 
 class PromotionViewSet(viewsets.GenericViewSet):
