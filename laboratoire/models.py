@@ -222,3 +222,51 @@ class ParfumPersonnaliseLigne(models.Model):
                     raise ValidationError({k: [f"{m} {detail}" for m in v] for k, v in e.message_dict.items()})
                 else:
                     raise ValidationError(f"{e} {detail}")
+
+
+class IAConversation(models.Model):
+    client = models.ForeignKey(
+        'utilisateur.Client',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ia_conversations'
+    )
+    session_key = models.CharField(max_length=40, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ia_conversation'
+        verbose_name = 'Conversation IA'
+        verbose_name_plural = 'Conversations IA'
+
+    def __str__(self):
+        if self.client:
+            return f"Conversation IA de {self.client.user.email}"
+        return f"Conversation IA session {self.session_key}"
+
+
+class IAConversationMessage(models.Model):
+    ROLE_CHOICES = [
+        ('user', 'Utilisateur'),
+        ('assistant', 'Assistant'),
+    ]
+
+    conversation = models.ForeignKey(
+        IAConversation,
+        on_delete=models.CASCADE,
+        related_name='messages'
+    )
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'ia_conversation_message'
+        verbose_name = 'Message de conversation IA'
+        verbose_name_plural = 'Messages de conversation IA'
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"[{self.role}] {self.content[:60]}"

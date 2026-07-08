@@ -25,8 +25,9 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 'yes')
+# DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 'yes')
 
+DEBUG=True
 
 if not SECRET_KEY:
     if DEBUG:
@@ -375,6 +376,10 @@ SPECTACULAR_SETTINGS = {
 
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AQ.Ab8RN6Iq8YW3z9UjZr6hqbk0Y_kqub1urxxHsMwueAYngM8RRA')
+LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'ollama').lower()
+OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://127.0.0.1:11434')
+OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen2.5:3b')
+OLLAMA_TIMEOUT_SECONDS = int(os.getenv('OLLAMA_TIMEOUT_SECONDS', '30'))
 
 # Configuration Monetbil (Virement/Payout)
 MONETBIL_SERVICE_KEY = os.getenv('MONETBIL_SERVICE_KEY', 'NhlyzHMYo961mQZ3uCQEUX2xUGUaFhUm')

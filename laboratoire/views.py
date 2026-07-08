@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
-from .models import ParfumPersonnalise, EssencePersonnalisee
+from .models import ParfumPersonnalise, EssencePersonnalisee, IAConversation, IAConversationMessage
 from .serializers import (
     ParfumPersonnaliseSerializer,
     EssencePersonnaliseeSerializer,
@@ -102,6 +102,30 @@ class EssencePersonnaliseeViewSet(viewsets.ModelViewSet):
         return queryset.none()
 
 
+def get_ia_conversation(request):
+    if not hasattr(request, 'session'):
+        raise RuntimeError('Session middleware is requis pour l’historique IA.')
+
+    if not request.session.session_key:
+        request.session.create()
+
+    session_key = request.session.session_key
+    client = None
+    if getattr(request.user, 'is_authenticated', False) and hasattr(request.user, 'client'):
+        client = request.user.client
+
+    conversation, _ = IAConversation.objects.get_or_create(
+        session_key=session_key,
+        defaults={'client': client}
+    )
+
+    if client and conversation.client is None:
+        conversation.client = client
+        conversation.save(update_fields=['client'])
+
+    return conversation
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def ia_recommandation(request):
@@ -112,7 +136,13 @@ def ia_recommandation(request):
     if not prompt:
         return Response({"error": "Veuillez fournir un 'prompt'."}, status=status.HTTP_400_BAD_REQUEST)
 
-    reponse_ia = demander_recommandation_ia(prompt)
+    conversation = get_ia_conversation(request)
+    IAConversationMessage.objects.create(conversation=conversation, role='user', content=prompt)
+
+    history = list(conversation.messages.order_by('-created_at')[:20].values('role', 'content'))
+    history.reverse()
+
+    reponse_ia = demander_recommandation_ia(prompt, history)
     if "error" in reponse_ia:
         return Response(reponse_ia, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -126,6 +156,8 @@ def ia_recommandation(request):
     parfums = Parfum.objects.filter(id__in=ids_parfums, actif=True)
     accessoires = Accessoire.objects.filter(id__in=ids_accessoires, actif=True)
     flacon = None
+    essences_recommandees = []
+    ingredients_recommandees = []
 
     if flacon_id:
         try:
@@ -133,12 +165,6 @@ def ia_recommandation(request):
         except Flacon.DoesNotExist:
             flacon = None
 
-    if not flacon:
-        flacon = Flacon.objects.filter(actif=True).order_by('-contenance_ml').first()
-        if flacon:
-            quantite_demandee_ml = flacon.contenance_ml
-
-    essences_recommandees = []
     essence_ids = [e.get('id') for e in essences_data if isinstance(e, dict)]
     essences_db = {e.id: e for e in Essence.objects.filter(id__in=essence_ids, actif=True, prix_par_ml__gt=0)}
     
@@ -184,17 +210,26 @@ def ia_recommandation(request):
                     'prix_total_quantite': str(ingredient.prix_par_ml * quantite_ml),
                 })
 
+    afficher_flacon = bool(essences_recommandees or ingredients_recommandees)
+    assistant_message = reponse_ia.get('message', 'Voici quelques recommandations :')
+    IAConversationMessage.objects.create(conversation=conversation, role='assistant', content=assistant_message)
+
+    total_messages = conversation.messages.count()
+    if total_messages > 20:
+        to_delete = conversation.messages.order_by('created_at')[:total_messages - 20]
+        to_delete.delete()
+
     response_data = {
-        'message': reponse_ia.get('message', 'Voici quelques recommandations :'),
+        'message': assistant_message,
         'quantite_demandee_ml': quantite_demandee_ml,
         'flacon': {
             'id': flacon.id,
             'nom': flacon.nom,
             'prix_unitaire': str(flacon.prix_unitaire),
-        } if flacon else None,
+        } if flacon and afficher_flacon else None,
         'parfums_existants': ParfumLabSerializer(parfums, many=True).data,
         'essences_pre_faites': essences_recommandees,
-        'ingredients_sur_mesure': ingredients_recommandes,
+        'ingredients_sur_mesure': ingredients_recommandees,
         'accessoires': AccessoireLabSerializer(accessoires, many=True).data,
     }
 
