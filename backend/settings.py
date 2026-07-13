@@ -376,9 +376,10 @@ SPECTACULAR_SETTINGS = {
 
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AQ.Ab8RN6Iq8YW3z9UjZr6hqbk0Y_kqub1urxxHsMwueAYngM8RRA')
-LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'ollama').lower()
+LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'gemini').lower()
 OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://127.0.0.1:11434')
 OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen2.5:3b')
+OLLAMA_EMBEDDING_MODEL = os.getenv('OLLAMA_EMBEDDING_MODEL', 'all-minilm')
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv('OLLAMA_TIMEOUT_SECONDS', '30'))
 
 # Configuration Monetbil (Virement/Payout)
@@ -399,7 +400,7 @@ if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
 else:
     CORS_ALLOW_ALL_ORIGINS = False
-    CORS_ALLOWED_ORIGINS = [
+    CORS_ALLOWED_ORIGINS = [ 
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://172.20.10.5:3000",

@@ -448,7 +448,6 @@ class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
             return ProduitFiniEssence.objects.all().select_related('essence')
         return ProduitFiniEssence.objects.filter(
             actif=True,
-            stock_disponible__gt=0,
             prix__gt=0
         ).select_related('essence')
 
@@ -548,7 +547,7 @@ class PromotionViewSet(viewsets.GenericViewSet):
             slug=None,
             nom=f"{produit.essence.nom} {produit.taille_ml}ml",
             marque=produit.essence.marque,
-            image=get_image_url(request, produit.image_principale),
+            image=None,
             prix_original=produit.prix,
             prix_promotionnel=promo,
             source=produit
@@ -598,10 +597,10 @@ def _build_sales_item(request, type_article, obj, sales_count):
         nom = f"{obj.essence.nom} {obj.taille_ml}ml"
         marque = obj.essence.marque
         slug = None
-        image = obj.image_principale
+        image = None
         prix_original = obj.prix
         prix_actuel = obj.prix_actuel
-        stock = obj.stock_disponible
+        stock = int(obj.essence.stock_total_ml() // obj.taille_ml) if obj.taille_ml > 0 else 0
 
     return {
         'type_article': type_article,
@@ -697,7 +696,6 @@ def get_unified_sales_items(request, debut_mois=None, limit=20):
         produits = ProduitFiniEssence.objects.filter(
             id__in=produit_essence_ids,
             actif=True,
-            stock_disponible__gt=0,
             prix__gt=0
         ).select_related('essence')
 

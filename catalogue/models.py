@@ -228,6 +228,7 @@ class Parfum(models.Model):
     contenance_ml = models.IntegerField(help_text="30, 50, 75, 100 ml")
     prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
     prix_promotionnel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    prix_achat = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Prix d'achat unitaire (visible admin uniquement)")
     date_debut = models.DateTimeField(null=True, blank=True)
     date_fin = models.DateTimeField(null=True, blank=True)
     stock_quantite = models.IntegerField(default=0)
@@ -254,6 +255,7 @@ class Parfum(models.Model):
     
     # IA
     description_ia = models.TextField(blank=True, help_text="Description narrative envoyée à l'IA")
+    embedding = models.JSONField(blank=True, null=True, help_text="Vecteur d'embedding pour recherche sémantique")
     
     # Statut
     est_nouveau = models.BooleanField(default=False)
@@ -335,6 +337,7 @@ class Ingredient(models.Model):
     description = models.TextField(blank=True)
 
     prix_par_ml = models.DecimalField(max_digits=10, decimal_places=2)
+    prix_achat_par_ml = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Prix d'achat par ml (visible admin uniquement)")
     stock_ml = models.DecimalField(max_digits=10, decimal_places=3, default=0)
     seuil_alerte_ml = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, default=0, help_text="Alerte si stock <= seuil")
     actif = models.BooleanField(default=True)
@@ -423,6 +426,7 @@ class Essence(models.Model):
     # Prix pour le laboratoire (au ml)
     prix_par_ml = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Prix au ml utilisé dans le laboratoire")
     seuil_alerte_ml = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text="Alerte si stock total de l'essence <= seuil")
+    embedding = models.JSONField(blank=True, null=True, help_text="Vecteur d'embedding pour recherche sémantique")
 
     # Statut
     actif = models.BooleanField(default=True)
@@ -482,6 +486,42 @@ class Essence(models.Model):
         total = self.lots.filter(actif=True).aggregate(total=models.Sum('stock_ml'))['total'] or 0
         return total
     
+    def prelever_lots(self, quantite_ml):
+        restant = Decimal(str(quantite_ml))
+        lots = list(self.lots.select_for_update().filter(actif=True).order_by('date_reception', 'id'))
+        total_disponible = sum((lot.stock_ml for lot in lots), Decimal('0'))
+        if total_disponible < restant:
+            raise ValidationError(
+                f"Stock insuffisant pour {self.nom_complet}: "
+                f"{restant} ml requis, {total_disponible} ml disponible."
+            )
+
+        prelevements = []
+        for lot in lots:
+            if restant <= 0:
+                break
+            prelevement = min(lot.stock_ml, restant)
+            lot.stock_ml -= prelevement
+            lot.save(update_fields=['stock_ml'])
+            prelevements.append((lot, prelevement))
+            restant -= prelevement
+        return prelevements
+
+    def restituer_lots(self, quantite_ml):
+        if quantite_ml <= 0:
+            return
+        lot = (
+            self.lots.select_for_update()
+            .filter(actif=True)
+            .order_by('-date_reception', '-id')
+            .first()
+        )
+        if lot is None:
+            raise ValidationError(f"Aucun lot actif disponible pour restituer {self.nom_complet}.")
+        lot.stock_ml += Decimal(str(quantite_ml))
+        lot.save(update_fields=['stock_ml'])
+
+    
     # ============================================================
 # LOT D'ESSENCE (stock laboratoire)
 # ============================================================
@@ -489,9 +529,17 @@ class LotEssence(models.Model):
     essence = models.ForeignKey(Essence, on_delete=models.CASCADE, related_name='lots')
     stock_ml = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Quantité en ml disponible pour le laboratoire")
     stock_precedent_ml = models.DecimalField(max_digits=12, decimal_places=2, default=0, editable=False, help_text="Stock total de l'essence avant cet ajout")
+    quantite_initiale_ml = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Quantité reçue à l'origine")
+    prix_achat_par_ml = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Prix d'achat par ml pour ce lot (visible admin uniquement)")
     actif = models.BooleanField(default=True)
     date_reception = models.DateTimeField(auto_now_add=True)   # optionnel, pour traçabilité
     reference_fournisseur = models.CharField(max_length=100, blank=True)
+
+    def save(self, *args, **kwargs):
+        is_new = not self.pk
+        if is_new and not self.quantite_initiale_ml:
+            self.quantite_initiale_ml = self.stock_ml
+        super().save(*args, **kwargs)
 
     class Meta:
         db_table = 'lot_essence'
@@ -514,22 +562,6 @@ class ProduitFiniEssence(models.Model):
     taille_ml = models.PositiveIntegerField(help_text="Taille du flacon vendu (ex: 10, 15, 30, 50)")
     prix = models.DecimalField(max_digits=10, decimal_places=2)
     prix_promotionnel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    stock_disponible = models.PositiveIntegerField(default=0)
-    stock_precedent = models.PositiveIntegerField(default=0, editable=False, help_text="Stock de ce format avant la mise à jour")
-    seuil_alerte_stock = models.PositiveIntegerField(
-        default=5,
-        help_text="Envoyer une alerte quand le stock tombe à ce seuil ou en-dessous."
-    )
-    
-    image_principale = models.ImageField(
-        upload_to=upload_to_essence,
-        blank=True, null=True,
-        help_text="Image principale du produit fini (jpg, png, webp — max 2Mo)"
-    )
-    image_supp_1 = models.ImageField(upload_to=upload_to_essence_galerie, blank=True, null=True, help_text="Image supplémentaire 1")
-    image_supp_2 = models.ImageField(upload_to=upload_to_essence_galerie, blank=True, null=True, help_text="Image supplémentaire 2")
-    image_supp_3 = models.ImageField(upload_to=upload_to_essence_galerie, blank=True, null=True, help_text="Image supplémentaire 3")
-    image_supp_4 = models.ImageField(upload_to=upload_to_essence_galerie, blank=True, null=True, help_text="Image supplémentaire 4")
     
     actif = models.BooleanField(default=True)
     
@@ -551,81 +583,6 @@ class ProduitFiniEssence(models.Model):
     def prix_par_ml(self):
         return self.prix_actuel / self.taille_ml if self.taille_ml else 0
 
-    def vendre(self, quantite=1):
-        """Vente d'un ou plusieurs flacons (pour les commandes)."""
-        if self.stock_disponible < quantite:
-            raise ValueError("Stock insuffisant")
-        self.stock_disponible -= quantite
-        self.save(ajuster_lot=False)
-        # Note : aucune décrémentation sur LotEssence car la vente en flacon ne touche pas le stock laboratoire.
-
-    def save(self, *args, **kwargs):
-        ajuster_lot = kwargs.pop('ajuster_lot', True)
-        update_fields = kwargs.get('update_fields')
-        if update_fields is not None and 'stock_disponible' in update_fields and ajuster_lot:
-            # Les commandes/retours de vente gèrent uniquement le stock magasin.
-            ajuster_lot = False
-
-        with transaction.atomic():
-            ancien = None
-            if self.pk:
-                ancien = ProduitFiniEssence.objects.select_for_update().get(pk=self.pk)
-                if ancien.essence_id != self.essence_id:
-                    raise ValidationError("Un produit fini ne peut pas changer d'essence.")
-
-            ancien_stock = ancien.stock_disponible if ancien else 0
-            ancien_taille = ancien.taille_ml if ancien else self.taille_ml
-            delta_ml = Decimal('0')
-            if ajuster_lot:
-                delta_ml = (
-                    Decimal(self.stock_disponible) * Decimal(self.taille_ml)
-                    - Decimal(ancien_stock) * Decimal(ancien_taille)
-                )
-                if delta_ml > 0:
-                    self._prelever_lots(delta_ml)
-                elif delta_ml < 0:
-                    self._restituer_lot(-delta_ml)
-
-            self.stock_precedent = ancien_stock
-            super().save(*args, **kwargs)
-
-    def restituer_stock_lot(self):
-        self._restituer_lot(Decimal(self.stock_disponible) * Decimal(self.taille_ml))
-
-    def _lots_fifo_verrouilles(self):
-        return self.essence.lots.select_for_update().filter(actif=True).order_by('date_reception', 'id')
-
-    def _prelever_lots(self, quantite_ml):
-        restant = Decimal(quantite_ml)
-        lots = list(self._lots_fifo_verrouilles())
-        total_disponible = sum((lot.stock_ml for lot in lots), Decimal('0'))
-        if total_disponible < restant:
-            raise ValidationError(
-                f"Stock insuffisant pour {self.essence.nom_complet}: "
-                f"{restant} ml requis, {total_disponible} ml disponible."
-            )
-
-        for lot in lots:
-            if restant <= 0:
-                break
-            prelevement = min(lot.stock_ml, restant)
-            lot.stock_ml -= prelevement
-            lot.save(update_fields=['stock_ml'])
-            restant -= prelevement
-
-    def _restituer_lot(self, quantite_ml):
-        if quantite_ml <= 0:
-            return
-        lot = (
-            self.essence.lots.select_for_update()
-            .filter(actif=True)
-            .order_by('-date_reception', '-id')
-            .first()
-        )
-        if lot is None:
-            raise ValidationError(f"Aucun lot actif disponible pour restituer {self.essence.nom_complet}.")
-        lot.stock_ml += Decimal(quantite_ml)
-        lot.save(update_fields=['stock_ml'])
 
 # ============================================================
 # ACCESSOIRES
@@ -693,6 +650,7 @@ class Accessoire(models.Model):
     taille = models.CharField(max_length=50, blank=True)
     prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
     prix_promotionnel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    prix_achat = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Prix d'achat unitaire (visible admin uniquement)")
     date_debut = models.DateTimeField(null=True, blank=True)
     date_fin = models.DateTimeField(null=True, blank=True)
     stock_quantite = models.IntegerField(default=0)
@@ -702,6 +660,7 @@ class Accessoire(models.Model):
         blank=True, null=True,
         help_text="Image principale de l'accessoire"
     )
+    embedding = models.JSONField(blank=True, null=True, help_text="Vecteur d'embedding pour recherche sémantique")
 
     image_supp_1 = models.ImageField(upload_to=upload_to_accessoire_galerie, blank=True, null=True, help_text="Image supplémentaire 1")
     image_supp_2 = models.ImageField(upload_to=upload_to_accessoire_galerie, blank=True, null=True, help_text="Image supplémentaire 2")
@@ -815,6 +774,7 @@ class Flacon(models.Model):
     image_supp_3 = models.ImageField(upload_to=upload_to_flacon_galerie, blank=True, null=True, help_text="Image supplémentaire 3")
     image_supp_4 = models.ImageField(upload_to=upload_to_flacon_galerie, blank=True, null=True, help_text="Image supplémentaire 4")
     prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
+    prix_achat = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Prix d'achat unitaire (visible admin uniquement)")
     stock_quantite = models.IntegerField(default=0)
     seuil_alerte_stock = models.IntegerField(default=5, help_text="En dessous de ce seuil la commande est bloquée")
     actif = models.BooleanField(default=True)
@@ -905,3 +865,23 @@ class MouvementStock(models.Model):
     def __str__(self):
         user_str = self.utilisateur.email if self.utilisateur else "Système"
         return f"{self.date_ajout.strftime('%Y-%m-%d %H:%M')} - {user_str} a ajouté {self.quantite_ajoutee} à {self.nom_produit} ({self.type_produit})"
+
+
+class LotEssenceConsommation(models.Model):
+    lot_essence = models.ForeignKey('LotEssence', on_delete=models.CASCADE, related_name='consommations')
+    
+    ligne_produit_fini_essence = models.ForeignKey('orders.CommandeProduitFiniEssence', on_delete=models.CASCADE, null=True, blank=True, related_name='lot_consommations')
+    ligne_parfum_perso = models.ForeignKey('orders.CommandeLigneParfumPerso', on_delete=models.CASCADE, null=True, blank=True, related_name='lot_consommations')
+    
+    quantite_ml = models.DecimalField(max_digits=10, decimal_places=2)
+    prix_vente_attribue = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Part du prix de vente attribuée à cette consommation")
+    date_consommation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'lot_essence_consommation'
+        verbose_name = "Consommation de lot d'essence"
+        verbose_name_plural = "Consommations de lots d'essence"
+        ordering = ['-date_consommation']
+
+    def __str__(self):
+        return f"{self.quantite_ml} ml du lot {self.lot_essence.id}"

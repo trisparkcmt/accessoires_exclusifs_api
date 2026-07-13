@@ -186,13 +186,30 @@ class ParfumSerializer(serializers.ModelSerializer):
 # ============================================================
 
 class ParfumAdminListSerializer(ParfumSerializer):
-    """Admin : liste (sans produits similaires)"""
+    """Admin : liste (sans produits similaires, avec prix d'achat et bénéfice)"""
+    prix_achat = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True, required=False)
+    benefice_unitaire = serializers.SerializerMethodField()
+
     class Meta(ParfumSerializer.Meta):
-        fields = [f for f in ParfumSerializer.Meta.fields if f != 'produits_similaires']
+        fields = [f for f in ParfumSerializer.Meta.fields if f != 'produits_similaires'] + ['prix_achat', 'benefice_unitaire']
+
+    def get_benefice_unitaire(self, obj):
+        if obj.prix_achat and obj.prix_unitaire:
+            return str((obj.prix_unitaire - obj.prix_achat).quantize(Decimal('0.01')))
+        return None
 
 class ParfumAdminDetailSerializer(ParfumSerializer):
-    """Admin : détail (avec produits similaires)"""
-    pass
+    """Admin : détail (avec produits similaires et prix d'achat)"""
+    prix_achat = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True, required=False)
+    benefice_unitaire = serializers.SerializerMethodField()
+
+    class Meta(ParfumSerializer.Meta):
+        fields = ParfumSerializer.Meta.fields + ['prix_achat', 'benefice_unitaire']
+
+    def get_benefice_unitaire(self, obj):
+        if obj.prix_achat and obj.prix_unitaire:
+            return str((obj.prix_unitaire - obj.prix_achat).quantize(Decimal('0.01')))
+        return None
 
 class ParfumPublicListSerializer(ParfumSerializer):
     """Public : liste (sans produits similaires, champs réduits)"""
@@ -216,6 +233,18 @@ class IngredientSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'nom', 'slug', 'description',
             'prix_par_ml', 'stock_ml', 'seuil_alerte_ml', 'actif',
+            'date_creation',
+        ]
+
+
+class IngredientAdminSerializer(serializers.ModelSerializer):
+    """Ingrédient avec prix d'achat (admin uniquement)"""
+    class Meta:
+        model  = Ingredient
+        fields = [
+            'id', 'nom', 'slug', 'description',
+            'prix_par_ml', 'prix_achat_par_ml',
+            'stock_ml', 'seuil_alerte_ml', 'actif',
             'date_creation',
         ]
 
@@ -298,75 +327,100 @@ class ProduitFiniEssencePublicSerializer(serializers.ModelSerializer):
     marque = serializers.CharField(source='essence.marque', read_only=True)
     nom = serializers.CharField(source='essence.nom', read_only=True)
     categorie = serializers.CharField(source='essence.categorie', read_only=True)
+    stock_disponible = serializers.SerializerMethodField()
 
     class Meta:
         model = ProduitFiniEssence
-        fields = ['id', 'marque', 'nom', 'categorie', 'taille_ml', 'prix_actuel', 'stock_disponible', 'seuil_alerte_stock', 'image_principale']
+        fields = ['id', 'marque', 'nom', 'categorie', 'taille_ml', 'prix_actuel', 'stock_disponible']
 
-    def get_image_principale(self, obj):
-        return get_image_url(self.context.get('request'), obj.image_principale)
+    @extend_schema_field(OpenApiTypes.INT)
+    def get_stock_disponible(self, obj):
+        if obj.taille_ml > 0:
+            return int(obj.essence.stock_total_ml() // obj.taille_ml)
+        return 0
 # ============================================================
 # LOTessence et produit finis 
 # ============================================================
 class LotEssenceSerializer(serializers.ModelSerializer):
     essence_details = EssenceLaboListSerializer(source='essence', read_only=True)
+    cout_achat_total = serializers.SerializerMethodField()
+    chiffre_affaires_genere = serializers.SerializerMethodField()
+    benefice_lot = serializers.SerializerMethodField()
+    est_termine = serializers.SerializerMethodField()
 
     class Meta:
         model = LotEssence
         fields = [
-            'id', 'essence', 'essence_details', 'stock_ml', 
-            'stock_precedent_ml', 'actif', 
+            'id', 'essence', 'essence_details', 'stock_ml',
+            'stock_precedent_ml', 'quantite_initiale_ml',
+            'prix_achat_par_ml',
+            'cout_achat_total', 'chiffre_affaires_genere', 'benefice_lot', 'est_termine',
+            'actif',
             'date_reception', 'reference_fournisseur'
         ]
-        read_only_fields = ['date_reception']
+        read_only_fields = ['date_reception', 'cout_achat_total', 'chiffre_affaires_genere', 'benefice_lot', 'est_termine']
 
     def create(self, validated_data):
         essence = validated_data.get('essence')
         validated_data['stock_precedent_ml'] = essence.stock_total_ml()
         return super().create(validated_data)
 
+    def get_cout_achat_total(self, obj):
+        if obj.prix_achat_par_ml and obj.quantite_initiale_ml:
+            return str((obj.quantite_initiale_ml * obj.prix_achat_par_ml).quantize(Decimal('0.01')))
+        return None
+
+    def get_chiffre_affaires_genere(self, obj):
+        from django.db.models import Sum
+        total = obj.consommations.aggregate(total=Sum('prix_vente_attribue'))['total']
+        return str(Decimal(str(total or 0)).quantize(Decimal('0.01')))
+
+    def get_benefice_lot(self, obj):
+        if not obj.prix_achat_par_ml:
+            return None
+        from django.db.models import Sum
+        ca = obj.consommations.aggregate(total=Sum('prix_vente_attribue'))['total'] or Decimal('0')
+        quantite_consommee = (obj.quantite_initiale_ml or Decimal('0')) - obj.stock_ml
+        cout = quantite_consommee * obj.prix_achat_par_ml
+        return str((Decimal(str(ca)) - cout).quantize(Decimal('0.01')))
+
+    def get_est_termine(self, obj):
+        return obj.stock_ml <= Decimal('0')
+
 
 class ProduitFiniEssenceSerializer(serializers.ModelSerializer):
     essence_details = EssenceSerializer(source='essence', read_only=True)
     prix_actuel = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     prix_par_ml = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    stock_disponible = serializers.SerializerMethodField()
 
     class Meta:
         model = ProduitFiniEssence
         fields = [
             'id', 'essence', 'essence_details', 'taille_ml',
             'prix', 'prix_promotionnel', 'prix_actuel', 'prix_par_ml',
-            'stock_disponible', 'stock_precedent', 'seuil_alerte_stock', 'actif',
-            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4'
+            'stock_disponible', 'actif'
         ]
 
-    def to_representation(self, instance):
-        representation = super().to_representation(instance)
-        request = self.context.get('request')
-        representation['image_principale'] = get_image_url(request, instance.image_principale)
-        for i in range(1, 5):
-            img_field = f'image_supp_{i}'
-            representation[img_field] = get_image_url(request, getattr(instance, img_field))
-        return representation
+    @extend_schema_field(OpenApiTypes.INT)
+    def get_stock_disponible(self, obj):
+        if obj.taille_ml > 0:
+            return int(obj.essence.stock_total_ml() // obj.taille_ml)
+        return 0
 
     def create(self, validated_data):
         essence = validated_data.get('essence')
         taille = validated_data.get('taille_ml')
-        # Gestion du unique_together : si le format existe, on le met à jour
         existing = ProduitFiniEssence.objects.filter(essence=essence, taille_ml=taille).first()
         if existing:
-            validated_data['stock_precedent'] = existing.stock_disponible
             return self.update(existing, validated_data)
         
-        validated_data['stock_precedent'] = 0
         try:
             return super().create(validated_data)
         except DjangoValidationError as exc:
             raise serializers.ValidationError(exc.message_dict if hasattr(exc, 'message_dict') else exc.messages)
 
     def update(self, instance, validated_data):
-        if 'stock_disponible' in validated_data:
-            instance.stock_precedent = instance.stock_disponible
         try:
             return super().update(instance, validated_data)
         except DjangoValidationError as exc:
@@ -380,7 +434,7 @@ class _LotEssenceInputSerializer(serializers.ModelSerializer):
 class _ProduitFiniInputSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProduitFiniEssence
-        fields = ['taille_ml', 'prix', 'prix_promotionnel', 'stock_disponible', 'seuil_alerte_stock']
+        fields = ['taille_ml', 'prix', 'prix_promotionnel']
 
 class EssenceCreateFullSerializer(EssenceSerializer):
     initial_lot = _LotEssenceInputSerializer(write_only=True, required=False)
@@ -402,7 +456,7 @@ class EssenceCreateFullSerializer(EssenceSerializer):
                 if lot_data:
                     LotEssence.objects.create(essence=essence, stock_precedent_ml=0, **lot_data)
                 for prod in prods_data:
-                    ProduitFiniEssence.objects.create(essence=essence, stock_precedent=0, **prod)
+                    ProduitFiniEssence.objects.create(essence=essence, **prod)
         except DjangoValidationError as exc:
             raise serializers.ValidationError(exc.message_dict if hasattr(exc, 'message_dict') else exc.messages)
         return essence
@@ -519,11 +573,28 @@ class AccessoireSerializer(serializers.ModelSerializer):
 # ============================================================
 
 class AccessoireAdminListSerializer(AccessoireSerializer):
+    prix_achat = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True, required=False)
+    benefice_unitaire = serializers.SerializerMethodField()
+
     class Meta(AccessoireSerializer.Meta):
-        fields = [f for f in AccessoireSerializer.Meta.fields if f != 'produits_similaires']
+        fields = [f for f in AccessoireSerializer.Meta.fields if f != 'produits_similaires'] + ['prix_achat', 'benefice_unitaire']
+
+    def get_benefice_unitaire(self, obj):
+        if obj.prix_achat and obj.prix_unitaire:
+            return str((obj.prix_unitaire - obj.prix_achat).quantize(Decimal('0.01')))
+        return None
 
 class AccessoireAdminDetailSerializer(AccessoireSerializer):
-    pass
+    prix_achat = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True, required=False)
+    benefice_unitaire = serializers.SerializerMethodField()
+
+    class Meta(AccessoireSerializer.Meta):
+        fields = AccessoireSerializer.Meta.fields + ['prix_achat', 'benefice_unitaire']
+
+    def get_benefice_unitaire(self, obj):
+        if obj.prix_achat and obj.prix_unitaire:
+            return str((obj.prix_unitaire - obj.prix_achat).quantize(Decimal('0.01')))
+        return None
 
 class AccessoirePublicListSerializer(AccessoireSerializer):
     class Meta(AccessoireSerializer.Meta):
@@ -587,14 +658,22 @@ class FlaconSerializer(serializers.ModelSerializer):
             representation[img_field] = get_image_url(self.context.get('request'), getattr(instance, img_field))
         return representation
 
-
     @extend_schema_field(OpenApiTypes.BOOL)
     def get_stock_suffisant(self, obj) -> bool:
-        """
-        True  → stock > seuil_alerte_stock (commande possible)
-        False → stock ≤ seuil_alerte_stock (commande bloquée)
-        """
         return obj.stock_quantite > obj.seuil_alerte_stock
+
+
+class FlaconAdminSerializer(FlaconSerializer):
+    """Flacon avec prix d'achat et bénéfice (admin uniquement)"""
+    benefice_unitaire = serializers.SerializerMethodField()
+
+    class Meta(FlaconSerializer.Meta):
+        fields = FlaconSerializer.Meta.fields + ['prix_achat', 'benefice_unitaire']
+
+    def get_benefice_unitaire(self, obj):
+        if obj.prix_achat and obj.prix_unitaire:
+            return str((obj.prix_unitaire - obj.prix_achat).quantize(Decimal('0.01')))
+        return None
     
 class FlaconPublicSerializer(serializers.ModelSerializer):
     image_principale = serializers.SerializerMethodField()

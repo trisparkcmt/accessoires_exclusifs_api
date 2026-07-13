@@ -124,8 +124,9 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                     raise serializers.ValidationError({"lignes": f"Produit fini essence avec l'ID {product_id} introuvable."})
                 if not product.actif:
                     raise serializers.ValidationError({"lignes": f"Le produit fini essence '{product.essence.nom_complet}' ({product.taille_ml}ml) n'est pas actif."})
-                if product.stock_disponible < qty:
-                    raise serializers.ValidationError({"lignes": f"Stock insuffisant pour '{product.essence.nom_complet}' ({product.taille_ml}ml). Disponible: {product.stock_disponible}, Demandé: {qty}."})
+                quantite_ml = Decimal(str(qty)) * Decimal(str(product.taille_ml))
+                if product.essence.stock_total_ml() < quantite_ml:
+                    raise serializers.ValidationError({"lignes": f"Stock d'essence insuffisant pour '{product.essence.nom_complet}'. Demandé: {qty} flacons de {product.taille_ml}ml."})
                 validated_lines.append({
                     'type': 'essence',
                     'product_obj': product,

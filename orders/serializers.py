@@ -169,8 +169,9 @@ class AjouterProduitFiniEssenceSerializer(serializers.Serializer):
         if not produit.actif:
             raise serializers.ValidationError({"produit_fini_essence_id": "Ce produit n'est pas actif."})
         
-        if produit.stock_disponible < data['quantite']:
-            raise serializers.ValidationError({"quantite": f"Stock insuffisant. Seulement {produit.stock_disponible} disponibles."})
+        quantite_ml = Decimal(str(data['quantite'])) * Decimal(str(produit.taille_ml))
+        if produit.essence.stock_total_ml() < quantite_ml:
+            raise serializers.ValidationError({"quantite": f"Stock d'essence insuffisant pour {produit.essence.nom}."})
         
         data['produit_fini_essence_obj'] = produit
         return data

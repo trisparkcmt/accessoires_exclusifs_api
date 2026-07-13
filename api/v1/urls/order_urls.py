@@ -16,7 +16,8 @@ from orders.views import (
     AdminFactureListView,
     AdminFactureRenvoyerView,
     AdminCodePromoViewSet,
-    CommanderCompositionDirecteView
+    CommanderCompositionDirecteView,
+    AdminStatistiquesBeneficesView,
 )
 
 router = DefaultRouter()
@@ -43,7 +44,10 @@ urlpatterns = [
     path('commandes/<str:numero>/facture/', FactureDownloadView.as_view(), name='commande-facture-download'),
     path('admin/factures/', AdminFactureListView.as_view(), name='admin-factures-list'),
     path('admin/factures/<str:numero_facture>/renvoyer/', AdminFactureRenvoyerView.as_view(), name='admin-facture-renvoyer'),
-    
+
+    # Statistiques financières (admin only)
+    path('commandes/statistiques-benefices/', AdminStatistiquesBeneficesView.as_view(), name='admin-statistiques-benefices'),
+
     # Routeur Admin
     path('', include(router.urls)),
 ]

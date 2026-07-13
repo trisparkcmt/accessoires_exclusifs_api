@@ -247,6 +247,11 @@ class ParfumAdmin(admin.ModelAdmin):
             ),
             'fields': ('prix_unitaire', 'prix_promotionnel', 'date_debut', 'date_fin', 'stock_quantite', 'seuil_alerte_stock')
         }),
+        ('Finances (Admin uniquement)', {
+            'description': 'Prix d’achat et bénéfice — visible uniquement par l’administrateur.',
+            'fields': ('prix_achat',),
+            'classes': ('collapse',)
+        }),
         ('Images', {
             'fields': ('image_principale', 'image_supp_1',"image_supp_2","image_supp_3", 'image_supp_4')
         }),
@@ -299,6 +304,11 @@ class IngredientAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Informations générales', {
             'fields': ('nom', 'description', 'prix_par_ml', 'stock_ml', 'seuil_alerte_ml')
+        }),
+        ('Finances (Admin uniquement)', {
+            'description': 'Prix d’achat réel payé au fournisseur (pour calcul de bénéfice).',
+            'fields': ('prix_achat_par_ml',),
+            'classes': ('collapse',)
         }),
         ('Statut', {
             'fields': ('actif',)
@@ -366,8 +376,8 @@ class EssenceAdmin(admin.ModelAdmin):
 @admin.register(LotEssence)
 class LotEssenceAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 'essence', 'stock_ml', 'stock_precedent_ml',
-        'date_reception', 'actif'
+        'id', 'essence', 'stock_ml', 'stock_precedent_ml', 'quantite_initiale_ml',
+        'prix_achat_par_ml', 'date_reception', 'actif'
     )
     list_filter = ('actif', 'date_reception')
     search_fields = ('essence__marque', 'essence__nom', 'reference_fournisseur')
@@ -380,7 +390,11 @@ class LotEssenceAdmin(admin.ModelAdmin):
             'fields': ('essence',)
         }),
         ('Caractéristiques du lot', {
-            'fields': ('stock_ml', 'stock_precedent_ml', 'reference_fournisseur')
+            'fields': ('stock_ml', 'stock_precedent_ml', 'quantite_initiale_ml', 'reference_fournisseur')
+        }),
+        ('Finances (Admin uniquement)', {
+            'description': 'Prix d’achat par ml payé au fournisseur pour ce lot. Utilisé pour le calcul du bénéfice.',
+            'fields': ('prix_achat_par_ml',),
         }),
         ('Dates', {
             'fields': ('date_reception',)
@@ -398,12 +412,12 @@ class LotEssenceAdmin(admin.ModelAdmin):
 @admin.register(ProduitFiniEssence)
 class ProduitFiniEssenceAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 'apercu_image_col', 'essence', 'taille_ml', 'prix', 'prix_promotionnel',
-        'prix_actuel', 'stock_disponible', 'seuil_alerte_stock', 'stock_precedent', 'actif'
+        'id', 'essence', 'taille_ml', 'prix', 'prix_promotionnel',
+        'prix_actuel', 'actif'
     )
     list_filter = ('actif', 'taille_ml', 'essence__categorie')
     search_fields = ('essence__marque', 'essence__nom')
-    list_editable = ('prix', 'prix_promotionnel', 'stock_disponible', 'seuil_alerte_stock', 'actif')
+    list_editable = ('prix', 'prix_promotionnel', 'actif')
     readonly_fields = ('prix_actuel',)
     list_per_page = 50
 
@@ -414,21 +428,11 @@ class ProduitFiniEssenceAdmin(admin.ModelAdmin):
         ('Prix', {
             'fields': ('prix', 'prix_promotionnel', 'prix_actuel')
         }),
-        ('Stock', {
-            'fields': ('stock_disponible', 'seuil_alerte_stock', 'stock_precedent')
-        }),
-        ('Images', {
-            'fields': ('image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')
-        }),
         ('Statut', {
             'fields': ('actif',)
         }),
     )
-    readonly_fields = ('prix_actuel', 'stock_precedent')
-
-    @admin.display(description="Aperçu")
-    def apercu_image_col(self, obj):
-        return apercu_image(obj.image_principale)
+    readonly_fields = ('prix_actuel',)
 
     @admin.display(description="Prix actuel", ordering='prix')
     def prix_actuel(self, obj):
@@ -517,6 +521,11 @@ class AccessoireAdmin(admin.ModelAdmin):
         }),
         ('Prix', {
             'fields': ('prix_unitaire', 'prix_promotionnel', 'date_debut', 'date_fin', 'stock_quantite', 'seuil_alerte_stock')
+        }),
+        ('Finances (Admin uniquement)', {
+            'description': 'Prix d’achat réel payé au fournisseur (pour calcul de bénéfice).',
+            'fields': ('prix_achat',),
+            'classes': ('collapse',)
         }),
         ('Images', {
             'fields': ('image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')
@@ -607,6 +616,11 @@ class FlaconAdmin(admin.ModelAdmin):
         }),
         ('Prix et stock', {
             'fields': ('prix_unitaire', 'stock_quantite', 'seuil_alerte_stock')
+        }),
+        ('Finances (Admin uniquement)', {
+            'description': 'Prix d’achat réel payé au fournisseur (pour calcul de bénéfice).',
+            'fields': ('prix_achat',),
+            'classes': ('collapse',)
         }),
         ('Images', {
             'fields': ('image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')

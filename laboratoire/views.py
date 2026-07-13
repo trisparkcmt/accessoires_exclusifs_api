@@ -114,10 +114,20 @@ def get_ia_conversation(request):
     if getattr(request.user, 'is_authenticated', False) and hasattr(request.user, 'client'):
         client = request.user.client
 
-    conversation, _ = IAConversation.objects.get_or_create(
-        session_key=session_key,
-        defaults={'client': client}
-    )
+    if client:
+        # Tenter de récupérer la dernière conversation associée à ce client
+        conversation = IAConversation.objects.filter(client=client).order_by('-updated_at').first()
+        if not conversation:
+            import uuid
+            s_key = session_key
+            if IAConversation.objects.filter(session_key=s_key).exists():
+                s_key = f"client-{client.id}-{uuid.uuid4().hex[:8]}"
+            conversation = IAConversation.objects.create(session_key=s_key, client=client)
+    else:
+        conversation, _ = IAConversation.objects.get_or_create(
+            session_key=session_key,
+            defaults={'client': client}
+        )
 
     if client and conversation.client is None:
         conversation.client = client
@@ -142,19 +152,29 @@ def ia_recommandation(request):
     history = list(conversation.messages.order_by('-created_at')[:20].values('role', 'content'))
     history.reverse()
 
-    reponse_ia = demander_recommandation_ia(prompt, history)
+    # Récupérer les informations sur le client pour personnaliser la discussion
+    client_info = None
+    if getattr(request.user, 'is_authenticated', False) and hasattr(request.user, 'client'):
+        client_info = {
+            'nom': f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
+            'email': request.user.email,
+        }
+
+    reponse_ia = demander_recommandation_ia(prompt, history, client_info=client_info)
     if "error" in reponse_ia:
         return Response(reponse_ia, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     ids_parfums = reponse_ia.get('parfums_existants_recommandes', [])
+    ids_parfums = [p.get('id') if isinstance(p, dict) else p for p in ids_parfums if p is not None]
     essences_data = reponse_ia.get('essences_pre_faites', [])
     ingredients_data = reponse_ia.get('ingredients_sur_mesure', [])
     ids_accessoires = reponse_ia.get('accessoires', [])
+    ids_accessoires = [a.get('id') if isinstance(a, dict) else a for a in ids_accessoires if a is not None]
     flacon_id = reponse_ia.get('flacon_id')
     quantite_demandee_ml = reponse_ia.get('quantite_demandee_ml', 50)
 
-    parfums = Parfum.objects.filter(id__in=ids_parfums, actif=True)
-    accessoires = Accessoire.objects.filter(id__in=ids_accessoires, actif=True)
+    parfums = Parfum.objects.filter(id__in=ids_parfums, actif=True, stock_quantite__gt=0)
+    accessoires = Accessoire.objects.filter(id__in=ids_accessoires, actif=True, stock_quantite__gt=0)
     flacon = None
     essences_recommandees = []
     ingredients_recommandees = []
@@ -216,8 +236,10 @@ def ia_recommandation(request):
 
     total_messages = conversation.messages.count()
     if total_messages > 20:
-        to_delete = conversation.messages.order_by('created_at')[:total_messages - 20]
-        to_delete.delete()
+        ids_a_supprimer = list(
+            conversation.messages.order_by('created_at')[:total_messages - 20].values_list('id', flat=True)
+        )
+        IAConversationMessage.objects.filter(id__in=ids_a_supprimer).delete()
 
     response_data = {
         'message': assistant_message,

@@ -1,12 +1,19 @@
 # catalogue/signals.py
+import json
+import logging
+import requests
+
 from decimal import Decimal
+from django.conf import settings
 from django.db import transaction
-from django.db.models.signals import post_save, pre_delete, pre_save
+from django.db.models.signals import post_save, pre_delete, pre_save, m2m_changed
 from django.dispatch import receiver
 from .models import (
     CategorieParfum, TypeAccessoire, TypeFlacon, Essence,
     Accessoire, Flacon, LotEssence, Ingredient, Parfum, ProduitFiniEssence,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================
@@ -42,6 +49,124 @@ def appliquer_reduction(prix_unitaire, taux):
     """Calcule le prix après réduction, arrondi à 2 décimales."""
     reduction = Decimal(str(taux)) / Decimal('100')
     return (prix_unitaire * (1 - reduction)).quantize(Decimal('0.01'))
+
+
+def _build_essence_embedding_text(instance):
+    parts = [instance.nom or '']
+    if instance.description_ia:
+        parts.append(instance.description_ia)
+    elif instance.description:
+        parts.append(instance.description)
+
+    for field_name in ('notes_tete', 'notes_coeur', 'notes_fond'):
+        value = getattr(instance, field_name, None)
+        if value:
+            parts.append(value)
+
+    if instance.categorie:
+        parts.append(str(instance.get_categorie_display() if hasattr(instance, 'get_categorie_display') else instance.categorie))
+    if instance.marque:
+        parts.append(instance.marque)
+
+    try:
+        tags = instance.tags.all().values_list('nom', flat=True)
+        tags_text = ' '.join([tag for tag in tags if tag])
+        if tags_text:
+            parts.append(tags_text)
+    except Exception:
+        pass
+
+    text = ' '.join([part.strip() for part in parts if part and part.strip()])
+    return text.strip() if text else instance.nom or ''
+
+
+def _build_parfum_embedding_text(instance):
+    parts = [instance.nom or '']
+    if instance.description_ia:
+        parts.append(instance.description_ia)
+    elif instance.description_longue:
+        parts.append(instance.description_longue)
+    elif instance.description_courte:
+        parts.append(instance.description_courte)
+
+    for field_name in ('notes_tete', 'notes_coeur', 'notes_fond'):
+        value = getattr(instance, field_name, None)
+        if value:
+            parts.append(value)
+
+    if instance.marque:
+        parts.append(instance.marque)
+    if instance.categorie:
+        parts.append(str(instance.categorie.nom if instance.categorie else instance.categorie))
+
+    try:
+        tags = instance.tags.all().values_list('nom', flat=True)
+        tags_text = ' '.join([tag for tag in tags if tag])
+        if tags_text:
+            parts.append(tags_text)
+    except Exception:
+        pass
+
+    text = ' '.join([part.strip() for part in parts if part and part.strip()])
+    return text.strip() if text else instance.nom or ''
+
+
+def _build_accessoire_embedding_text(instance):
+    parts = [instance.nom or '']
+    if instance.description_longue:
+        parts.append(instance.description_longue)
+    elif instance.description_courte:
+        parts.append(instance.description_courte)
+
+    if instance.marque:
+        parts.append(instance.marque)
+    if instance.type_accessoire:
+        parts.append(str(instance.type_accessoire.nom if hasattr(instance.type_accessoire, 'nom') else instance.type_accessoire))
+    if instance.matiere:
+        parts.append(instance.matiere)
+    if instance.couleur:
+        parts.append(instance.couleur)
+    if instance.taille:
+        parts.append(instance.taille)
+
+    text = ' '.join([part.strip() for part in parts if part and part.strip()])
+    return text.strip() if text else instance.nom or ''
+
+
+def _generate_ollama_embedding(text):
+    if not text:
+        return None
+
+    ollama_url = getattr(settings, 'OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/')
+    model_name = getattr(settings, 'OLLAMA_EMBEDDING_MODEL', 'all-minilm')
+    timeout_seconds = int(getattr(settings, 'OLLAMA_TIMEOUT_SECONDS', '30'))
+
+    payload = {
+        'model': model_name,
+        'input': [text],
+    }
+
+    try:
+        response = requests.post(
+            f"{ollama_url}/v1/embeddings",
+            json=payload,
+            timeout=timeout_seconds,
+        )
+        response.raise_for_status()
+        data = response.json()
+        embeddings = data.get('embeddings') or data.get('results')
+        if isinstance(embeddings, list) and embeddings:
+            first = embeddings[0]
+            if isinstance(first, dict) and 'embedding' in first:
+                return first['embedding']
+            return first
+        logger.warning('Ollama embeddings returned unexpected shape: %s', data)
+    except requests.exceptions.RequestException as exc:
+        logger.exception('Erreur HTTP Ollama embeddings')
+    except ValueError:
+        logger.exception('Réponse Ollama embeddings JSON invalide')
+
+    return None
 
 
 # ============================================================
@@ -275,6 +400,54 @@ def verifier_alerte_essence(sender, instance, created, **kwargs):
                 },
             )
 
+
+@receiver(post_save, sender=Essence)
+def construire_embedding_essence(sender, instance, created, **kwargs):
+    """Génère et stocke l'embedding de l'essence après sauvegarde."""
+    text = _build_essence_embedding_text(instance)
+    embedding = _generate_ollama_embedding(text)
+    if embedding is not None:
+        Essence.objects.filter(pk=instance.pk).update(embedding=embedding)
+
+
+@receiver(post_save, sender=Parfum)
+def construire_embedding_parfum(sender, instance, created, **kwargs):
+    """Génère et stocke l'embedding du parfum après sauvegarde."""
+    text = _build_parfum_embedding_text(instance)
+    embedding = _generate_ollama_embedding(text)
+    if embedding is not None:
+        Parfum.objects.filter(pk=instance.pk).update(embedding=embedding)
+
+
+@receiver(m2m_changed, sender=Parfum.tags.through)
+def mettre_a_jour_embedding_parfum_tags(sender, instance, action, **kwargs):
+    if action not in ('post_add', 'post_remove', 'post_clear'):
+        return
+
+    text = _build_parfum_embedding_text(instance)
+    embedding = _generate_ollama_embedding(text)
+    if embedding is not None:
+        Parfum.objects.filter(pk=instance.pk).update(embedding=embedding)
+
+
+@receiver(post_save, sender=Accessoire)
+def construire_embedding_accessoire(sender, instance, created, **kwargs):
+    """Génère et stocke l'embedding de l'accessoire après sauvegarde."""
+    text = _build_accessoire_embedding_text(instance)
+    embedding = _generate_ollama_embedding(text)
+    if embedding is not None:
+        Accessoire.objects.filter(pk=instance.pk).update(embedding=embedding)
+
+
+@receiver(m2m_changed, sender=Essence.tags.through)
+def mettre_a_jour_embedding_essence_tags(sender, instance, action, **kwargs):
+    if action not in ('post_add', 'post_remove', 'post_clear'):
+        return
+
+    text = _build_essence_embedding_text(instance)
+    embedding = _generate_ollama_embedding(text)
+    if embedding is not None:
+        Essence.objects.filter(pk=instance.pk).update(embedding=embedding)
 
 
 # ============================================================
@@ -555,58 +728,4 @@ def enregistrer_mouvement_parfum(sender, instance, created, **kwargs):
         )
 
 
-# ============================================================
-# PRODUIT FINI ESSENCE
-# ============================================================
-@receiver(pre_save, sender=ProduitFiniEssence)
-def capturer_ancien_stock_produit_fini(sender, instance, **kwargs):
-    if instance.pk:
-        try:
-            ancien = ProduitFiniEssence.objects.get(pk=instance.pk)
-            instance._ancien_stock_disponible = ancien.stock_disponible
-        except ProduitFiniEssence.DoesNotExist:
-            instance._ancien_stock_disponible = None
-    else:
-        instance._ancien_stock_disponible = None
 
-    # Désactivation automatique uniquement quand le stock vient d'être épuisé (mise à jour)
-    ancien = getattr(instance, '_ancien_stock_disponible', None)
-    if instance.stock_disponible <= 0 and ancien is not None and ancien > 0:
-        instance.actif = False
-
-
-@receiver(post_save, sender=ProduitFiniEssence)
-def enregistrer_mouvement_produit_fini(sender, instance, created, **kwargs):
-    ancien_stock = getattr(instance, '_ancien_stock_disponible', None)
-    nom_produit = f"{instance.essence.nom_complet} {instance.taille_ml}ml"
-
-    # Alerte stock (manquait pour ProduitFiniEssence)
-    if (instance.seuil_alerte_stock is not None
-            and instance.stock_disponible <= instance.seuil_alerte_stock):
-        if ancien_stock is None or ancien_stock > instance.seuil_alerte_stock:
-            creer_notification_alerte(
-                type_produit='produit_fini_essence',
-                product_id=instance.id,
-                product_name=nom_produit,
-                stock_actuel=instance.stock_disponible,
-                seuil_alerte=instance.seuil_alerte_stock,
-                metadata={
-                    'essence_id': instance.essence_id,
-                    'essence_name': instance.essence.nom_complet,
-                    'taille_ml': instance.taille_ml,
-                },
-            )
-
-    _enregistrer_mouvement(
-        type_produit='produit_fini_essence',
-        instance=instance,
-        nom_produit=nom_produit,
-        quantite_avant=ancien_stock,
-        quantite_apres=instance.stock_disponible,
-    )
-
-
-@receiver(pre_delete, sender=ProduitFiniEssence)
-def restituer_stock_produit_fini(sender, instance, **kwargs):
-    with transaction.atomic():
-        instance.restituer_stock_lot()

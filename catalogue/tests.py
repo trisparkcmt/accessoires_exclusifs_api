@@ -117,14 +117,18 @@ class AccessoireImageTest(APITestCase):
 # ============================================================
 # TESTS SIGNALS & RÉDUCTIONS
 # ============================================================
-class ProduitFiniEssenceStockLotTest(TestCase):
+class ProduitFiniEssenceVirtualStockTest(TestCase):
+    """Teste le nouveau modèle 'vente à la demande' où ProduitFiniEssence
+    n'a plus de stock propre — le stock est calculé virtuellement depuis
+    les lots de l'essence parente."""
+
     def setUp(self):
         self.essence = Essence.objects.create(
             marque="Maison Test",
             nom="Oud Royal",
             categorie="premium",
             code_reference="ESS-STOCK-001",
-            seuil_alerte_ml=Decimal('50.00'),  # seuil global sur l'essence
+            seuil_alerte_ml=Decimal('50.00'),
         )
         self.lot_ancien = LotEssence.objects.create(
             essence=self.essence,
@@ -135,54 +139,51 @@ class ProduitFiniEssenceStockLotTest(TestCase):
             stock_ml=Decimal('80.00'),
         )
 
-    def test_creation_preleve_sur_lots_fifo(self):
+    def test_creation_ne_preleve_pas_sur_lots(self):
+        """Créer un ProduitFiniEssence ne doit plus prélever sur les lots."""
         ProduitFiniEssence.objects.create(
             essence=self.essence,
             taille_ml=30,
-            prix=Decimal('5000'),
-            stock_disponible=4,
+            prix=25.00
         )
         self.lot_ancien.refresh_from_db()
         self.lot_recent.refresh_from_db()
+        # Les lots restent intacts
+        self.assertEqual(self.lot_ancien.stock_ml, Decimal('100.00'))
+        self.assertEqual(self.lot_recent.stock_ml, Decimal('80.00'))
+
+    def test_stock_virtuel_calcule_depuis_lots(self):
+        """Le stock disponible est calculé : stock_total_ml / taille_ml."""
+        produit = ProduitFiniEssence.objects.create(
+            essence=self.essence,
+            taille_ml=30,
+            prix=25.00
+        )
+        # Total lots = 180 ml, taille = 30 ml → 6 flacons virtuels
+        stock_virtuel = int(self.essence.stock_total_ml() // produit.taille_ml)
+        self.assertEqual(stock_virtuel, 6)
+
+    def test_prelever_lots_fifo(self):
+        """essence.prelever_lots() prélève en FIFO sur les lots."""
+        self.essence.prelever_lots(Decimal('120'))
+        self.lot_ancien.refresh_from_db()
+        self.lot_recent.refresh_from_db()
+        # lot_ancien (100ml) vidé, 20ml prélevés sur lot_recent
         self.assertEqual(self.lot_ancien.stock_ml, Decimal('0.00'))
         self.assertEqual(self.lot_recent.stock_ml, Decimal('60.00'))
 
-    def test_mise_a_jour_stock_preleve_variation_seulement(self):
-        produit = ProduitFiniEssence.objects.create(
-            essence=self.essence,
-            taille_ml=10,
-            prix=Decimal('5000'),
-            stock_disponible=2,
-        )
-        produit.stock_disponible = 5
-        produit.save()
-        produit.refresh_from_db()
-        self.lot_ancien.refresh_from_db()
-        self.assertEqual(produit.stock_precedent, 2)
-        self.assertEqual(self.lot_ancien.stock_ml, Decimal('50.00'))
+    def test_prelever_lots_stock_insuffisant(self):
+        """prelever_lots lève une erreur si stock insuffisant."""
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            self.essence.prelever_lots(Decimal('200'))
 
-    def test_vente_ne_touche_pas_le_lot(self):
-        produit = ProduitFiniEssence.objects.create(
-            essence=self.essence,
-            taille_ml=10,
-            prix=Decimal('5000'),
-            stock_disponible=5,
-        )
-        self.lot_ancien.refresh_from_db()
-        stock_lot_apres_fabrication = self.lot_ancien.stock_ml
-        produit.vendre(2)
-        self.lot_ancien.refresh_from_db()
-        self.assertEqual(self.lot_ancien.stock_ml, stock_lot_apres_fabrication)
-
-    def test_suppression_restitue_stock_restant(self):
-        produit = ProduitFiniEssence.objects.create(
-            essence=self.essence,
-            taille_ml=10,
-            prix=Decimal('5000'),
-            stock_disponible=5,
-        )
-        produit.delete()
+    def test_restituer_lots(self):
+        """essence.restituer_lots() restitue sur le lot le plus récent."""
+        self.essence.prelever_lots(Decimal('100'))
+        self.essence.restituer_lots(Decimal('50'))
         self.lot_recent.refresh_from_db()
+        # lot_recent avait 80 - 0 = 80 (prélèvement a vidé lot_ancien), puis +50
         self.assertEqual(self.lot_recent.stock_ml, Decimal('130.00'))
 
 
@@ -461,13 +462,13 @@ class ParfumAPITest(APITestCase):
         self.parfum_visible = Parfum.objects.create(
             nom="Rose Éternelle", slug="rose-eternelle",
             reference_sku="SKU001", contenance_ml=50,
-            prix_unitaire=25000, categorie=self.categorie, actif=True
+            prix_unitaire=25000, stock_quantite=10, categorie=self.categorie, actif=True
         )
         self.parfum_visible.tags.add(self.tag_floral, self.tag_ete, self.tag_romance)
         self.parfum_cache = Parfum.objects.create(
             nom="Parfum Secret", slug="parfum-secret",
             reference_sku="SKU002", contenance_ml=50,
-            prix_unitaire=15000, categorie=self.categorie, actif=False
+            prix_unitaire=15000, stock_quantite=10, categorie=self.categorie, actif=False
         )
 
     def test_liste_parfums_actifs_uniquement(self):
@@ -678,7 +679,7 @@ class SimilarProductsUtilsTest(TestCase):
         self.p1 = Parfum.objects.create(
             nom="Rose", slug="rose", reference_sku="P1",
             contenance_ml=50, prix_unitaire=10000,
-            categorie=self.cat, actif=True
+            stock_quantite=10, categorie=self.cat, actif=True
         )
         self.p1.tags.add(self.tag_floral, self.tag_boise)
 
@@ -686,7 +687,7 @@ class SimilarProductsUtilsTest(TestCase):
         self.p2 = Parfum.objects.create(
             nom="Jasmin", slug="jasmin", reference_sku="P2",
             contenance_ml=50, prix_unitaire=12000,
-            categorie=self.cat, actif=True
+            stock_quantite=10, categorie=self.cat, actif=True
         )
         self.p2.tags.add(self.tag_floral, self.tag_boise)
 
@@ -694,7 +695,7 @@ class SimilarProductsUtilsTest(TestCase):
         self.p3 = Parfum.objects.create(
             nom="Cèdre", slug="cedre", reference_sku="P3",
             contenance_ml=50, prix_unitaire=9000,
-            categorie=self.cat, actif=True
+            stock_quantite=10, categorie=self.cat, actif=True
         )
         self.p3.tags.add(self.tag_boise)
 
@@ -702,7 +703,7 @@ class SimilarProductsUtilsTest(TestCase):
         self.p4 = Parfum.objects.create(
             nom="Vanille", slug="vanille", reference_sku="P4",
             contenance_ml=50, prix_unitaire=11000,
-            categorie=self.cat, actif=True
+            stock_quantite=10, categorie=self.cat, actif=True
         )
         self.p4.tags.add(self.tag_oriental)
 
@@ -710,7 +711,7 @@ class SimilarProductsUtilsTest(TestCase):
         self.p5 = Parfum.objects.create(
             nom="Inactif", slug="inactif", reference_sku="P5",
             contenance_ml=50, prix_unitaire=5000,
-            categorie=self.cat, actif=False
+            stock_quantite=10, categorie=self.cat, actif=False
         )
         self.p5.tags.add(self.tag_floral)
 
@@ -733,7 +734,7 @@ class SimilarProductsUtilsTest(TestCase):
         p_sans_tag = Parfum.objects.create(
             nom="Sans tag", slug="sans-tag", reference_sku="P6",
             contenance_ml=30, prix_unitaire=8000,
-            categorie=self.cat, actif=True
+            stock_quantite=10, categorie=self.cat, actif=True
         )
         similaires = get_similar_products(p_sans_tag, Parfum, limit=4)
         self.assertEqual(len(similaires), 0)
@@ -744,7 +745,7 @@ class SimilarProductsUtilsTest(TestCase):
             p = Parfum.objects.create(
                 nom=f"Test{i}", slug=f"test{i}", reference_sku=f"P7{i}",
                 contenance_ml=50, prix_unitaire=10000,
-                categorie=self.cat, actif=True
+                stock_quantite=10, categorie=self.cat, actif=True
             )
             p.tags.add(self.tag_floral)
         similaires = get_similar_products(self.p1, Parfum, limit=4)
@@ -772,7 +773,7 @@ class UnifiedSalesAPITest(APITestCase):
         )
 
         self.produit_essence = ProduitFiniEssence.objects.create(
-            essence=self.essence, taille_ml=30, prix=3000, stock_disponible=10,
+            essence=self.essence, taille_ml=30, prix=3000,
             actif=True
         )
 

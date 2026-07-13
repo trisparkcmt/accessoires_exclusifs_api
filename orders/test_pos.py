@@ -109,8 +109,7 @@ class POSTestCase(APITestCase):
         self.essence_produit = ProduitFiniEssence.objects.create(
             essence=self.essence_base,
             taille_ml=30,
-            prix=Decimal("8000.00"),
-            stock_disponible=20,
+            prix=Decimal("5000.00"),
             actif=True
         )
 

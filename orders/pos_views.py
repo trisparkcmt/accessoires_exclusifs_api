@@ -85,7 +85,6 @@ class POSProductSearchView(APIView):
         if not product_type or product_type == 'essence':
             essences = ProduitFiniEssence.objects.filter(
                 actif=True,
-                stock_disponible__gt=0,
                 prix__gt=0,
             ).select_related('essence')
             if q:
@@ -97,7 +96,11 @@ class POSProductSearchView(APIView):
                 prix = e.prix_promotionnel if e.prix_promotionnel is not None else e.prix
                 if prix <= 0:
                     continue
-                image_url = request.build_absolute_uri(e.image_principale.url) if e.image_principale else None
+                stock_ml = e.essence.stock_total_ml()
+                stock_flacons = int(stock_ml // e.taille_ml) if e.taille_ml > 0 else 0
+                if stock_flacons <= 0:
+                    continue
+                image_url = None
                 results.append({
                     "id": e.id,
                     "type": "essence",
@@ -105,7 +108,7 @@ class POSProductSearchView(APIView):
                     "marque": e.essence.marque,
                     "reference_sku": f"ESS-{e.essence.id}-{e.taille_ml}",
                     "prix": float(prix),
-                    "stock_disponible": e.stock_disponible,
+                    "stock_disponible": stock_flacons,
                     "image_url": image_url
                 })
 

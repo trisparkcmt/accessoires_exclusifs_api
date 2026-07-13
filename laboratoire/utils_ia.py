@@ -94,10 +94,118 @@ def _extract_json_from_text(text):
     return None
 
 
-def demander_recommandation_ia(prompt_utilisateur, history=None):
+def _ollama_embedding_query(text, model_name=None, timeout=None):
+    ollama_url = getattr(settings, 'OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/')
+    model_name = model_name or getattr(settings, 'OLLAMA_EMBEDDING_MODEL', 'all-minilm')
+    timeout_seconds = int(timeout or getattr(settings, 'OLLAMA_TIMEOUT_SECONDS', '30'))
+    timeout_seconds = max(timeout_seconds, 60)
+    payload = {
+        'model': model_name,
+        'input': [text],
+    }
+
+    logger.info('[EMBEDDING_CALL] Ollama embeddings request', extra={
+        'model': model_name,
+        'url': f"{ollama_url}/v1/embeddings",
+        'timeout': timeout_seconds,
+        'text_preview': text[:200],
+    })
+
+    response = requests.post(
+        f"{ollama_url}/v1/embeddings",
+        json=payload,
+        timeout=(10, timeout_seconds),
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    logger.info('[EMBEDDING_RESPONSE] Ollama embeddings response', extra={
+        'status_code': response.status_code,
+        'embeddings_count': len(data.get('embeddings', [])),
+        'response_text_preview': response.text[:400],
+    })
+
+    embeddings = data.get('embeddings')
+    if isinstance(embeddings, list) and embeddings:
+        return embeddings[0]
+    raise ValueError('Embeddings Ollama inattendus')
+
+
+def _cosine_similarity(vec_a, vec_b):
+    if not vec_a or not vec_b or len(vec_a) != len(vec_b):
+        return -1
+
+    dot = sum(a * b for a, b in zip(vec_a, vec_b))
+    norm_a = sum(a * a for a in vec_a) ** 0.5
+    norm_b = sum(b * b for b in vec_b) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return -1
+    return dot / (norm_a * norm_b)
+
+
+def get_relevant_catalogue_context(prompt_utilisateur, top_n=4):
+    """Récupère un sous-ensemble pertinent du catalogue basé sur des embeddings."""
+    try:
+        prompt_embedding = _ollama_embedding_query(prompt_utilisateur)
+    except Exception:
+        return get_catalogue_context()
+
+    essences = Essence.objects.filter(actif=True, embedding__isnull=False).exclude(embedding__exact='')
+    parfums = Parfum.objects.filter(actif=True, embedding__isnull=False).exclude(embedding__exact='')
+    accessoires = Accessoire.objects.filter(actif=True, embedding__isnull=False).exclude(embedding__exact='')
+
+    scored = []
+
+    for instance, model_type in [(essences, 'essence'), (parfums, 'parfum'), (accessoires, 'accessoire')]:
+        for obj in instance:
+            try:
+                similarity = _cosine_similarity(prompt_embedding, obj.embedding)
+            except Exception:
+                continue
+            scored.append((similarity, obj, model_type))
+
+    if not scored:
+        return get_catalogue_context()
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    top_results = scored[:top_n]
+
+    context = "Catalogue le plus pertinent de la parfumerie :\n\n"
+
+    for similarity, obj, model_type in top_results:
+        if model_type == 'essence':
+            description = (obj.description_ia or obj.description or '').replace('\n', ' ')[:120]
+            context += (
+                f"[Essence] ID: {obj.id}, Nom: {obj.nom}, Catégorie: {obj.categorie}, Prix/ml: {obj.prix_par_ml} FCFA, "
+                f"Notes: {obj.notes_tete or 'N/A'} / {obj.notes_coeur or 'N/A'} / {obj.notes_fond or 'N/A'}, "
+                f"Description: {description}\n"
+            )
+        elif model_type == 'parfum':
+            description = (obj.description_ia or obj.description_longue or obj.description_courte or '').replace('\n', ' ')[:120]
+            context += (
+                f"[Parfum] ID: {obj.id}, Nom: {obj.nom}, Contenance: {obj.contenance_ml}ml, Prix: {obj.prix_unitaire} FCFA, "
+                f"Notes: {obj.notes_tete or 'N/A'} / {obj.notes_coeur or 'N/A'} / {obj.notes_fond or 'N/A'}, "
+                f"Description: {description}\n"
+            )
+        else:
+            description = (obj.description_longue or obj.description_courte or '').replace('\n', ' ')[:120]
+            context += (
+                f"[Accessoire] ID: {obj.id}, Nom: {obj.nom}, Prix: {obj.prix_unitaire} FCFA, "
+                f"Type: {obj.type_accessoire.nom if obj.type_accessoire else 'N/A'}, "
+                f"Description: {description}\n"
+            )
+
+    context += "\n=== FLACONS ===\n"
+    for f in Flacon.objects.filter(actif=True).values('id', 'nom', 'contenance_ml', 'prix_unitaire')[:4]:
+        context += f"- ID: {f['id']}, Nom: {f['nom']}, Contenance: {f['contenance_ml']}ml, Prix: {f['prix_unitaire']} FCFA\n"
+
+    return context
+
+
+def demander_recommandation_ia(prompt_utilisateur, history=None, client_info=None):
     """Envoie le prompt à l'IA configurée et retourne une réponse formatée."""
     provider = os.environ.get('LLM_PROVIDER', getattr(settings, 'LLM_PROVIDER', 'gemini')).lower()
-    catalogue_context = get_catalogue_context()
+    catalogue_context = get_relevant_catalogue_context(prompt_utilisateur)
     historique = ''
     if history:
         historique = 'Historique des échanges précédents :\n'
@@ -106,50 +214,58 @@ def demander_recommandation_ia(prompt_utilisateur, history=None):
             historique += f"- {role} : {message['content']}\n"
         historique += '\n'
 
+    include_catalogue = os.environ.get('OLLAMA_INCLUDE_CATALOGUE', 'true').lower() == 'true'
+    if not include_catalogue:
+        catalogue_context = ''
+
+    client_context = ""
+    if client_info:
+        client_context = f"Le client actuel est connecté et s'appelle {client_info.get('nom')} (Email : {client_info.get('email')}). N'hésite pas à t'adresser à lui en utilisant son nom si cela est naturel, et à personnaliser ton message en fonction de lui.\n"
+
     system_prompt = f"""Tu es un expert parfumeur et conseiller de vente pour la boutique Accessoire Exclusif.
-Un client va te faire une demande avec potentiellement :
-- Une quantité désirée en ml (ex: "30ml", "50ml")
-- Un budget maximum (ex: "moins de 50000 FCFA")
-- Des préférences d'odeurs, de parfums, d'essences ou d'accessoires.
+{client_context}Prends en compte l'historique de la discussion pour adapter tes réponses et comprendre le contexte global.
 
-Tu dois analyser sa demande, déterminer si le client souhaite vraiment une recommandation ou une création de parfum, et extraire la quantité, le budget et ses envies.
-Si la demande n'est pas une demande de recommandation ou d'achat (par exemple : question sur une note, un ingrédient, des conseils généraux, une information sur le magasin, ou une question hors parfum), ne proposes aucun produit, aucun flacon et aucune quantité. Dans ce cas, renvoie uniquement un message utile et des listes vides.
-Puis, si le client souhaite une recommandation, recommander une création de parfum personnalisée ou des parfums existants et des accessoires.
+Analyse la demande du client et respecte impérativement les règles suivantes :
 
-RÈGLES D'OR DE RECOMMANDATION & CATALOGUE :
-1. ACCESSOIRES : Recommande systématiquement des accessoires appropriés (comme des diffuseurs, des pochettes, des coffrets ou des sprays) en lien avec la demande de l'utilisateur ou pour compléter l'expérience de parfum.
-2. TAILLE DE FLACON PAR DÉFAUT : Si le client ne précise pas de quantité (en ml) ou de flacon dans sa demande, choisis par défaut le plus grand flacon disponible dans le catalogue (celui ayant la plus grande valeur 'Contenance' en ml), mais seulement si tu proposes des essences ou des ingrédients.
-3. INDISPONIBILITÉ & ALTERNATIVES : Si ce que le client demande explicitement (un ingrédient particulier, une note spécifique, un parfum précis ou un type d'accessoire) n'est PAS disponible dans notre catalogue, propose-lui TOUT DE MÊME le produit de remplacement ou l'alternative la plus proche de notre catalogue. Dans ton champ "message", indique-lui clairement, poliment et chaleureusement que le produit qu'il souhaitait n'est pas disponible, mais que tu lui proposes cette alternative de notre catalogue.
+1. COMPORTEMENT ET LOGIQUE DE CONVERSATION :
+- Si la demande est un simple salut (ex: "bonjour", "salut"), une politesse, ou une question d'information générale sans intention d'achat/recommandation, réponds chaleureusement et naturellement dans le champ "message". Ne propose aucun produit, mets "flacon_id" à 0 et laisse toutes les listes de produits vides.
+- Si le client demande des recommandations de produits ou une création sur mesure, réponds chaleureusement en justifiant tes choix.
 
-RÈGLE DES 45% (POUR LE SUR MESURE) :
-La somme totale des ml de TOUTES les essences et de TOUS les ingrédients que tu proposes NE DOIT JAMAIS DÉPASSER EXACTEMENT 45% de la contenance du flacon choisi. (Exemple: pour un flacon de 50ml, le total des essences/ingrédients doit être MAXIMUM 22.5ml). Le reste sera de la base/alcool (non mentionnée ici).
+2. FLACON ET COMPOSITION (SUR MESURE) :
+- Un flacon ("flacon_id") ne doit être choisi (valeur > 0) QUE si tu proposes une composition sur mesure (c'est-à-dire si tu mets des éléments dans "essences_pre_faites" ou "ingredients_sur_mesure"). Si tu ne recommandes pas de création personnalisée, "flacon_id" doit être égal à 0.
+- RÈGLE DES 45% (CRITIQUE) : Si tu crées un parfum personnalisé, la somme totale des quantités (en ml) de toutes les essences et ingrédients de ta composition NE doit JAMAIS dépasser 45% de la contenance du flacon choisi.
+- Si le client n'indique pas de quantité en ml, choisis un flacon adapté de notre catalogue.
 
-Voici notre catalogue :
+3. PROPOSITIONS ASSORTIES ET VENTE COMPLÉMENTAIRE (CROSS-SELLING) :
+- Lorsque le client demande ou accepte un produit (par exemple un parfum), propose-lui SYSTEMATIQUEMENT quelque chose qui s'associe très bien avec (un accessoire assorti de notre catalogue comme un diffuseur ou un vaporisateur de voyage, ou un autre produit complémentaire). Explique chaleureusement dans ton message pourquoi ce produit supplémentaire complète parfaitement sa sélection.
+
+4. BUDGET ET PRIX :
+- Pour chaque produit ou élément que tu sélectionnes (parfums existants, flacons, essences, ingrédients, accessoires), calcule mentalement leur prix total à l'aide des prix indiqués dans le catalogue ci-dessous.
+- Si le client a spécifié un budget maximum (ou si un budget est mentionné dans l'historique), tu dois STRICTEMENT proposer des produits dont le prix total combiné ne dépasse pas ce budget.
+- Mentionne explicitement dans ton "message" les prix individuels des produits que tu proposes pour que le client voie clairement le coût de chaque élément.
+
+5. FORMAT DE RÉPONSE :
+- Les listes `parfums_existants_recommandes` et `accessoires` doivent uniquement contenir les IDs numériques des produits (ex: [1, 2]), PAS des objets/dictionnaires.
+- Ne propose que des produits présents dans le catalogue ci-dessous.
+
+Catalogue disponible :
 {catalogue_context}
 
-IMPORTANT : Tu DOIS répondre UNIQUEMENT au format JSON strict (sans Markdown autour) :
+Réponds au format JSON strict uniquement, sans aucun texte avant ou après, et sans balises de code markdown (pas de ```json) :
 {{
-    "message": "Ton message chaleureux (max 3 phrases), incluant les explications de tes choix et l'indication si une demande du client était indisponible.",
-    "quantite_demandee_ml": 50,
+    "message": "Ton message chaleureux avec les prix de chaque élément proposé et la recommandation du produit ou accessoire complémentaire assorti (max 4 phrases).",
+    "quantite_demandee_ml": 0,
     "budget_max_fcfa": 0,
-    "flacon_id": 1,
+    "flacon_id": 0,
     "essences_pre_faites": [
         {{"id": 1, "quantite_ml": 10.5}}
     ],
     "ingredients_sur_mesure": [
-        {{"id": 5, "quantite_ml": 5}},
-        {{"id": 12, "quantite_ml": 7}}
+        {{"id": 5, "quantite_ml": 5}}
     ],
     "parfums_existants_recommandes": [1, 2],
     "accessoires": [1]
 }}
-
-RÈGLES CRITIQUES :
-- Le total (quantités essences_pre_faites + quantités ingredients_sur_mesure) DOIT être <= (contenance du flacon * 0.45). C'est critique !
-- Le flacon_id doit correspondre à la contenance désirée.
-- Ne propose pas d'essences ou d'ingrédients qui n'existent pas dans le catalogue.
-- Si budget_max_fcfa > 0, calcule mentalement le coût (Flacon + (Essences * prix/ml) + (Ingredients * prix/ml) + Accessoires) et respecte le budget.
-- Ne mets AUCUN texte avant ou après le JSON.
 """
 
     reponse_texte = None
@@ -160,25 +276,61 @@ RÈGLES CRITIQUES :
         model_name = os.environ.get('OLLAMA_MODEL', getattr(settings, 'OLLAMA_MODEL', 'qwen2.5:3b'))
         timeout_seconds = int(os.environ.get('OLLAMA_TIMEOUT_SECONDS', getattr(settings, 'OLLAMA_TIMEOUT_SECONDS', '30')))
 
+        include_catalogue = os.environ.get('OLLAMA_INCLUDE_CATALOGUE', 'true').lower() == 'true'
+        if not include_catalogue:
+            catalogue_context = ''
+
         llm_payload = {
             'model': model_name,
             'messages': [
-                {'role': 'user', 'content': f"{historique}{system_prompt}\n\nDemande du client : {prompt_utilisateur}"}
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': f"Demande du client : {prompt_utilisateur}"}
             ],
             'temperature': 0.2,
-            'max_tokens': 1200,
         }
 
+        logger.info('[LLM_CALL] Ollama request', extra={
+            'provider': 'ollama',
+            'model': model_name,
+            'payload': llm_payload,
+        })
+
         try:
+            logger.info('[LLM_CALL] Ollama request preview', extra={
+                'provider': 'ollama',
+                'model': model_name,
+                'url': f"{ollama_url}/v1/chat/completions",
+                'payload_preview': {
+                    'model': llm_payload['model'],
+                    'messages': [
+                        {
+                            'role': llm_payload['messages'][0]['role'],
+                            'content': llm_payload['messages'][0]['content'][:300],
+                        },
+                        {
+                            'role': llm_payload['messages'][1]['role'],
+                            'content': llm_payload['messages'][1]['content'][:200],
+                        },
+                    ],
+                    'temperature': llm_payload['temperature'],
+                },
+            })
+
             response = requests.post(
-                f"{ollama_url}/v1/completions",
+                f"{ollama_url}/v1/chat/completions",
                 json=llm_payload,
-                timeout=timeout_seconds,
+                timeout=(10, 300),
             )
             response.raise_for_status()
             data = response.json()
 
-            logger.debug('Ollama réponse brute : %s', data)
+            logger.info('[LLM_RESPONSE] Ollama raw response', extra={
+                'provider': 'ollama',
+                'endpoint': f"{ollama_url}/v1/chat/completions",
+                'status_code': response.status_code,
+                'response_json': data,
+                'response_text_preview': response.text[:400],
+            })
 
             if isinstance(data, dict) and 'choices' in data and data['choices']:
                 choice = data['choices'][0]
@@ -189,7 +341,15 @@ RÈGLES CRITIQUES :
                 )
             else:
                 reponse_texte = response.text
+                logger.warning('[LLM_RESPONSE] Ollama returned no choices', extra={
+                    'provider': 'ollama',
+                    'endpoint': f"{ollama_url}/v1/chat/completions",
+                    'response_text': reponse_texte,
+                })
 
+        except requests.exceptions.Timeout as exc:
+            logger.exception('Timeout Ollama')
+            return {"error": f"Erreur HTTP Ollama : {str(exc)}"}
         except requests.exceptions.RequestException as exc:
             logger.exception('Erreur HTTP Ollama')
             return {"error": f"Erreur HTTP Ollama : {str(exc)}"}
@@ -240,7 +400,10 @@ RÈGLES CRITIQUES :
     parsed = _extract_json_from_text(reponse_texte)
     if parsed is None:
         logger.exception('JSON parsing failed', extra={'provider': provider, 'response_text': reponse_texte})
-        return {"error": "L'IA a généré une réponse qui n'est pas un JSON valide."}
+        return {
+            "error": "L'IA a généré une réponse qui n'est pas un JSON valide.",
+            "raw_response": reponse_texte,
+        }
 
     valid, validation_error = validate_ia_response_schema(parsed)
     if not valid:
@@ -249,6 +412,10 @@ RÈGLES CRITIQUES :
             'validation_error': validation_error,
             'parsed_response': parsed,
         })
-        return {"error": f"Réponse IA invalide : {validation_error}"}
+        return {
+            "error": f"Réponse IA invalide : {validation_error}",
+            "parsed_response": parsed,
+            "raw_response": reponse_texte,
+        }
 
     return parsed

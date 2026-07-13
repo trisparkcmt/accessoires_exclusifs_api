@@ -318,8 +318,10 @@ class Commande(models.Model):
             if ligne.mouvement_stock_genere:
                 if ligne.produit_fini_essence:
                     prod = ligne.produit_fini_essence
-                    prod.stock_disponible += ligne.quantite
-                    prod.save(update_fields=['stock_disponible'], ajuster_lot=False)
+                    quantite_ml = Decimal(str(ligne.quantite)) * Decimal(str(prod.taille_ml))
+                    prod.essence.restituer_lots(quantite_ml)
+                    # Supprimer les consommations associées
+                    ligne.lot_consommations.all().delete()
                 ligne.mouvement_stock_genere = False
                 ligne.save(update_fields=['mouvement_stock_genere'])
 
@@ -332,37 +334,64 @@ class Commande(models.Model):
             # Parfums personnalisés
             for ligne in self.lignes_parfums_perso.all():
                 if not ligne.proportions_mises_a_jour:
+                    cost_total = Decimal('0')
                     # Flacon
                     if ligne.parfum_personnalise.flacon:
                         flacon = ligne.parfum_personnalise.flacon
                         flacon.stock_quantite -= ligne.quantite
                         flacon.save(update_fields=['stock_quantite'])
+                        cost_total += Decimal(str(ligne.quantite)) * (flacon.prix_achat or Decimal('0'))
                     # Essences
-                    for l_perf in ligne.parfum_personnalise.lignes.all():
+                    p_perso = ligne.parfum_personnalise
+                    total_prix_p_perso = p_perso.prix_total if p_perso.prix_total else Decimal('1')
+                    for l_perf in p_perso.lignes.all():
                         if l_perf.essence:
                             lot = l_perf.essence
-                            lot.stock_ml -= Decimal(ligne.quantite) * l_perf.quantite_ml
+                            quantite_prelevee_ml = Decimal(str(ligne.quantite)) * l_perf.quantite_ml
+                            lot.stock_ml -= quantite_prelevee_ml
                             lot.save(update_fields=['stock_ml'])
+                            
+                            # Calcul de la part de vente et création de la consommation
+                            ratio_vente = l_perf.prix_ligne / total_prix_p_perso
+                            vente_attribuee = ratio_vente * ligne.sous_total
+                            
+                            from catalogue.models import LotEssenceConsommation
+                            LotEssenceConsommation.objects.create(
+                                lot_essence=lot,
+                                ligne_parfum_perso=ligne,
+                                quantite_ml=quantite_prelevee_ml,
+                                prix_vente_attribue=vente_attribuee
+                            )
+                            cost_total += quantite_prelevee_ml * (lot.prix_achat_par_ml or Decimal('0'))
                         elif l_perf.essence_personnalisee:
                             essence_perso = l_perf.essence_personnalisee
                             for l_ess in essence_perso.lignes.all():
                                 ing = l_ess.ingredient
-                                ing.stock_ml -= Decimal(ligne.quantite) * l_perf.quantite_ml * l_ess.quantite_ml
+                                quantite_prelevee_ml = Decimal(str(ligne.quantite)) * l_perf.quantite_ml * l_ess.quantite_ml
+                                ing.stock_ml -= quantite_prelevee_ml
                                 ing.save(update_fields=['stock_ml'])
+                                cost_total += quantite_prelevee_ml * (ing.prix_achat_par_ml or Decimal('0'))
+                    
+                    ligne.prix_achat_total_snapshot = cost_total
                     ligne.proportions_mises_a_jour = True
-                    ligne.save(update_fields=['proportions_mises_a_jour'])
+                    ligne.save(update_fields=['proportions_mises_a_jour', 'prix_achat_total_snapshot'])
 
             # Essences personnalisées
             for ligne in self.lignes_essence_personnalisee.all():
                 if not ligne.proportions_mises_a_jour:
+                    cost_total = Decimal('0')
                     essence_perso = ligne.essence_personnalise
                     if essence_perso:
                         for l_ess in essence_perso.lignes.all():
                             ing = l_ess.ingredient
-                            ing.stock_ml -= Decimal(ligne.quantite) * l_ess.quantite_ml
+                            quantite_prelevee_ml = Decimal(str(ligne.quantite)) * l_ess.quantite_ml
+                            ing.stock_ml -= quantite_prelevee_ml
                             ing.save(update_fields=['stock_ml'])
+                            cost_total += quantite_prelevee_ml * (ing.prix_achat_par_ml or Decimal('0'))
+                    
+                    ligne.prix_achat_total_snapshot = cost_total
                     ligne.proportions_mises_a_jour = True
-                    ligne.save(update_fields=['proportions_mises_a_jour'])
+                    ligne.save(update_fields=['proportions_mises_a_jour', 'prix_achat_total_snapshot'])
 
         # 2. Produits standards : décrémentation lors du paiement
         if self.statut_paiement == 'payé':
@@ -373,8 +402,9 @@ class Commande(models.Model):
                         parfum = ligne.parfum
                         parfum.stock_quantite -= ligne.quantite
                         parfum.save(update_fields=['stock_quantite'])
+                        ligne.prix_achat_total_snapshot = Decimal(str(ligne.quantite)) * (parfum.prix_achat or Decimal('0'))
                     ligne.mouvement_stock_genere = True
-                    ligne.save(update_fields=['mouvement_stock_genere'])
+                    ligne.save(update_fields=['mouvement_stock_genere', 'prix_achat_total_snapshot'])
 
             # Accessoires standard
             for ligne in self.lignes_accessoires.all():
@@ -383,18 +413,35 @@ class Commande(models.Model):
                         accessoire = ligne.accessoire
                         accessoire.stock_quantite -= ligne.quantite
                         accessoire.save(update_fields=['stock_quantite'])
+                        ligne.prix_achat_total_snapshot = Decimal(str(ligne.quantite)) * (accessoire.prix_achat or Decimal('0'))
                     ligne.mouvement_stock_genere = True
-                    ligne.save(update_fields=['mouvement_stock_genere'])
+                    ligne.save(update_fields=['mouvement_stock_genere', 'prix_achat_total_snapshot'])
 
             # Produits finis essence standard
             for ligne in self.lignes_produit_fini_essence.all():
                 if not ligne.mouvement_stock_genere:
                     if ligne.produit_fini_essence:
                         prod = ligne.produit_fini_essence
-                        prod.stock_disponible -= ligne.quantite
-                        prod.save(update_fields=['stock_disponible'], ajuster_lot=False)
+                        quantite_ml = Decimal(str(ligne.quantite)) * Decimal(str(prod.taille_ml))
+                        prelevements = prod.essence.prelever_lots(quantite_ml)
+                        
+                        # Enregistrer les consommations par lot
+                        cost_total = Decimal('0')
+                        for lot, prelevement_ml in prelevements:
+                            vente_attribuee = (prelevement_ml / quantite_ml) * ligne.sous_total
+                            
+                            from catalogue.models import LotEssenceConsommation
+                            LotEssenceConsommation.objects.create(
+                                lot_essence=lot,
+                                ligne_produit_fini_essence=ligne,
+                                quantite_ml=prelevement_ml,
+                                prix_vente_attribue=vente_attribuee
+                            )
+                            cost_total += prelevement_ml * (lot.prix_achat_par_ml or Decimal('0'))
+                        
+                        ligne.prix_achat_total_snapshot = cost_total
                     ligne.mouvement_stock_genere = True
-                    ligne.save(update_fields=['mouvement_stock_genere'])
+                    ligne.save(update_fields=['mouvement_stock_genere', 'prix_achat_total_snapshot'])
 
     def traiter_commissions(self, original):
         from utilisateur.models import CommissionLog, Notification
@@ -681,6 +728,7 @@ class CommandeLigneParfum(models.Model):
     prix_unitaire_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
     remise_ligne = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     sous_total = models.DecimalField(max_digits=10, decimal_places=2)
+    prix_achat_total_snapshot = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Coût d'achat total réel pour cette ligne (historisé)")
     mouvement_stock_genere = models.BooleanField(default=False)
     
     class Meta:
@@ -699,6 +747,7 @@ class CommandeProduitFiniEssence(models.Model):
     prix_unitaire_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
     remise_ligne = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     sous_total = models.DecimalField(max_digits=10, decimal_places=2)
+    prix_achat_total_snapshot = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Coût d'achat total réel pour cette ligne (historisé)")
     mouvement_stock_genere = models.BooleanField(default=False)
     
     class Meta:
@@ -722,6 +771,7 @@ class CommandeLigneParfumPerso(models.Model):
     quantite = models.IntegerField(validators=[MinValueValidator(1)])
     prix_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
     sous_total = models.DecimalField(max_digits=10, decimal_places=2)
+    prix_achat_total_snapshot = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Coût d'achat total réel pour cette ligne (historisé)")
     statut_laboratoire = models.CharField(max_length=30, choices=STATUT_LABO_CHOICES, default='en_attente')
     proportions_mises_a_jour = models.BooleanField(default=False, help_text="True quand stock essence et flacon décrémentés")
     note_laboratoire = models.TextField(blank=True)
@@ -752,6 +802,7 @@ class CommandeLigneEssencePersonnalisee(models.Model):
     quantite = models.IntegerField(validators=[MinValueValidator(1)])
     prix_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
     sous_total = models.DecimalField(max_digits=10, decimal_places=2)
+    prix_achat_total_snapshot = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Coût d'achat total réel pour cette ligne (historisé)")
     statut_laboratoire = models.CharField(max_length=30, choices=STATUT_LABO_CHOICES, default='en_attente')
     proportions_mises_a_jour = models.BooleanField(default=False, help_text="True quand stock essence et flacon décrémentés")
     note_laboratoire = models.TextField(blank=True)
@@ -772,6 +823,7 @@ class CommandeLigneAccessoire(models.Model):
     prix_unitaire_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
     remise_ligne = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     sous_total = models.DecimalField(max_digits=10, decimal_places=2)
+    prix_achat_total_snapshot = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Coût d'achat total réel pour cette ligne (historisé)")
     mouvement_stock_genere = models.BooleanField(default=False)
     
     class Meta:
