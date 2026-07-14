@@ -134,6 +134,12 @@ def _build_accessoire_embedding_text(instance):
 
 
 def _generate_ollama_embedding(text):
+    # Étape désactivée si USE_ALL_MINI n'est pas défini ou vaut 'false'/'0'/''
+    import os
+    use_all_mini = os.getenv('USE_ALL_MINI', 'false').strip().lower()
+    if use_all_mini not in ('1', 'true', 'yes', 'on'):
+        return None
+
     if not text:
         return None
 

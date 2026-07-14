@@ -95,6 +95,11 @@ def _extract_json_from_text(text):
 
 
 def _ollama_embedding_query(text, model_name=None, timeout=None):
+    # Désactivé si USE_ALL_MINI n'est pas activé
+    use_all_mini = os.getenv('USE_ALL_MINI', 'false').strip().lower()
+    if use_all_mini not in ('1', 'true', 'yes', 'on'):
+        raise RuntimeError('USE_ALL_MINI non activé — embeddings Ollama désactivés.')
+
     ollama_url = getattr(settings, 'OLLAMA_URL', 'http://127.0.0.1:11434').rstrip('/')
     model_name = model_name or getattr(settings, 'OLLAMA_EMBEDDING_MODEL', 'all-minilm')
     timeout_seconds = int(timeout or getattr(settings, 'OLLAMA_TIMEOUT_SECONDS', '30'))
