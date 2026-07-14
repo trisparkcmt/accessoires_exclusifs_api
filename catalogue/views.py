@@ -1411,3 +1411,66 @@ class MouvementStockViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         return MouvementStock.objects.select_related('utilisateur').all()
+
+
+# ============================================================
+# FUTURE_UPDATE_DIFFUSEUR: VIEWSET DIFFUSEURS DE PARFUM (COMMENTÉ)
+# ============================================================
+# @extend_schema_view(
+#     list=extend_schema(
+#         summary="Liste des diffuseurs de parfum",
+#         description="Retourne la liste paginée de tous les diffuseurs actifs.",
+#         tags=["Diffuseurs"]
+#     ),
+#     retrieve=extend_schema(
+#         summary="Détail d'un diffuseur",
+#         description="Retourne le détail d'un diffuseur par son ID ou son Slug.",
+#         tags=["Diffuseurs"]
+#     )
+# )
+# class DiffuseurParfumViewSet(viewsets.ModelViewSet):
+#     parser_classes = (MultiPartParser, FormParser, JSONParser)
+#     pagination_class = StandardPagination
+#     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+#     filterset_class = DiffuseurParfumFilter
+#     search_fields = ['nom', 'marque', 'description', 'reference_sku']
+#     ordering_fields = ['prix_unitaire', 'date_creation', 'nom']
+#     ordering = ['-date_creation']
+#
+#     def get_queryset(self):
+#         queryset = DiffuseurParfum.objects.all()
+#         # Si ce n'est pas un admin ou une serveuse, on ne retourne que les diffuseurs actifs
+#         if self.request.user and (self.request.user.is_superuser or (hasattr(self.request.user, 'is_staff') and self.request.user.is_staff)):
+#             return queryset
+#         return queryset.filter(actif=True)
+#
+#     def get_serializer_class(self):
+#         # Choix du serializer selon l'utilisateur
+#         is_admin = self.request.user and (self.request.user.is_superuser or (hasattr(self.request.user, 'is_staff') and self.request.user.is_staff))
+#         if is_admin:
+#             if self.action in ['retrieve', 'update', 'partial_update']:
+#                 return DiffuseurParfumAdminDetailSerializer
+#             return DiffuseurParfumAdminListSerializer
+#         else:
+#             if self.action == 'retrieve':
+#                 return DiffuseurParfumPublicDetailSerializer
+#             return DiffuseurParfumPublicListSerializer
+#
+#     def get_permissions(self):
+#         # Modification réservée aux admins, lecture autorisée à tous
+#         if self.action in ['list', 'retrieve']:
+#             permission_classes = [AllowAny]
+#         else:
+#             permission_classes = [IsAdmin]
+#         return [permission() for permission in permission_classes]
+#
+#     @action(detail=True, methods=['post'], url_path='changer-statut-actif', permission_classes=[IsAdmin])
+#     def changer_statut_actif(self, request, pk=None):
+#         diffuseur = self.get_object()
+#         diffuseur.actif = not diffuseur.actif
+#         diffuseur.save()
+#         return Response({
+#             'status': 'success',
+#             'message': f"Le statut du diffuseur a été défini sur {'actif' if diffuseur.actif else 'inactif'}."
+#         })
+

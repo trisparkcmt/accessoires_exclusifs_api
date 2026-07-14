@@ -46,8 +46,9 @@ class Panier(models.Model):
         total_accessoires = sum(ligne.sous_total for ligne in self.lignes_accessoires.all())
         total_produit_fini_essence = sum(ligne.sous_total for ligne in self.lignes_produit_fini_essence.all())
         total_essence_personnalisee = sum(ligne.sous_total for ligne in self.lignes_essence_personnalisee.all())
+        # FUTURE_UPDATE_DIFFUSEUR: total_diffuseurs = sum(ligne.sous_total for ligne in self.lignes_diffuseurs.all())
         
-        self.sous_total = total_parfums + total_persos + total_accessoires + total_produit_fini_essence + total_essence_personnalisee
+        self.sous_total = total_parfums + total_persos + total_accessoires + total_produit_fini_essence + total_essence_personnalisee # FUTURE_UPDATE_DIFFUSEUR: + total_diffuseurs
         
         # Recalculate discount: verify promo code validity and reapply discount
         self.remise_montant = Decimal('0')
@@ -325,6 +326,16 @@ class Commande(models.Model):
                 ligne.mouvement_stock_genere = False
                 ligne.save(update_fields=['mouvement_stock_genere'])
 
+        # FUTURE_UPDATE_DIFFUSEUR: # 4. Diffuseurs standard
+        # FUTURE_UPDATE_DIFFUSEUR: for ligne in self.lignes_diffuseurs.all():
+        # FUTURE_UPDATE_DIFFUSEUR:     if ligne.mouvement_stock_genere:
+        # FUTURE_UPDATE_DIFFUSEUR:         if ligne.diffuseur:
+        # FUTURE_UPDATE_DIFFUSEUR:             diffuseur = ligne.diffuseur
+        # FUTURE_UPDATE_DIFFUSEUR:             diffuseur.stock_quantite += ligne.quantite
+        # FUTURE_UPDATE_DIFFUSEUR:             diffuseur.save(update_fields=['stock_quantite'])
+        # FUTURE_UPDATE_DIFFUSEUR:         ligne.mouvement_stock_genere = False
+        # FUTURE_UPDATE_DIFFUSEUR:         ligne.save(update_fields=['mouvement_stock_genere'])
+
     def appliquer_stocks(self):
         if self.statut in ['annulée', 'remboursée']:
             return
@@ -442,6 +453,17 @@ class Commande(models.Model):
                         ligne.prix_achat_total_snapshot = cost_total
                     ligne.mouvement_stock_genere = True
                     ligne.save(update_fields=['mouvement_stock_genere', 'prix_achat_total_snapshot'])
+
+            # FUTURE_UPDATE_DIFFUSEUR: # Diffuseurs standard
+            # FUTURE_UPDATE_DIFFUSEUR: for ligne in self.lignes_diffuseurs.all():
+            # FUTURE_UPDATE_DIFFUSEUR:     if not ligne.mouvement_stock_genere:
+            # FUTURE_UPDATE_DIFFUSEUR:         if ligne.diffuseur:
+            # FUTURE_UPDATE_DIFFUSEUR:             diffuseur = ligne.diffuseur
+            # FUTURE_UPDATE_DIFFUSEUR:             diffuseur.stock_quantite -= ligne.quantite
+            # FUTURE_UPDATE_DIFFUSEUR:             diffuseur.save(update_fields=['stock_quantite'])
+            # FUTURE_UPDATE_DIFFUSEUR:             ligne.prix_achat_total_snapshot = Decimal(str(ligne.quantite)) * (diffuseur.prix_achat or Decimal('0'))
+            # FUTURE_UPDATE_DIFFUSEUR:         ligne.mouvement_stock_genere = True
+            # FUTURE_UPDATE_DIFFUSEUR:         ligne.save(update_fields=['mouvement_stock_genere', 'prix_achat_total_snapshot'])
 
     def traiter_commissions(self, original):
         from utilisateur.models import CommissionLog, Notification
@@ -938,3 +960,44 @@ class CodePromoAdmin(models.Model):
 
     def __str__(self):
         return f"{self.code} (-{self.reduction_pourcentage}%)"
+
+
+# ============================================================
+# FUTURE_UPDATE_DIFFUSEUR: PANIER & COMMANDE DIFFUSEURS (COMMENTÉ)
+# ============================================================
+# class PanierLigneDiffuseurParfum(models.Model):
+#     panier = models.ForeignKey('orders.Panier', on_delete=models.CASCADE, related_name='lignes_diffuseurs')
+#     diffuseur = models.ForeignKey('catalogue.DiffuseurParfum', on_delete=models.CASCADE, related_name='paniers_lignes')
+#     quantite = models.IntegerField(default=1, validators=[MinValueValidator(1)])
+#     prix_calcule = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+#     sous_total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+#     date_ajout = models.DateTimeField(auto_now_add=True)
+#
+#     class Meta:
+#         db_table = 'panier_ligne_diffuseur_parfum'
+#         unique_together = [['panier', 'diffuseur']]
+#
+#     def save(self, *args, **kwargs):
+#         self.prix_calcule = self.diffuseur.prix_actuel
+#         self.sous_total = self.prix_calcule * self.quantite
+#         super().save(*args, **kwargs)
+#
+#
+# class CommandeLigneDiffuseurParfum(models.Model):
+#     commande = models.ForeignKey('orders.Commande', on_delete=models.CASCADE, related_name='lignes_diffuseurs')
+#     diffuseur = models.ForeignKey('catalogue.DiffuseurParfum', on_delete=models.SET_NULL, null=True, related_name='commandes_lignes')
+#     nom_snapshot = models.CharField(max_length=200)
+#     quantite = models.IntegerField(validators=[MinValueValidator(1)])
+#     prix_unitaire_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
+#     remise_ligne = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+#     sous_total = models.DecimalField(max_digits=10, decimal_places=2)
+#     prix_achat_total_snapshot = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Coût d'achat total réel pour cette ligne (historisé)")
+#     mouvement_stock_genere = models.BooleanField(default=False)
+#
+#     class Meta:
+#         db_table = 'commande_ligne_diffuseur_parfum'
+#
+#     def save(self, *args, **kwargs):
+#         self.sous_total = (self.prix_unitaire_snapshot - self.remise_ligne) * self.quantite
+#         super().save(*args, **kwargs)
+

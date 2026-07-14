@@ -709,3 +709,60 @@ class NotificationCatalogueAdmin(admin.ModelAdmin):
     def marquer_comme_non_lu(self, request, queryset):
         updated = queryset.update(est_lu=False)
         self.message_user(request, f"{updated} notification(s) marquée(s) comme non-lue(s).")
+
+
+# ============================================================
+# FUTURE_UPDATE_DIFFUSEUR: ADMIN DIFFUSEURS (COMMENTÉ)
+# ============================================================
+# @admin.register(DiffuseurParfum)
+# class DiffuseurParfumAdmin(admin.ModelAdmin):
+#     list_display = (
+#         'id', 'apercu_image_col', 'nom', 'marque', 'materiau',
+#         'prix_unitaire', 'prix_promotionnel', 'date_debut', 'date_fin',
+#         'statut_stock', 'actif'
+#     )
+#     list_filter = ('marque', 'materiau', 'couleur', 'actif', 'date_creation')
+#     search_fields = ('nom', 'reference_sku', 'description')
+#     readonly_fields = ('date_creation', 'date_modification')
+#     prepopulated_fields = {'slug': ('nom',)}
+#     list_editable = ('prix_unitaire', 'prix_promotionnel', 'actif')
+#     list_per_page = 50
+#
+#     fieldsets = (
+#         ('Informations générales', {
+#             'fields': ('nom', 'slug', 'reference_sku')
+#         }),
+#         ('Descriptions', {
+#             'fields': ('description',)
+#         }),
+#         ('Caractéristiques', {
+#             'fields': ('materiau', 'couleur', 'dimensions', 'poids_grammes')
+#         }),
+#         ('Prix', {
+#             'fields': ('prix_unitaire', 'prix_promotionnel', 'date_debut', 'date_fin', 'stock_quantite', 'seuil_alerte_stock')
+#         }),
+#         ('Finances (Admin uniquement)', {
+#             'description': 'Prix d’achat réel payé au fournisseur (pour calcul de bénéfice).',
+#             'fields': ('prix_achat',),
+#             'classes': ('collapse',)
+#         }),
+#         ('Images', {
+#             'fields': ('image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')
+#         }),
+#         ('Statut', {
+#             'fields': ('actif', 'est_bestseller', 'est_hotseller')
+#         }),
+#         ('Dates', {
+#             'fields': ('date_creation', 'date_modification'),
+#             'classes': ('collapse',)
+#         }),
+#     )
+#
+#     @admin.display(description="Aperçu")
+#     def apercu_image_col(self, obj):
+#         return apercu_image(obj.image_principale)
+#
+#     @admin.display(description="Stock")
+#     def statut_stock(self, obj):
+#         return statut_stock_html(obj.stock_quantite, obj.seuil_alerte_stock)
+

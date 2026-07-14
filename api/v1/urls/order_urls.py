@@ -6,6 +6,7 @@ from orders.views import (
     AjouterAccessoireView,
     AjouterProduitFiniEssenceView,
     AjouterEssencePersonnaliseeView,
+    AjouterParfumPersoLabView,
     PanierLigneDetailView,
     AppliquerCodePromoView,
     RetirerCodePromoView,
@@ -18,6 +19,7 @@ from orders.views import (
     AdminCodePromoViewSet,
     CommanderCompositionDirecteView,
     AdminStatistiquesBeneficesView,
+    # FUTURE_UPDATE_DIFFUSEUR: AjouterDiffuseurParfumView,
 )
 
 router = DefaultRouter()
@@ -31,9 +33,11 @@ urlpatterns = [
     path('panier/ajouter/produit-fini-essence/', AjouterProduitFiniEssenceView.as_view(), name='panier-ajouter-produit-fini-essence'),
     path('panier/ajouter/essence-personnalisee/', AjouterEssencePersonnaliseeView.as_view(), name='panier-ajouter-essence-personnalisee'),
     path('panier/ajouter/composition-directe/', CommanderCompositionDirecteView.as_view(), name='panier-ajouter-composition-directe'),
+    path('panier/ajouter/parfum-personnalise-labo/', AjouterParfumPersoLabView.as_view(), name='panier-ajouter-parfum-perso-labo'),
     path('panier/ligne/<str:type_ligne>/<int:ligne_id>/', PanierLigneDetailView.as_view(), name='panier-ligne-detail'),
     path('panier/appliquer-promo/', AppliquerCodePromoView.as_view(), name='panier-appliquer-promo'),
     path('panier/retirer-promo/', RetirerCodePromoView.as_view(), name='panier-retirer-promo'),
+    # FUTURE_UPDATE_DIFFUSEUR: path('panier/ajouter/diffuseur-parfum/', AjouterDiffuseurParfumView.as_view(), name='panier-ajouter-diffuseur'),
 
     # Commandes
     path('commandes/', CommandeListView.as_view(), name='commandes-list'),

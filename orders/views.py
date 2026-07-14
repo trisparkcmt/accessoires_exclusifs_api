@@ -31,6 +31,7 @@ from orders.serializers import (
     AjouterAccessoireSerializer,
     AjouterProduitFiniEssenceSerializer,
     AjouterEssencePersonnaliseeSerializer,
+    AjouterParfumPersoLabSerializer,
     PanierSerializer,
     AppliquerCodePromoSerializer,
     CommandeSerializer,
@@ -237,11 +238,63 @@ class CommanderCompositionDirecteView(APIView):
         return Response(PanierSerializer(panier, context={'request': request}).data, status=status.HTTP_200_OK)
 
 
+class AjouterParfumPersoLabView(APIView):
+    """
+    Ajoute au panier un parfum personnalisé déjà enregistré dans le labo du client.
+    ✔ Requiert d'être connecté (le parfum doit appartenir au client).
+    ✔ Le parfum doit avoir enregistre=True (créé via POST /labo/compositions/).
+
+    Payload :
+        parfum_personnalise_id  (int, requis)   - ID du ParfumPersonnalise
+        quantite                (int, défaut 1) - Nombre d'exemplaires
+        panier_id               (int, optionnel) - ID du panier cible
+        note_client             (str, optionnel) - Note associée à la ligne
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        serializer = AjouterParfumPersoLabSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+
+        parfum_perso = serializer.validated_data['parfum_perso_obj']
+        quantite = serializer.validated_data.get('quantite', 1)
+        note_client = serializer.validated_data.get('note_client', '')
+        panier_id = serializer.validated_data.get('panier_id')
+
+        with transaction.atomic():
+            panier = get_or_create_panier(request, panier_id)
+
+            ligne, created = PanierLigneParfumPerso.objects.get_or_create(
+                panier=panier,
+                parfum_personnalise=parfum_perso,
+                defaults={
+                    'prix_calcule': parfum_perso.prix_total,
+                    'quantite': quantite,
+                    'sous_total': parfum_perso.prix_total * quantite,
+                    'note_client': note_client
+                }
+            )
+
+            if not created:
+                ligne.quantite += quantite
+                ligne.prix_calcule = parfum_perso.prix_total
+                ligne.sous_total = ligne.prix_calcule * ligne.quantite
+                if note_client:
+                    ligne.note_client = note_client
+                ligne.save()
+
+            panier.recalculer_total()
+
+        return Response(PanierSerializer(panier, context={'request': request}).data, status=status.HTTP_200_OK)
+
+
+
 class AjouterEssencePersonnaliseeView(APIView):
     """
     Ajoute une essence personnalisée au panier actif (requiert d'être connecté).
     """
     permission_classes = [AllowAny]
+
 
     def post(self, request, *args, **kwargs):
         serializer = AjouterEssencePersonnaliseeSerializer(data=request.data, context={'request': request})
@@ -298,6 +351,8 @@ class PanierLigneDetailView(APIView):
             return PanierLigneParfumPerso, PanierLigneParfumPerso.objects.filter(id=ligne_id, panier=panier).first()
         elif type_ligne == 'essence-personnalisee':
             return PanierLigneEssencePersonnalisee, PanierLigneEssencePersonnalisee.objects.filter(id=ligne_id, panier=panier).first()
+        # FUTURE_UPDATE_DIFFUSEUR: elif type_ligne == 'diffuseur-parfum':
+        # FUTURE_UPDATE_DIFFUSEUR:     return PanierLigneDiffuseurParfum, PanierLigneDiffuseurParfum.objects.filter(id=ligne_id, panier=panier).first()
         return None, None
 
     def patch(self, request, type_ligne, ligne_id, *args, **kwargs):
@@ -330,6 +385,9 @@ class PanierLigneDetailView(APIView):
             quantite_ml = Decimal(str(quantite)) * Decimal(str(ligne.produit_fini_essence.taille_ml))
             if ligne.produit_fini_essence.essence.stock_total_ml() < quantite_ml:
                 return Response({"quantite": f"Stock d'essence insuffisant pour {ligne.produit_fini_essence.essence.nom}."}, status=status.HTTP_400_BAD_REQUEST)
+        # FUTURE_UPDATE_DIFFUSEUR: elif type_ligne == 'diffuseur-parfum':
+        # FUTURE_UPDATE_DIFFUSEUR:     if ligne.diffuseur.stock_quantite < quantite:
+        # FUTURE_UPDATE_DIFFUSEUR:         return Response({"quantite": f"Stock insuffisant. Seulement {ligne.diffuseur.stock_quantite} disponibles."}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             ligne.quantite = quantite
@@ -1005,3 +1063,46 @@ class AdminStatistiquesBeneficesView(APIView):
                 },
             },
         }, status=status.HTTP_200_OK)
+
+
+# ============================================================
+# FUTURE_UPDATE_DIFFUSEUR: VIEW ADD DIFFUSEUR TO CART (COMMENTÉ)
+# ============================================================
+# class AjouterDiffuseurParfumView(APIView):
+#     permission_classes = [AllowAny]
+#
+#     def post(self, request, *args, **kwargs):
+#         serializer = AjouterDiffuseurParfumSerializer(data=request.data, context={'request': request})
+#         serializer.is_valid(raise_exception=True)
+#         
+#         panier_id = serializer.validated_data.get('panier_id')
+#         diffuseur = serializer.validated_data['diffuseur_obj']
+#         quantite = serializer.validated_data['quantite']
+#         
+#         with transaction.atomic():
+#             panier = get_or_create_panier(request, panier_id)
+#             
+#             ligne, created = PanierLigneDiffuseurParfum.objects.get_or_create(
+#                 panier=panier,
+#                 diffuseur=diffuseur,
+#                 defaults={
+#                     'prix_calcule': diffuseur.prix_actuel,
+#                     'quantite': quantite,
+#                     'sous_total': diffuseur.prix_actuel * quantite
+#                 }
+#             )
+#             
+#             if not created:
+#                 total_quantite = ligne.quantite + quantite
+#                 if diffuseur.stock_quantite < total_quantite:
+#                     return Response(
+#                         {"quantite": f"Stock insuffisant. Seulement {diffuseur.stock_quantite} disponibles (vous en avez déjà {ligne.quantite} dans le panier)."},
+#                         status=status.HTTP_400_BAD_REQUEST
+#                     )
+#                 ligne.quantite = total_quantite
+#                 ligne.prix_calcule = diffuseur.prix_actuel
+#                 ligne.save()
+#             
+#             panier.recalculer_total()
+#             
+#         return Response(PanierSerializer(panier, context={'request': request}).data, status=status.HTTP_200_OK)

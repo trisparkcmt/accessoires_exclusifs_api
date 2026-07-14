@@ -25,6 +25,7 @@ shop_router.register(r'bestsellers', BestsellerViewSet, basename='bestsellers')
 shop_router.register(r'hotsellers', HotsellerViewSet, basename='hotsellers')
 shop_router.register(r'notifications', NotificationCatalogueViewSet, basename='notificationcatalogue')
 shop_router.register(r'mouvements-stock', MouvementStockViewSet, basename='mouvementstock')
+# FUTURE_UPDATE_DIFFUSEUR: shop_router.register(r'diffuseurs', DiffuseurParfumViewSet, basename='diffuseurparfum')
 # ============================================================
 # ROUTER LAB — /api/lab/...
 # Essences

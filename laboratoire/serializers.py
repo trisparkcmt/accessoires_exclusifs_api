@@ -35,6 +35,7 @@ class ParfumLabSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 class EssencePersonnaliseeLigneSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
     ingredient_detail = IngredientSerializer(source='ingredient', read_only=True)
     ingredient = serializers.PrimaryKeyRelatedField(queryset=Ingredient.objects.all())
 
@@ -114,6 +115,7 @@ class EssencePersonnaliseeSerializer(serializers.ModelSerializer):
 
 
 class ParfumPersonnaliseLigneSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
     essence_detail = serializers.SerializerMethodField()
     
     essence = serializers.PrimaryKeyRelatedField(queryset=LotEssence.objects.all(), required=False, allow_null=True)
