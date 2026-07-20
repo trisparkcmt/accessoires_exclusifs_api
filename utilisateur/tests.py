@@ -190,9 +190,13 @@ class AuthEndpointsTest(APITestCase):
 
 from unittest.mock import patch
 from decimal import Decimal
+import hmac
+import hashlib
+import json
+from django.test import override_settings
 from utilisateur.models import Prestataire, PayoutTransaction, CommissionLog, Client
 
-class MonetbilPayoutsTest(APITestCase):
+class CampayPayoutsTest(APITestCase):
     def setUp(self):
         # 1. Admin user
         self.admin = User.objects.create_superuser(
@@ -251,48 +255,72 @@ class MonetbilPayoutsTest(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('n\'est pas valide', response.data['detail'])
 
-    @patch('requests.post')
-    def test_payout_successful_initiation(self, mock_post):
-        # Mock Monetbil response
-        mock_post.return_value.status_code = 201
-        mock_post.return_value.json.return_value = {
-            'success': True,
-            'message': 'Successfully processed transaction.',
-            'transaction': 123456
-        }
+    @patch('utilisateur.campay.payout_to_phone')
+    def test_payout_successful_initiation(self, mock_payout):
+        # Mock Campay adapter response (success)
+        mock_payout.return_value = (True, {'transaction': 123456}, None)
 
         self.client.force_authenticate(user=self.admin)
         response = self.client.post(self.payout_url, {'montant': '5000.00'}, format='json')
         self.assertEqual(response.status_code, 201)
-        
+
         # Verify transaction database creation
         tx = PayoutTransaction.objects.get(reference_unique=response.data['reference_unique'])
         self.assertEqual(tx.montant, Decimal('5000.00'))
         self.assertEqual(tx.statut, 'en_cours')
-        self.assertEqual(tx.telephone_destination, '237677123456') # Cleaned automatically
-        
+        self.assertEqual(tx.telephone_destination, '237677123456')
+
         # Verify immediate debit
         self.prestataire.refresh_from_db()
         self.assertEqual(self.prestataire.solde_commission, Decimal('5000.00'))
 
-    @patch('requests.post')
-    def test_payout_rejected_by_monetbil(self, mock_post):
-        # Mock Monetbil API failure
-        mock_post.return_value.status_code = 400
-        mock_post.return_value.json.return_value = {
-            'success': False,
-            'message': 'Service balance insufficient.'
-        }
+    @patch('utilisateur.campay.payout_to_phone')
+    def test_payout_idempotent_with_existing_external_reference(self, mock_payout):
+        mock_payout.return_value = (True, {'transaction': 123456}, None)
+
+        self.client.force_authenticate(user=self.admin)
+        external_reference = 'idem-ref-123'
+
+        response1 = self.client.post(self.payout_url, {
+            'montant': '5000.00',
+            'external_reference': external_reference
+        }, format='json')
+        self.assertEqual(response1.status_code, 201)
+        self.assertEqual(PayoutTransaction.objects.count(), 1)
+
+        tx1 = PayoutTransaction.objects.get(reference_unique=external_reference)
+        self.assertEqual(tx1.montant, Decimal('5000.00'))
+
+        self.prestataire.refresh_from_db()
+        self.assertEqual(self.prestataire.solde_commission, Decimal('5000.00'))
+
+        response2 = self.client.post(self.payout_url, {
+            'montant': '5000.00',
+            'external_reference': external_reference
+        }, format='json')
+        self.assertEqual(response2.status_code, 200)
+        self.assertEqual(PayoutTransaction.objects.count(), 1)
+
+        tx2 = PayoutTransaction.objects.get(reference_unique=external_reference)
+        self.assertEqual(tx1.pk, tx2.pk)
+        self.prestataire.refresh_from_db()
+        self.assertEqual(self.prestataire.solde_commission, Decimal('5000.00'))
+        mock_payout.assert_called_once()
+
+    @patch('utilisateur.campay.payout_to_phone')
+    def test_payout_rejected_by_campay(self, mock_payout):
+        # Mock Campay API failure
+        mock_payout.return_value = (False, {'message': 'Service balance insufficient.'}, 'Service balance insufficient.')
 
         self.client.force_authenticate(user=self.admin)
         response = self.client.post(self.payout_url, {'montant': '5000.00'}, format='json')
         self.assertEqual(response.status_code, 400)
         self.assertIn('rejeté l\'opération', response.data['detail'])
-        
+
         # Verify balance refunded
         self.prestataire.refresh_from_db()
         self.assertEqual(self.prestataire.solde_commission, Decimal('10000.00'))
-        
+
         # Verify transaction is recorded as echec
         tx = PayoutTransaction.objects.get(prestataire=self.prestataire)
         self.assertEqual(tx.statut, 'echec')
@@ -331,6 +359,69 @@ class MonetbilPayoutsTest(APITestCase):
         # Verify CommissionLog retrait is created
         log = CommissionLog.objects.get(prestataire=self.prestataire, type_operation='retrait')
         self.assertEqual(log.montant, Decimal('-4000.00'))
+
+    @override_settings(CAMPAY_WEBHOOK_SECRET='super-secret-webhook-key')
+    def test_webhook_with_valid_signature(self):
+        tx = PayoutTransaction.objects.create(
+            prestataire=self.prestataire,
+            montant=Decimal('4000.00'),
+            telephone_destination='237677123456',
+            reference_unique='tx_sig_success_123',
+            statut='en_cours'
+        )
+        self.prestataire.solde_commission -= Decimal('4000.00')
+        self.prestataire.save()
+
+        payload = {
+            'reference': 'tx_sig_success_123',
+            'status': 'success',
+            'message': 'Le transfert a été effectué'
+        }
+        body = json.dumps(payload).encode('utf-8')
+        signature = 'sha256=' + hmac.new(
+            b'super-secret-webhook-key',
+            body,
+            hashlib.sha256
+        ).hexdigest()
+
+        response = self.client.post(
+            self.webhook_url,
+            data=body,
+            content_type='application/json',
+            HTTP_X_CAMPAY_SIGNATURE=signature
+        )
+        self.assertEqual(response.status_code, 200)
+        tx.refresh_from_db()
+        self.assertEqual(tx.statut, 'succes')
+
+    @override_settings(CAMPAY_WEBHOOK_SECRET='super-secret-webhook-key')
+    def test_webhook_rejects_invalid_signature(self):
+        tx = PayoutTransaction.objects.create(
+            prestataire=self.prestataire,
+            montant=Decimal('4000.00'),
+            telephone_destination='237677123456',
+            reference_unique='tx_sig_fail_123',
+            statut='en_cours'
+        )
+        self.prestataire.solde_commission -= Decimal('4000.00')
+        self.prestataire.save()
+
+        payload = {
+            'reference': 'tx_sig_fail_123',
+            'status': 'success',
+            'message': 'Le transfert a été effectué'
+        }
+        body = json.dumps(payload).encode('utf-8')
+        signature = 'sha256=' + '0' * 64
+
+        response = self.client.post(
+            self.webhook_url,
+            data=body,
+            content_type='application/json',
+            HTTP_X_CAMPAY_SIGNATURE=signature
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.data['detail'], 'Signature webhook invalide.')
 
     def test_webhook_failure_notification_refunds_balance(self):
         # Create a pending transaction

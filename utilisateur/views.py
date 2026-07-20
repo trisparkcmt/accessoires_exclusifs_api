@@ -1039,6 +1039,7 @@ def validate_prestataire(request, pk):
         
         context = {
             'first_name': user.first_name,
+            'last_name': user.last_name,
             'taux_commission': prestataire.taux_commission,
             'reduction_client_pourcentage': prestataire.reduction_client_pourcentage,
             'code_promo': promo_code
@@ -1280,25 +1281,43 @@ def admin_global_stats(request):
     })
 
 
-#==============================Monetbil Payouts=====================
-
+#==============================Campay Payouts=====================
 import re
+from . import campay as campay_adapter
+import hmac
+import hashlib
+
+
+def _is_valid_campay_webhook_signature(request):
+    secret = getattr(settings, 'CAMPAY_WEBHOOK_SECRET', '')
+    if not secret:
+        return True
+
+    if request.method != 'POST':
+        return False
+
+    header_name = getattr(settings, 'CAMPAY_WEBHOOK_SIGNATURE_HEADER', 'X-Campay-Signature')
+    signature = request.headers.get(header_name) or request.META.get(f'HTTP_{header_name.upper().replace("-", "_")}')
+    if not signature:
+        return False
+
+    if signature.startswith('sha256='):
+        signature = signature.split('=', 1)[1]
+
+    expected = hmac.new(secret.encode('utf-8'), request.body or b'', hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
 
 def clean_cameroon_phone(phone):
     """
-    Nettoie et valide un numéro de téléphone pour Monetbil (Cameroun).
-    Retourne le format international à 12 chiffres sans le signe '+' (ex: 2376XXXXXXXX).
+    Nettoie et valide un numéro de téléphone pour Campay (Cameroun).
+    Retourne le format international sans '+', ex: '2376XXXXXXXX'.
     """
     if not phone:
         return None
-    # Ne garde que les chiffres
-    cleaned = re.sub(r'\D', '', phone)
-    # Si le numéro contient l'indicatif pays
+    cleaned = re.sub(r'\D', '', str(phone))
     if cleaned.startswith('237'):
-        if len(cleaned) == 12:
-            return cleaned
-        return None
-    # Si c'est un numéro à 9 chiffres, on ajoute l'indicatif pays
+        return cleaned if len(cleaned) >= 11 else None
     if len(cleaned) == 9:
         return f"237{cleaned}"
     return None
@@ -1308,46 +1327,50 @@ def clean_cameroon_phone(phone):
 @permission_classes([IsSuperadminOrActiveServeuse])
 def admin_prestataire_payout(request, pk):
     """
-    Initiation d'un virement mobile money vers un prestataire par l'administrateur
+    Initiation d'un virement mobile money vers un prestataire via Campay.
+    Utilise le numéro fourni dans le body (`telephone`) si présent, sinon le numéro du profil prestataire.
     """
     prestataire = get_object_or_404(Prestataire, pk=pk)
-    
-    # 1. Validation du montant
+
+    # 1. Validation du montant (et téléphone optionnel)
     serializer = PayoutRequestSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
     montant = serializer.validated_data['montant']
-    
-    # 2. Nettoyage et validation du numéro de téléphone
-    raw_phone = prestataire.user.telephone
+    override_phone = serializer.validated_data.get('telephone')
+    external_reference = serializer.validated_data.get('external_reference')
+    if external_reference:
+        external_reference = str(external_reference).strip() or None
+
+    if external_reference:
+        existing_tx = PayoutTransaction.objects.filter(reference_unique=external_reference).first()
+        if existing_tx:
+            return Response(PayoutTransactionSerializer(existing_tx).data, status=status.HTTP_200_OK)
+
+    # 2. Récupérer et nettoyer le numéro
+    raw_phone = override_phone or (prestataire.client.user.telephone if prestataire.client and prestataire.client.user else None)
     cleaned_phone = clean_cameroon_phone(raw_phone)
     if not cleaned_phone:
         return Response(
-            {"detail": f"Le numéro de téléphone du prestataire ({raw_phone}) n'est pas valide pour un virement Monetbil (Cameroun)."},
+            {"detail": f"Le numéro de téléphone du prestataire ({raw_phone}) n'est pas valide pour un virement Campay (Cameroun)."},
             status=status.HTTP_400_BAD_REQUEST
         )
-    
+
     # 3. Opération atomique pour vérifier le solde et débiter
     try:
         with transaction.atomic():
-            # Verrouiller le prestataire pour éviter les race conditions
             prestataire = Prestataire.objects.select_for_update().get(pk=prestataire.pk)
-            
             if prestataire.solde_commission < montant:
                 return Response(
                     {"detail": f"Solde insuffisant. Solde disponible : {prestataire.solde_commission}€, demandé : {montant}€."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            
-            # Débiter immédiatement le solde
+
             prestataire.solde_commission -= montant
             prestataire.save()
-            
-            # Générer une référence unique
-            ref_unique = f"payout_{uuid.uuid4().hex[:16]}"
-            
-            # Créer l'enregistrement de la transaction
+
+            ref_unique = external_reference or str(uuid.uuid4())
             payout_tx = PayoutTransaction.objects.create(
                 prestataire=prestataire,
                 montant=montant,
@@ -1357,82 +1380,47 @@ def admin_prestataire_payout(request, pk):
             )
     except Exception as e:
         return Response({"detail": f"Erreur lors de l'initiation en base de données : {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-    # 4. Appel à l'API Monetbil Payout (withdrawal)
-    # L'API Monetbil attend des montants entiers pour le FCFA (XAF).
+
+    # 4. Appel à Campay
     amount_xaf = int(montant)
-    
-    # URL de notification absolue pour le webhook
-    notify_url = request.build_absolute_uri('/api/v1/auth/payout/webhook/')
-    
-    payload = {
-        'service_key': settings.MONETBIL_SERVICE_KEY,
-        'service_secret': settings.MONETBIL_SERVICE_SECRET,
-        'phonenumber': cleaned_phone,
-        'amount': amount_xaf,
-        'processing_number': ref_unique,
-        'payout_notification_url': notify_url
-    }
-    
-    try:
-        response = requests.post(
-            f"{settings.MONETBIL_API_URL}/payouts/withdrawal",
-            json=payload,
-            timeout=15
-        )
-        response_data = response.json()
-    except requests.exceptions.RequestException as e:
-        # En cas d'erreur de communication, on recrédite le prestataire et on marque la transaction en échec
-        with transaction.atomic():
-            prestataire = Prestataire.objects.select_for_update().get(pk=prestataire.pk)
-            prestataire.solde_commission += montant
-            prestataire.save()
-            
-            payout_tx.statut = 'echec'
-            payout_tx.motif_echec = f"Erreur de connexion à Monetbil : {str(e)}"
-            payout_tx.date_finalisation = timezone.now()
-            payout_tx.save()
-            
-        return Response(
-            {"detail": "Impossible de contacter l'API Monetbil. Le solde du prestataire a été restitué.", "error": str(e)},
-            status=status.HTTP_502_BAD_GATEWAY
-        )
-    
-    # 5. Traitement de la réponse de Monetbil
-    if response.status_code in [200, 201] and response_data.get('success') is True:
-        # Succès de l'initiation (la transaction est en attente chez l'opérateur)
+    success, data, error = campay_adapter.payout_to_phone(cleaned_phone, amount_xaf, description=f"Payout {ref_unique}", external_reference=ref_unique)
+
+    if success:
+        # Succès d'initiation, la transaction est en attente chez Campay
         return Response(PayoutTransactionSerializer(payout_tx).data, status=status.HTTP_201_CREATED)
     else:
-        # Échec de l'initiation
-        err_msg = response_data.get('message') or f"Monetbil HTTP {response.status_code}"
+        # Échec : restituer le solde et marquer en échec
         with transaction.atomic():
-            prestataire = Prestataire.objects.select_for_update().get(pk=prestataire.pk)
-            prestataire.solde_commission += montant
-            prestataire.save()
-            
+            prest = Prestataire.objects.select_for_update().get(pk=prestataire.pk)
+            prest.solde_commission += montant
+            prest.save()
+
             payout_tx.statut = 'echec'
-            payout_tx.motif_echec = f"Rejet par Monetbil : {err_msg}"
+            payout_tx.motif_echec = error or 'Rejet par Campay'
             payout_tx.date_finalisation = timezone.now()
             payout_tx.save()
-            
-        return Response(
-            {"detail": f"Monetbil a rejeté l'opération : {err_msg}. Le solde du prestataire a été restitué."},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+
+        return Response({"detail": f"Campay a rejeté l'opération : {error}. Le solde du prestataire a été restitué."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST', 'GET'])
 @permission_classes([AllowAny])
-def monetbil_payout_webhook(request):
+def campay_payout_webhook(request):
     """
-    Webhook public appelé par Monetbil pour notifier du statut final d'un virement (succès/échec)
+    Webhook public appelé par Campay pour notifier du statut final d'un virement (succès/échec)
     """
+    if getattr(settings, 'CAMPAY_WEBHOOK_SECRET', ''):
+        if request.method != 'POST':
+            return Response({"detail": "Webhook Campay signé doit être envoyé en POST."}, status=status.HTTP_403_FORBIDDEN)
+        if not _is_valid_campay_webhook_signature(request):
+            return Response({"detail": "Signature webhook invalide."}, status=status.HTTP_403_FORBIDDEN)
+
     # Les données peuvent être passées en POST ou en GET
     data = request.data if request.method == 'POST' else request.query_params
-    
-    processing_number = data.get('processing_number') or data.get('payment_ref')
-    status_val = data.get('status')
-    message = data.get('message') or data.get('reason')
+    # Campay envoie généralement 'reference' et 'status' (SUCCESSFUL / FAILED / PENDING)
+    processing_number = data.get('processing_number') or data.get('payment_ref') or data.get('reference')
+    status_val = (data.get('status') or '').lower()
+    message = data.get('message') or data.get('reason') or data.get('detail')
     
     if not processing_number:
         return Response({"detail": "processing_number manquant"}, status=status.HTTP_400_BAD_REQUEST)
@@ -1452,25 +1440,24 @@ def monetbil_payout_webhook(request):
             if payout_tx.statut != 'en_cours':
                 return Response({"detail": "Transaction déjà traitée par un autre thread"}, status=status.HTTP_200_OK)
             
-            if status_val == 'success':
+            # Campay status mapping: SUCCESSFUL / FAILED / PENDING
+            if status_val in ['success', 'successful', 'successful'.lower(), 'successful'.upper(), 'successful'] or status_val == 'successful' or status_val == 'successfull':
                 payout_tx.statut = 'succes'
                 payout_tx.date_finalisation = timezone.now()
                 payout_tx.save()
-                
-                # Enregistrer le retrait dans l'historique financier du prestataire
+
                 CommissionLog.objects.create(
                     prestataire=payout_tx.prestataire,
                     type_operation='retrait',
                     montant=-payout_tx.montant,
-                    description=f"Retrait de commission Mobile Money réussi vers {payout_tx.telephone_destination} (Ref: {payout_tx.reference_unique})."
+                    description=f"Retrait de commission réussi vers {payout_tx.telephone_destination} (Ref: {payout_tx.reference_unique})."
                 )
-            elif status_val in ['failed', 'cancelled']:
+            elif status_val in ['failed', 'cancelled', 'failed'.lower(), 'failed'.upper()]:
                 payout_tx.statut = 'echec'
                 payout_tx.motif_echec = message or f"Échec notifié par le webhook (Status: {status_val})"
                 payout_tx.date_finalisation = timezone.now()
                 payout_tx.save()
-                
-                # Restituer le solde au prestataire
+
                 prestataire = Prestataire.objects.select_for_update().get(pk=payout_tx.prestataire.pk)
                 prestataire.solde_commission += payout_tx.montant
                 prestataire.save()

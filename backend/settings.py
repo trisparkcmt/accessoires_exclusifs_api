@@ -382,10 +382,15 @@ OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen2.5:3b')
 OLLAMA_EMBEDDING_MODEL = os.getenv('OLLAMA_EMBEDDING_MODEL', 'all-minilm')
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv('OLLAMA_TIMEOUT_SECONDS', '30'))
 
-# Configuration Monetbil (Virement/Payout)
-MONETBIL_SERVICE_KEY = os.getenv('MONETBIL_SERVICE_KEY', 'NhlyzHMYo961mQZ3uCQEUX2xUGUaFhUm')
-MONETBIL_SERVICE_SECRET = os.getenv('MONETBIL_SERVICE_SECRET', 'uhvzMBmTvIHR2AYMZdZHeAid3G3SfFqos1fj6TXzkABOZ9e8BVLCjSUcZqLuPXkl')
-MONETBIL_API_URL = os.getenv('MONETBIL_API_URL', 'https://api.monetbil.com/v1')
+# Configuration Campay (Payouts vers prestataires)
+# Vous pouvez fournir soit un token permanent via CAMPAY_API_TOKEN,
+# soit des identifiants APP (CAMPAY_USERNAME / CAMPAY_PASSWORD) pour obtenir un token temporaire.
+CAMPAY_API_URL = os.getenv('CAMPAY_API_URL', 'https://demo.campay.net/api')
+CAMPAY_API_TOKEN = os.getenv('CAMPAY_API_TOKEN', '')
+CAMPAY_USERNAME = os.getenv('CAMPAY_USERNAME', '')
+CAMPAY_PASSWORD = os.getenv('CAMPAY_PASSWORD', '')
+CAMPAY_WEBHOOK_SECRET = os.getenv('CAMPAY_WEBHOOK_SECRET', '')
+CAMPAY_WEBHOOK_SIGNATURE_HEADER = os.getenv('CAMPAY_WEBHOOK_SIGNATURE_HEADER', 'X-Campay-Signature')
 
 #gerer les images 
 MEDIA_URL  = '/media/'

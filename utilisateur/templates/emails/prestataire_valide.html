@@ -9,13 +9,7 @@
         .header h1 { margin: 0; letter-spacing: 2px; text-transform: uppercase; font-size: 24px; }
         .content { padding: 40px; color: #333333; line-height: 1.6; }
         .content h2 { color: #1a1a1a; margin-top: 0; }
-        .promo-box { background-color: #f9f9f9; border: 2px dashed #d4af37; padding: 20px; text-align: center; margin: 30px 0; border-radius: 8px; }
-        .promo-code { font-size: 32px; font-weight: bold; color: #1a1a1a; letter-spacing: 5px; }
-        .info-grid { display: flex; justify-content: space-between; border-top: 1px solid #eeeeee; padding-top: 20px; margin-top: 20px; }
-        .info-item { text-align: center; flex: 1; }
-        .info-value { font-size: 20px; font-weight: bold; color: #d4af37; }
         .footer { background-color: #f9f9f9; padding: 20px; text-align: center; font-size: 12px; color: #999999; }
-        .button { display: inline-block; padding: 15px 30px; background-color: #d4af37; color: #ffffff; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 20px; }
     </style>
 </head>
 <body>
@@ -24,37 +18,17 @@
             <h1>Accessoire Exclusif</h1>
         </div>
         <div class="content">
-            <h2>Félicitations, {{ first_name }} !</h2>
-            <p>Nous avons le plaisir de vous annoncer que votre demande de partenariat a été <strong>validée avec succès</strong>. Vous faites désormais partie de notre cercle exclusif de prestataires.</p>
-            
-            <p>Voici vos conditions de partenariat :</p>
-            
-            <div class="info-grid">
-                <div class="info-item">
-                    <p style="margin:0; color:#999;">Votre commission</p>
-                    <div class="info-value">{{ taux_commission }}%</div>
-                </div>
-                <div class="info-item">
-                    <p style="margin:0; color:#999;">Réduction client</p>
-                    <div class="info-value">{{ reduction_client_pourcentage }}%</div>
-                </div>
-            </div>
-
-            <p>Pour commencer à générer des revenus, partagez votre code promo personnel avec vos clients :</p>
-            
-            <div class="promo-box">
-                <div class="promo-code">{{ code_promo }}</div>
-            </div>
-
-            <p>Chaque utilisation de ce code par un client créditera automatiquement votre solde de commission.</p>
-            
-            <center>
-                <a href="https://votre-dashboard-admin.com" class="button">Accéder à mon Dashboard</a>
-            </center>
+            <p>Accessoires exclusifs 10 juillet, 15:55</p>
+            <p>Monsieur / Madame {{ last_name }},</p>
+            <p>C'est avec un grand plaisir que nous vous annonçons l'acceptation officielle de votre candidature au sein de Maison Accessoires Exclusifs. Vous êtes désormais nommé(e) Représentant(e) Indépendant(e) et intégré(e) à notre cercle restreint de partenaires privilégiés.</p>
+            <p>En tant que membre de notre réseau d'excellence, vous bénéficierez d'un accompagnement personnalisé, d'un accès prioritaire à nos collections et d'opportunités commerciales exclusives. Vous trouverez ci-dessous les principales modalités de votre partenariat :</p>
+            <p>[Insérer ici la liste des conditions de partenariat]</p>
+            <p>Nous vous remercions pour la confiance que vous témoignez à notre maison et nous réjouissons de construire ensemble une collaboration fructueuse et distinguée.</p>
+            <p>Cordialement,</p>
+            <p>L'Équipe de Maison Accessoires Exclusifs</p>
         </div>
         <div class="footer">
-            &copy; 2026 Accessoire Exclusif. Tous droits réservés.<br>
-            Ceci est un message automatique, merci de ne pas y répondre.
+            &copy; 2026 Accessoire Exclusif. Tous droits réservés.
         </div>
     </div>
 </body>

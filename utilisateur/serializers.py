@@ -669,6 +669,8 @@ from decimal import Decimal
 class PayoutRequestSerializer(serializers.Serializer):
     """Serializer pour valider une demande de virement admin"""
     montant = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
+    telephone = serializers.CharField(required=False, allow_blank=True)
+    external_reference = serializers.CharField(required=False, allow_blank=True)
 
 
 class LivreurSerializer(serializers.ModelSerializer):

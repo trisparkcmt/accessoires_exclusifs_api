@@ -8,7 +8,7 @@ from utilisateur.views import (
     admin_prestataires_list, admin_prestataire_update,
     admin_global_stats,
     # Payouts
-    admin_prestataire_payout, admin_payouts_list, monetbil_payout_webhook,
+    admin_prestataire_payout, admin_payouts_list, campay_payout_webhook,
     # Livreur & Admin Delivery views
     livreur_dashboard, livreur_commandes_list, livreur_update_delivery_status,
     admin_livreurs_list, admin_promote_to_livreur, admin_update_livreur,
@@ -50,8 +50,8 @@ urlpatterns = [
     path('prestataire/historique/', prestataire_finance_history, name='prestataire-historique'),
     path('prestataire/payouts/', prestataire_payouts_list, name='prestataire-payouts'),
 
-    # Webhook public pour Monetbil Payouts
-    path('payout/webhook/', monetbil_payout_webhook, name='monetbil-payout-webhook'),
+    # Webhook public pour Campay Payouts
+    path('payout/webhook/', campay_payout_webhook, name='campay-payout-webhook'),
 
     # Livreur Endpoints
     path('livreur/dashboard/', livreur_dashboard, name='livreur-dashboard'),

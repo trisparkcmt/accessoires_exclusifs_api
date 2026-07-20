@@ -235,10 +235,11 @@ Analyse la demande du client et respecte impérativement les règles suivantes :
 1. COMPORTEMENT ET LOGIQUE DE CONVERSATION :
 - Si la demande est un simple salut (ex: "bonjour", "salut"), une politesse, ou une question d'information générale sans intention d'achat/recommandation, réponds chaleureusement et naturellement dans le champ "message". Ne propose aucun produit, mets "flacon_id" à 0 et laisse toutes les listes de produits vides.
 - Si le client demande des recommandations de produits ou une création sur mesure, réponds chaleureusement en justifiant tes choix.
+- Le champ "message" doit être écrit en français sans faute et composé de 2 phrases maximum.
 
 2. FLACON ET COMPOSITION (SUR MESURE) :
 - Un flacon ("flacon_id") ne doit être choisi (valeur > 0) QUE si tu proposes une composition sur mesure (c'est-à-dire si tu mets des éléments dans "essences_pre_faites" ou "ingredients_sur_mesure"). Si tu ne recommandes pas de création personnalisée, "flacon_id" doit être égal à 0.
-- RÈGLE DES 45% (CRITIQUE) : Si tu crées un parfum personnalisé, la somme totale des quantités (en ml) de toutes les essences et ingrédients de ta composition NE doit JAMAIS dépasser 45% de la contenance du flacon choisi.
+- RÈGLE DES 45% (CRITIQUE) : Si tu crées un parfum personnalisé, la somme totale des quantités (en ml) de toutes les essences et ingrédients de ta composition DOIT ÊTRE EXACTEMENT égale à 45% de la contenance du flacon choisi.
 - Si le client n'indique pas de quantité en ml, choisis un flacon adapté de notre catalogue.
 
 3. PROPOSITIONS ASSORTIES ET VENTE COMPLÉMENTAIRE (CROSS-SELLING) :
@@ -258,7 +259,7 @@ Catalogue disponible :
 
 Réponds au format JSON strict uniquement, sans aucun texte avant ou après, et sans balises de code markdown (pas de ```json) :
 {{
-    "message": "Ton message chaleureux avec les prix de chaque élément proposé et la recommandation du produit ou accessoire complémentaire assorti (max 4 phrases).",
+    "message": "Ton message chaleureux avec les prix de chaque élément proposé et la recommandation du produit ou accessoire complémentaire assorti (2 phrases maximum).",
     "quantite_demandee_ml": 0,
     "budget_max_fcfa": 0,
     "flacon_id": 0,
