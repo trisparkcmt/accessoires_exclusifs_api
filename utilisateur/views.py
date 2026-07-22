@@ -1383,10 +1383,45 @@ def admin_prestataire_payout(request, pk):
 
     # 4. Appel à Campay
     amount_xaf = int(montant)
-    success, data, error = campay_adapter.payout_to_phone(cleaned_phone, amount_xaf, description=f"Payout {ref_unique}", external_reference=ref_unique)
+    success, campay_data, error = campay_adapter.payout_to_phone(
+        cleaned_phone, amount_xaf,
+        description=f"Payout prestataire {prestataire.pk}",
+        external_reference=ref_unique
+    )
 
     if success:
-        # Succès d'initiation, la transaction est en attente chez Campay
+        # Stocker le processing_number de Campay pour retrouver la transaction dans le webhook
+        campay_pn = (campay_data or {}).get('processing_number') or (campay_data or {}).get('reference')
+        if campay_pn:
+            payout_tx.campay_processing_number = campay_pn
+
+        # Vérifier si Campay a déjà donné un statut final dans la réponse initiale
+        # (cas fréquent avec les numéros de test)
+        campay_status = (campay_data or {}).get('status', '').upper()
+        if campay_status == 'SUCCESSFUL':
+            payout_tx.statut = 'succes'
+            payout_tx.date_finalisation = timezone.now()
+            payout_tx.save()
+            CommissionLog.objects.create(
+                prestataire=payout_tx.prestataire,
+                type_operation='retrait',
+                montant=-payout_tx.montant,
+                description=f"Retrait réussi vers {payout_tx.telephone_destination} (Ref: {ref_unique})."
+            )
+        elif campay_status in ('FAILED', 'CANCELLED'):
+            payout_tx.statut = 'echec'
+            payout_tx.motif_echec = (campay_data or {}).get('message') or 'Rejeté par Campay'
+            payout_tx.date_finalisation = timezone.now()
+            payout_tx.save()
+            # Restituer le solde
+            with transaction.atomic():
+                prest = Prestataire.objects.select_for_update().get(pk=prestataire.pk)
+                prest.solde_commission += montant
+                prest.save()
+        else:
+            # Statut PENDING ou inconnu : en attente du webhook
+            payout_tx.save()
+
         return Response(PayoutTransactionSerializer(payout_tx).data, status=status.HTTP_201_CREATED)
     else:
         # Échec : restituer le solde et marquer en échec
@@ -1407,7 +1442,8 @@ def admin_prestataire_payout(request, pk):
 @permission_classes([AllowAny])
 def campay_payout_webhook(request):
     """
-    Webhook public appelé par Campay pour notifier du statut final d'un virement (succès/échec)
+    Webhook public appelé par Campay pour notifier du statut final d'un virement.
+    Campay envoie : processing_number (son ID interne), external_reference (notre UUID), status.
     """
     if getattr(settings, 'CAMPAY_WEBHOOK_SECRET', ''):
         if request.method != 'POST':
@@ -1415,59 +1451,119 @@ def campay_payout_webhook(request):
         if not _is_valid_campay_webhook_signature(request):
             return Response({"detail": "Signature webhook invalide."}, status=status.HTTP_403_FORBIDDEN)
 
-    # Les données peuvent être passées en POST ou en GET
     data = request.data if request.method == 'POST' else request.query_params
-    # Campay envoie généralement 'reference' et 'status' (SUCCESSFUL / FAILED / PENDING)
-    processing_number = data.get('processing_number') or data.get('payment_ref') or data.get('reference')
-    status_val = (data.get('status') or '').lower()
-    message = data.get('message') or data.get('reason') or data.get('detail')
-    
-    if not processing_number:
-        return Response({"detail": "processing_number manquant"}, status=status.HTTP_400_BAD_REQUEST)
-        
-    try:
-        payout_tx = PayoutTransaction.objects.get(reference_unique=processing_number)
-    except PayoutTransaction.DoesNotExist:
+
+    # Campay envoie : processing_number (ID Campay interne) + external_reference (notre UUID)
+    campay_pn     = data.get('processing_number') or data.get('payment_ref')
+    external_ref  = data.get('external_reference') or data.get('reference')
+    status_val    = (data.get('status') or '').upper()   # SUCCESSFUL / FAILED / PENDING
+    message       = data.get('message') or data.get('reason') or data.get('detail')
+
+    if not campay_pn and not external_ref:
+        return Response({"detail": "processing_number ou external_reference manquant"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Chercher la transaction :
+    # 1) par campay_processing_number (le plus fiable)
+    # 2) par notre UUID (external_reference / reference_unique)
+    payout_tx = None
+    if campay_pn:
+        payout_tx = PayoutTransaction.objects.filter(campay_processing_number=campay_pn).first()
+    if payout_tx is None and external_ref:
+        payout_tx = PayoutTransaction.objects.filter(reference_unique=external_ref).first()
+    if payout_tx is None and campay_pn:
+        # Dernier recours : certaines intégrations stockent le PN comme reference_unique
+        payout_tx = PayoutTransaction.objects.filter(reference_unique=campay_pn).first()
+    if payout_tx is None:
         return Response({"detail": "Transaction non trouvée"}, status=status.HTTP_404_NOT_FOUND)
-        
+
     if payout_tx.statut != 'en_cours':
-        return Response({"detail": f"Transaction déjà finalisée avec le statut : {payout_tx.statut}"}, status=status.HTTP_200_OK)
-        
+        return Response({"detail": f"Transaction déjà finalisée : {payout_tx.statut}"}, status=status.HTTP_200_OK)
+
     try:
         with transaction.atomic():
             payout_tx = PayoutTransaction.objects.select_for_update().get(pk=payout_tx.pk)
-            
+
             if payout_tx.statut != 'en_cours':
-                return Response({"detail": "Transaction déjà traitée par un autre thread"}, status=status.HTTP_200_OK)
-            
-            # Campay status mapping: SUCCESSFUL / FAILED / PENDING
-            if status_val in ['success', 'successful', 'successful'.lower(), 'successful'.upper(), 'successful'] or status_val == 'successful' or status_val == 'successfull':
+                return Response({"detail": "Transaction déjà traitée"}, status=status.HTTP_200_OK)
+
+            # Mettre à jour le processing_number si on ne l'avait pas encore
+            if campay_pn and not payout_tx.campay_processing_number:
+                payout_tx.campay_processing_number = campay_pn
+
+            if status_val in ('SUCCESSFUL', 'SUCCESS'):
                 payout_tx.statut = 'succes'
                 payout_tx.date_finalisation = timezone.now()
                 payout_tx.save()
-
                 CommissionLog.objects.create(
                     prestataire=payout_tx.prestataire,
                     type_operation='retrait',
                     montant=-payout_tx.montant,
-                    description=f"Retrait de commission réussi vers {payout_tx.telephone_destination} (Ref: {payout_tx.reference_unique})."
+                    description=f"Retrait réussi vers {payout_tx.telephone_destination} (Ref: {payout_tx.reference_unique})."
                 )
-            elif status_val in ['failed', 'cancelled', 'failed'.lower(), 'failed'.upper()]:
+            elif status_val in ('FAILED', 'CANCELLED', 'REJECTED'):
                 payout_tx.statut = 'echec'
-                payout_tx.motif_echec = message or f"Échec notifié par le webhook (Status: {status_val})"
+                payout_tx.motif_echec = message or f"Échec notifié par Campay (status={status_val})"
                 payout_tx.date_finalisation = timezone.now()
                 payout_tx.save()
-
                 prestataire = Prestataire.objects.select_for_update().get(pk=payout_tx.prestataire.pk)
                 prestataire.solde_commission += payout_tx.montant
                 prestataire.save()
             else:
-                return Response({"detail": f"Statut inconnu ignoré : {status_val}"}, status=status.HTTP_400_BAD_REQUEST)
-                
+                # PENDING ou autre statut intermédiaire : ne rien faire
+                if campay_pn and not payout_tx.campay_processing_number:
+                    payout_tx.save()  # Juste sauvegarder le processing_number
+                return Response({"detail": f"Statut intermédiaire ignoré : {status_val}"}, status=status.HTTP_200_OK)
+
     except Exception as e:
-        return Response({"detail": f"Erreur interne lors du traitement : {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+        return Response({"detail": f"Erreur interne : {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     return Response({"detail": "Webhook traité avec succès"}, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsSuperadmin])
+def admin_poll_campay_payout(request, pk):
+    """
+    Endpoint pour interroger manuellement Campay sur une transaction spécifique.
+    """
+    payout_tx = get_object_or_404(PayoutTransaction, pk=pk)
+    if not payout_tx.campay_processing_number:
+        return Response({"detail": "Aucun processing_number Campay associé."}, status=status.HTTP_400_BAD_REQUEST)
+        
+    success, campay_data, error = campay_adapter.get_transaction_status(payout_tx.campay_processing_number)
+    
+    if not success:
+        return Response({"detail": f"Erreur lors de l'interrogation : {error}"}, status=status.HTTP_400_BAD_REQUEST)
+        
+    # Appeler la logique de traitement en interne (via le même flow que le webhook)
+    # Pour simplifier, on peut réutiliser une fonction partagée ou dupliquer un peu la logique
+    # Ici, nous mettons simplement à jour le statut en fonction du résultat
+    status_val = (campay_data or {}).get('status', '').upper()
+    message = (campay_data or {}).get('message') or (campay_data or {}).get('reason')
+    
+    if status_val in ('SUCCESSFUL', 'SUCCESS') and payout_tx.statut == 'en_cours':
+        with transaction.atomic():
+            payout_tx.statut = 'succes'
+            payout_tx.date_finalisation = timezone.now()
+            payout_tx.save()
+            CommissionLog.objects.create(
+                prestataire=payout_tx.prestataire,
+                type_operation='retrait',
+                montant=-payout_tx.montant,
+                description=f"Retrait via polling réussi vers {payout_tx.telephone_destination}."
+            )
+            
+    elif status_val in ('FAILED', 'CANCELLED', 'REJECTED') and payout_tx.statut == 'en_cours':
+        with transaction.atomic():
+            payout_tx.statut = 'echec'
+            payout_tx.motif_echec = message or "Échec notifié par Campay"
+            payout_tx.date_finalisation = timezone.now()
+            payout_tx.save()
+            prest = Prestataire.objects.select_for_update().get(pk=payout_tx.prestataire.pk)
+            prest.solde_commission += payout_tx.montant
+            prest.save()
+            
+    return Response({"status": payout_tx.statut, "campay_status": status_val, "detail": message})
 
 
 @api_view(['GET'])
@@ -1875,7 +1971,10 @@ def admin_promote_to_serveuse(request):
             first_name=first_name,
             last_name=last_name
         )
-        client = Client.objects.create(user=user, genre=genre)
+        client = user.client
+        if genre:
+            client.genre = genre
+            client.save()
         serveuse = Serveuse.objects.create(client=client, actif=True, date_embauche=date_embauche)
         
     serializer = ServeusesSerializer(serveuse)

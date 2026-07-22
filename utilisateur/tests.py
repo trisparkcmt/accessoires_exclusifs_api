@@ -689,7 +689,6 @@ class LivreurEndpointsTest(APITestCase):
             total_ttc=Decimal('5500.00'),
             livraison_nom_complet='Jean Dupont',
             livraison_telephone='+237600000003',
-            methode_paiement='cash',
             statut_paiement='en_attente'
         )
 
@@ -702,7 +701,6 @@ class LivreurEndpointsTest(APITestCase):
             total_ttc=Decimal('10500.00'),
             livraison_nom_complet='Jean Dupont',
             livraison_telephone='+237600000003',
-            methode_paiement='mobile_money',
             statut_paiement='en_attente'
         )
 
@@ -754,7 +752,7 @@ class LivreurEndpointsTest(APITestCase):
         self.assertEqual(response.status_code, 403)
 
         # Try updating status
-        response = self.client.post(
+        response = self.client.patch(
             f'/api/v1/auth/livreur/livraisons/{self.commande_cash.pk}/statut/',
             {'action': 'livrer'},
             format='json'
@@ -794,7 +792,7 @@ class LivreurEndpointsTest(APITestCase):
         self.client.force_authenticate(user=self.livreur_user)
 
         # Complete delivery
-        response = self.client.post(
+        response = self.client.patch(
             f'/api/v1/auth/livreur/livraisons/{self.commande_cash.pk}/statut/',
             {'action': 'livrer'},
             format='json'
@@ -819,7 +817,7 @@ class LivreurEndpointsTest(APITestCase):
         self.client.force_authenticate(user=self.livreur_user)
 
         # Complete delivery
-        response = self.client.post(
+        response = self.client.patch(
             f'/api/v1/auth/livreur/livraisons/{self.commande_momo.pk}/statut/',
             {'action': 'livrer'},
             format='json'
@@ -840,7 +838,7 @@ class LivreurEndpointsTest(APITestCase):
         self.client.force_authenticate(user=self.livreur_user)
 
         # Failed delivery attempt without motif -> 400
-        response = self.client.post(
+        response = self.client.patch(
             f'/api/v1/auth/livreur/livraisons/{self.commande_cash.pk}/statut/',
             {'action': 'echouer'},
             format='json'
@@ -848,7 +846,7 @@ class LivreurEndpointsTest(APITestCase):
         self.assertEqual(response.status_code, 400)
 
         # Failed delivery attempt with motif
-        response = self.client.post(
+        response = self.client.patch(
             f'/api/v1/auth/livreur/livraisons/{self.commande_cash.pk}/statut/',
             {'action': 'echouer', 'motif': 'Client injoignable par téléphone'},
             format='json'

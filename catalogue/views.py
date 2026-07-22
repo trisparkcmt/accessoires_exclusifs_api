@@ -1,7 +1,10 @@
 # views.py
+from decimal import Decimal
+from datetime import datetime, date, time
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets
 from rest_framework.permissions import AllowAny
+from rest_framework import status
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -18,7 +21,7 @@ from drf_spectacular.utils import (
 )
 from drf_spectacular.types import OpenApiTypes
 from rest_framework.permissions import IsAuthenticated
-from orders.models import CommandeLigneAccessoire
+from orders.models import CommandeLigneAccessoire, CommandeLigneParfum, CommandeProduitFiniEssence
 from .permissions import IsAdminOrReadOnly, IsAdmin, IsAdminOrServeuse, IsAdminOrServeuseOrReadOnly
 
 from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Flacon, Favori, Ingredient, ProduitFiniEssence, Tag, TypeAccessoire, TypeFlacon, NotificationCatalogue, MouvementStock
@@ -460,6 +463,227 @@ class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
         if self.request.user.is_staff or is_active_serveuse(self.request.user):
             return ProduitFiniEssenceSerializer
         return ProduitFiniEssencePublicSerializer
+
+
+class BeneficesViewSet(viewsets.ViewSet):
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
+
+    @extend_schema(
+        summary="Calcul des bénéfices",
+        description="Retourne un résumé des bénéfices globaux, par type de produit, par essence et par lot pour le catalogue.",
+        tags=["Bénéfices"],
+        parameters=[
+            OpenApiParameter(name="start_date", type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description="Date de début de la période (YYYY-MM-DD ou ISO 8601)", required=False),
+            OpenApiParameter(name="end_date", type=OpenApiTypes.STR, location=OpenApiParameter.QUERY, description="Date de fin de la période (YYYY-MM-DD ou ISO 8601)", required=False),
+        ],
+        responses={200: {"type": "object"}},
+    )
+    def list(self, request, *args, **kwargs):
+        def parse_date(value):
+            if not value:
+                return None
+            if value.endswith('Z'):
+                value = value[:-1] + '+00:00'
+            try:
+                parsed = datetime.fromisoformat(value)
+            except ValueError:
+                try:
+                    parsed = datetime.combine(date.fromisoformat(value), time.min)
+                except ValueError:
+                    return None
+            if parsed.tzinfo is None:
+                parsed = timezone.make_aware(parsed, timezone.utc)
+            return parsed
+
+        start_date = parse_date(request.query_params.get('start_date'))
+        end_date = parse_date(request.query_params.get('end_date'))
+
+        if start_date and end_date and start_date > end_date:
+            return Response({"detail": "start_date doit être inférieur ou égal à end_date"}, status=status.HTTP_400_BAD_REQUEST)
+
+        def date_range_filter(queryset, field_name):
+            if not start_date and not end_date:
+                return queryset
+            if start_date and end_date:
+                return queryset.filter(**{f'{field_name}__range': [start_date, end_date]})
+            if start_date:
+                return queryset.filter(**{f'{field_name}__gte': start_date})
+            return queryset.filter(**{f'{field_name}__lte': end_date})
+
+        def to_decimal(value):
+            return value if isinstance(value, Decimal) else Decimal(str(value or 0))
+
+        # Bénéfices par type de produits à partir des lignes de commande
+        type_groups = {}
+        for ligne in CommandeLigneParfum.objects.select_related('commande', 'parfum'):
+            if not ligne.commande:
+                continue
+            if start_date or end_date:
+                if start_date and ligne.commande.date_creation < start_date:
+                    continue
+                if end_date and ligne.commande.date_creation > end_date:
+                    continue
+            key = 'parfum'
+            entry = type_groups.setdefault(key, {'type': key, 'nombre_articles': 0, 'chiffre_affaires': Decimal('0'), 'cout_achat': Decimal('0'), 'benefice': Decimal('0')})
+            vente = to_decimal(ligne.sous_total)
+            cout = to_decimal(ligne.prix_achat_total_snapshot or (ligne.parfum.prix_achat * ligne.quantite if ligne.parfum and ligne.parfum.prix_achat else 0))
+            entry['nombre_articles'] += ligne.quantite
+            entry['chiffre_affaires'] += vente
+            entry['cout_achat'] += cout
+            entry['benefice'] += vente - cout
+
+        for ligne in CommandeLigneAccessoire.objects.select_related('commande', 'accessoire'):
+            if not ligne.commande:
+                continue
+            if start_date or end_date:
+                if start_date and ligne.commande.date_creation < start_date:
+                    continue
+                if end_date and ligne.commande.date_creation > end_date:
+                    continue
+            key = 'accessoire'
+            entry = type_groups.setdefault(key, {'type': key, 'nombre_articles': 0, 'chiffre_affaires': Decimal('0'), 'cout_achat': Decimal('0'), 'benefice': Decimal('0')})
+            vente = to_decimal(ligne.sous_total)
+            cout = to_decimal(ligne.prix_achat_total_snapshot or (ligne.accessoire.prix_achat * ligne.quantite if ligne.accessoire and ligne.accessoire.prix_achat else 0))
+            entry['nombre_articles'] += ligne.quantite
+            entry['chiffre_affaires'] += vente
+            entry['cout_achat'] += cout
+            entry['benefice'] += vente - cout
+
+        for ligne in CommandeProduitFiniEssence.objects.select_related('commande', 'produit_fini_essence'):
+            if not ligne.commande:
+                continue
+            if start_date or end_date:
+                if start_date and ligne.commande.date_creation < start_date:
+                    continue
+                if end_date and ligne.commande.date_creation > end_date:
+                    continue
+            key = 'produit_fini_essence'
+            entry = type_groups.setdefault(key, {'type': key, 'nombre_articles': 0, 'chiffre_affaires': Decimal('0'), 'cout_achat': Decimal('0'), 'benefice': Decimal('0')})
+            vente = to_decimal(ligne.sous_total)
+            cout = to_decimal(ligne.prix_achat_total_snapshot)
+            entry['nombre_articles'] += ligne.quantite
+            entry['chiffre_affaires'] += vente
+            entry['cout_achat'] += cout
+            entry['benefice'] += vente - cout
+
+        benefices_par_type = []
+        for entry in type_groups.values():
+            chiffre_affaires = entry['chiffre_affaires']
+            benefice = entry['benefice']
+            marge_percent = ((benefice / chiffre_affaires) * 100) if chiffre_affaires else 0
+            benefices_par_type.append({
+                'type': entry['type'],
+                'nombre_articles': entry['nombre_articles'],
+                'chiffre_affaires': str(chiffre_affaires.quantize(Decimal('0.01'))),
+                'cout_achat': str(entry['cout_achat'].quantize(Decimal('0.01'))),
+                'benefice': str(benefice.quantize(Decimal('0.01'))),
+                'marge_percent': round(float(marge_percent), 2),
+            })
+
+        produits = []
+        for parfum in Parfum.objects.filter(actif=True).select_related('categorie'):
+            prix_vente = parfum.prix_promotionnel_effectif or parfum.prix_unitaire
+            prix_achat = parfum.prix_achat or Decimal('0')
+            benefice = prix_vente - prix_achat
+            marge = ((benefice / prix_vente) * 100) if prix_vente else 0
+            produits.append({
+                'type': 'parfum',
+                'id': parfum.id,
+                'nom': parfum.nom,
+                'prix_vente': str(prix_vente.quantize(Decimal('0.01'))),
+                'prix_achat': str(prix_achat.quantize(Decimal('0.01'))),
+                'benefice': str(benefice.quantize(Decimal('0.01'))),
+                'marge_percent': round(float(marge), 2),
+            })
+
+        lots = []
+        for lot in LotEssence.objects.filter(actif=True).select_related('essence'):
+            qs = lot.consommations.all()
+            if start_date or end_date:
+                qs = qs.filter(date_consommation__range=[start_date, end_date]) if start_date and end_date else (
+                    qs.filter(date_consommation__gte=start_date) if start_date else qs.filter(date_consommation__lte=end_date)
+                )
+            if lot.prix_achat_par_ml and lot.quantite_initiale_ml:
+                cout_achat_total = lot.quantite_initiale_ml * lot.prix_achat_par_ml
+            else:
+                cout_achat_total = Decimal('0')
+            ca = Decimal('0')
+            for consommation in qs:
+                ca += to_decimal(consommation.prix_vente_attribue)
+            benefice = ca - cout_achat_total
+            lots.append({
+                'type': 'lot_essence',
+                'id': lot.id,
+                'essence': lot.essence.nom_complet,
+                'prix_achat_par_ml': str(lot.prix_achat_par_ml.quantize(Decimal('0.01'))),
+                'cout_achat_total': str(cout_achat_total.quantize(Decimal('0.01'))),
+                'chiffre_affaires_genere': str(ca.quantize(Decimal('0.01'))),
+                'benefice': str(benefice.quantize(Decimal('0.01'))),
+            })
+
+        # Bénéfices par essence à partir des consommations de lots
+        essence_groups = {}
+        for lot in LotEssence.objects.filter(actif=True).select_related('essence'):
+            qs = lot.consommations.all()
+            if start_date or end_date:
+                qs = qs.filter(date_consommation__range=[start_date, end_date]) if start_date and end_date else (
+                    qs.filter(date_consommation__gte=start_date) if start_date else qs.filter(date_consommation__lte=end_date)
+                )
+            if not qs.exists():
+                continue
+            quantite_consommee = Decimal('0')
+            ca = Decimal('0')
+            for consommation in qs:
+                quantite_consommee += to_decimal(consommation.quantite_ml)
+                ca += to_decimal(consommation.prix_vente_attribue)
+            cout = quantite_consommee * to_decimal(lot.prix_achat_par_ml)
+            benefice = ca - cout
+            key = lot.essence.id
+            entry = essence_groups.setdefault(key, {
+                'essence_id': lot.essence.id,
+                'essence': lot.essence.nom_complet,
+                'quantite_consommee_ml': Decimal('0'),
+                'chiffre_affaires': Decimal('0'),
+                'cout_achat': Decimal('0'),
+                'benefice': Decimal('0'),
+            })
+            entry['quantite_consommee_ml'] += quantite_consommee
+            entry['chiffre_affaires'] += ca
+            entry['cout_achat'] += cout
+            entry['benefice'] += benefice
+
+        benefices_par_essence = []
+        for entry in essence_groups.values():
+            chiffre_affaires = entry['chiffre_affaires']
+            benefice = entry['benefice']
+            marge_percent = ((benefice / chiffre_affaires) * 100) if chiffre_affaires else 0
+            benefices_par_essence.append({
+                'essence_id': entry['essence_id'],
+                'essence': entry['essence'],
+                'quantite_consommee_ml': str(entry['quantite_consommee_ml'].quantize(Decimal('0.01'))),
+                'chiffre_affaires': str(chiffre_affaires.quantize(Decimal('0.01'))),
+                'cout_achat': str(entry['cout_achat'].quantize(Decimal('0.01'))),
+                'benefice': str(benefice.quantize(Decimal('0.01'))),
+                'marge_percent': round(float(marge_percent), 2),
+            })
+
+        benefice_total = sum((item['benefice'] for item in benefices_par_type), Decimal('0')) + sum((item['benefice'] for item in benefices_par_essence), Decimal('0'))
+        chiffre_affaires_total = sum((item['chiffre_affaires'] for item in benefices_par_type), Decimal('0')) + sum((item['chiffre_affaires'] for item in benefices_par_essence), Decimal('0'))
+        marge_globale = ((benefice_total / chiffre_affaires_total) * 100) if chiffre_affaires_total else 0
+
+        return Response({
+            'periode': {
+                'start_date': request.query_params.get('start_date'),
+                'end_date': request.query_params.get('end_date'),
+            },
+            'benefice_total': str(benefice_total.quantize(Decimal('0.01'))),
+            'chiffre_affaires_total': str(chiffre_affaires_total.quantize(Decimal('0.01'))),
+            'marge_globale': round(float(marge_globale), 2),
+            'produits': produits,
+            'lots': lots,
+            'benefices_par_type': benefices_par_type,
+            'benefices_par_essence': benefices_par_essence,
+        }, status=status.HTTP_200_OK)
 
 
 class PromotionViewSet(viewsets.GenericViewSet):

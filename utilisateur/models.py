@@ -258,7 +258,8 @@ class PayoutTransaction(models.Model):
     prestataire = models.ForeignKey(Prestataire, on_delete=models.CASCADE, related_name='payouts')
     montant = models.DecimalField(max_digits=10, decimal_places=2)
     telephone_destination = models.CharField(max_length=20)
-    reference_unique = models.CharField(max_length=100, unique=True)  # Correspond au processing_number de Monetbil
+    reference_unique = models.CharField(max_length=100, unique=True)   # Notre UUID (external_reference envoyé à Campay)
+    campay_processing_number = models.CharField(max_length=100, blank=True, null=True, db_index=True)  # ID interne Campay (retourné par /withdraw/)
     statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='en_cours')
     motif_echec = models.TextField(blank=True, null=True)
     date_creation = models.DateTimeField(auto_now_add=True)

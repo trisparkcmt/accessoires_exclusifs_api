@@ -8,7 +8,7 @@ from utilisateur.views import (
     admin_prestataires_list, admin_prestataire_update,
     admin_global_stats,
     # Payouts
-    admin_prestataire_payout, admin_payouts_list, campay_payout_webhook,
+    admin_prestataire_payout, admin_payouts_list, campay_payout_webhook, admin_poll_campay_payout,
     # Livreur & Admin Delivery views
     livreur_dashboard, livreur_commandes_list, livreur_update_delivery_status,
     admin_livreurs_list, admin_promote_to_livreur, admin_update_livreur,
@@ -66,6 +66,7 @@ urlpatterns = [
     path('admin/prestataires/<int:pk>/update/', admin_prestataire_update, name='admin-prestataire-update'),
     path('admin/prestataires/<int:pk>/payout/', admin_prestataire_payout, name='admin-prestataire-payout'),
     path('admin/payouts/', admin_payouts_list, name='admin-payouts-list'),
+    path('admin/payouts/<int:pk>/verifier/', admin_poll_campay_payout, name='admin-payout-check-status'),
     path('admin/stats/global/', admin_global_stats, name='admin-global-stats'),
     
     # Admin Delivery Endpoints

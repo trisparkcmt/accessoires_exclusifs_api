@@ -9,4 +9,5 @@ urlpatterns = [
 
     # Routes de l'API
     path('v1/', include('api.v1.urls')),
+    
 ]

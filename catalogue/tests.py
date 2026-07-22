@@ -187,6 +187,40 @@ class ProduitFiniEssenceVirtualStockTest(TestCase):
         self.assertEqual(self.lot_recent.stock_ml, Decimal('130.00'))
 
 
+class BeneficeEndpointTest(APITestCase):
+    def setUp(self):
+        self.categorie = CategorieParfum.objects.create(
+            nom="Oriental", slug="oriental", taux_reduction=0
+        )
+        self.parfum = Parfum.objects.create(
+            nom="Rose Éternelle", slug="rose-eternelle",
+            reference_sku="SKU001", contenance_ml=50,
+            prix_unitaire=Decimal('25000'),
+            prix_achat=Decimal('15000'),
+            categorie=self.categorie, actif=True
+        )
+        self.essence = Essence.objects.create(
+            marque="Maison Test",
+            nom="Oud Royal",
+            categorie="premium",
+            code_reference="ESS-BEN-001",
+        )
+        self.lot = LotEssence.objects.create(
+            essence=self.essence,
+            stock_ml=Decimal('100.00'),
+            quantite_initiale_ml=Decimal('100.00'),
+            prix_achat_par_ml=Decimal('2.50'),
+        )
+
+    def test_calcul_benefices_endpoint(self):
+        response = self.client.get('/api/v1/lab/benefices/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('benefice_total', response.data)
+        self.assertIn('marge_globale', response.data)
+        self.assertIn('produits', response.data)
+        self.assertIn('lots', response.data)
+
+
 class ReductionCategorieParfumTest(TestCase):
 
     def setUp(self):

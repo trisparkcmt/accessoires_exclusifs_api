@@ -1,7 +1,7 @@
 # catalogue/urls.py
 from rest_framework.routers import DefaultRouter
 
-from .views import EssenceLaboViewSet, IngredientViewSet, LotEssenceViewSet, ParfumViewSet, EssenceViewSet, AccessoireViewSet, FlaconViewSet, FavoriViewSet, ProduitFiniEssenceViewSet, PromotionViewSet, TagEssenceSelectViewSet, TagParfumSelectViewSet, TagViewSet, NotificationCatalogueViewSet, MouvementStockViewSet, BestsellerViewSet, HotsellerViewSet
+from .views import EssenceLaboViewSet, IngredientViewSet, LotEssenceViewSet, ParfumViewSet, EssenceViewSet, AccessoireViewSet, FlaconViewSet, FavoriViewSet, ProduitFiniEssenceViewSet, PromotionViewSet, BeneficesViewSet, TagEssenceSelectViewSet, TagParfumSelectViewSet, TagViewSet, NotificationCatalogueViewSet, MouvementStockViewSet, BestsellerViewSet, HotsellerViewSet
 from .views import CategorieParfumViewSet, TypeAccessoireViewSet, TypeFlaconViewSet
 
 # ============================================================
@@ -34,6 +34,7 @@ lab_router = DefaultRouter()
 lab_router.register(r'essences', EssenceViewSet, basename='essence')
 lab_router.register(r'ingredients', IngredientViewSet, basename='ingredient')
 lab_router.register(r'tags-essence', TagEssenceSelectViewSet, basename='tagessence-select-lab')
+lab_router.register(r'benefices', BeneficesViewSet, basename='benefices')
 
 lab_router.register(r'lots-essence', LotEssenceViewSet, basename='lotessence')
 lab_router.register(r'labo/essences', EssenceLaboViewSet, basename='essencelabo')

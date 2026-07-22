@@ -494,7 +494,7 @@ class MeCommandeSerializer(serializers.ModelSerializer):
         model = Commande
         fields = [
             'id', 'numero_commande', 'statut', 'statut_livraison',
-            'statut_paiement', 'methode_paiement', 'sous_total',
+            'statut_paiement', 'sous_total',
             'remise_code_promo', 'code_promo_utilise', 'frais_livraison',
             'total_ttc', 'livraison_nom_complet', 'livraison_quartier',
             'livraison_ville', 'livraison_telephone',

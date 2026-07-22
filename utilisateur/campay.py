@@ -32,6 +32,16 @@ def _get_auth_token():
         return None
 
 
+def _get_headers():
+    token = _get_auth_token()
+    if not token:
+        return None
+    return {
+        'Authorization': f'Token {token}',
+        'Content-Type': 'application/json',
+    }
+
+
 def payout_to_phone(to_phone: str, amount_fcfa: int, description: str = '', external_reference: str = None):
     """
     Effectue un retrait (withdraw) vers un numéro mobile via Campay.
@@ -40,9 +50,13 @@ def payout_to_phone(to_phone: str, amount_fcfa: int, description: str = '', exte
     - external_reference : uuid4 string unique (si None, en génère une)
 
     Retourne (success: bool, response_data: dict or None, error_message: str or None)
+    response_data contient notamment :
+      - 'processing_number'  : ID interne Campay à stocker pour le webhook
+      - 'external_reference' : votre UUID renvoyé par Campay
+      - 'status'             : statut initial (PENDING, SUCCESSFUL, FAILED)
     """
-    token = _get_auth_token()
-    if not token:
+    headers = _get_headers()
+    if not headers:
         return False, None, 'Missing Campay auth token/configuration'
 
     if external_reference is None:
@@ -55,11 +69,6 @@ def payout_to_phone(to_phone: str, amount_fcfa: int, description: str = '', exte
         'external_reference': external_reference,
     }
 
-    headers = {
-        'Authorization': f'Token {token}',
-        'Content-Type': 'application/json',
-    }
-
     try:
         resp = requests.post(f"{settings.CAMPAY_API_URL}/withdraw/", json=payload, headers=headers, timeout=15)
         try:
@@ -68,10 +77,47 @@ def payout_to_phone(to_phone: str, amount_fcfa: int, description: str = '', exte
             data = {'http_status': resp.status_code, 'text': resp.text}
 
         if resp.status_code in (200, 201):
+            logger.info('[Campay] Payout initié. processing_number=%s external_ref=%s status=%s',
+                        data.get('processing_number'), external_reference, data.get('status'))
+            return True, data, None
+        else:
+            err = data.get('message') or data.get('detail') or f'HTTP {resp.status_code}'
+            logger.warning('[Campay] Payout rejeté: %s — réponse: %s', err, data)
+            return False, data, err
+    except requests.RequestException as e:
+        logger.exception('Erreur réseau vers Campay')
+        return False, None, str(e)
+
+
+def get_transaction_status(processing_number: str):
+    """
+    Interroge Campay pour connaître le statut actuel d'une transaction.
+    - processing_number : ID interne Campay (retourné par /withdraw/)
+
+    Retourne (success: bool, data: dict or None, error: str or None)
+    data contient 'status' (SUCCESSFUL / FAILED / PENDING) et d'autres champs.
+    """
+    headers = _get_headers()
+    if not headers:
+        return False, None, 'Missing Campay auth token/configuration'
+
+    try:
+        resp = requests.get(
+            f"{settings.CAMPAY_API_URL}/transaction/{processing_number}/",
+            headers=headers,
+            timeout=10
+        )
+        try:
+            data = resp.json()
+        except ValueError:
+            data = {'http_status': resp.status_code, 'text': resp.text}
+
+        if resp.status_code == 200:
             return True, data, None
         else:
             err = data.get('message') or data.get('detail') or f'HTTP {resp.status_code}'
             return False, data, err
     except requests.RequestException as e:
-        logger.exception('Erreur réseau vers Campay')
+        logger.exception('Erreur réseau vers Campay (get_transaction_status)')
         return False, None, str(e)
+
