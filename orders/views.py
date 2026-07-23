@@ -602,7 +602,15 @@ class CommandeDetailView(APIView):
                     return Response({"statut_livraison": "Le livreur peut uniquement définir la livraison sur 'livrée' ou 'échouée'."}, status=status.HTTP_400_BAD_REQUEST)
                 commande.statut_livraison = statut_livraison
                 updated = True
-                
+
+                # ✅ Automatisme : livraison confirmée → paiement et commande validés immédiatement
+                if statut_livraison == 'livrée':
+                    commande.statut_paiement = 'payé'
+                    commande.statut = 'validé'
+                    commande.date_livraison_reelle = timezone.now()
+                elif statut_livraison == 'échouée':
+                    commande.statut_paiement = 'échoué'
+                    
             if motif_echec is not None:
                 commande.motif_echec_livraison = motif_echec
                 updated = True
@@ -616,7 +624,7 @@ class CommandeDetailView(APIView):
             if aff:
                 if statut_livraison == 'livrée':
                     aff.statut = 'livrée'
-                    aff.date_livraison_reelle = timezone.now()
+                    aff.date_livraison_reelle = commande.date_livraison_reelle
                 elif statut_livraison == 'échouée':
                     aff.statut = 'échouée'
                     if motif_echec:
@@ -625,6 +633,7 @@ class CommandeDetailView(APIView):
                 
             commande.save()
             return Response(CommandeSerializer(commande, context={'request': request}).data, status=status.HTTP_200_OK)
+
             
         else:
             return Response({"detail": "Vous n'avez pas la permission de modifier cette commande."}, status=status.HTTP_403_FORBIDDEN)

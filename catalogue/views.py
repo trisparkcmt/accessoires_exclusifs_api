@@ -466,7 +466,7 @@ class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
 
 
 class BeneficesViewSet(viewsets.ViewSet):
-    permission_classes = [IsAdminOrServeuseOrReadOnly]
+    permission_classes = [IsAdmin]  # Réservé exclusivement aux administrateurs
 
     @extend_schema(
         summary="Calcul des bénéfices",
@@ -667,8 +667,16 @@ class BeneficesViewSet(viewsets.ViewSet):
                 'marge_percent': round(float(marge_percent), 2),
             })
 
-        benefice_total = sum((item['benefice'] for item in benefices_par_type), Decimal('0')) + sum((item['benefice'] for item in benefices_par_essence), Decimal('0'))
-        chiffre_affaires_total = sum((item['chiffre_affaires'] for item in benefices_par_type), Decimal('0')) + sum((item['chiffre_affaires'] for item in benefices_par_essence), Decimal('0'))
+        # Les items de benefices_par_type et benefices_par_essence ont leurs valeurs converties
+        # en string dans les boucles précédentes. On les reconvertit en Decimal pour le calcul global.
+        benefice_total = (
+            sum((Decimal(item['benefice']) for item in benefices_par_type), Decimal('0'))
+            + sum((Decimal(item['benefice']) for item in benefices_par_essence), Decimal('0'))
+        )
+        chiffre_affaires_total = (
+            sum((Decimal(item['chiffre_affaires']) for item in benefices_par_type), Decimal('0'))
+            + sum((Decimal(item['chiffre_affaires']) for item in benefices_par_essence), Decimal('0'))
+        )
         marge_globale = ((benefice_total / chiffre_affaires_total) * 100) if chiffre_affaires_total else 0
 
         return Response({
