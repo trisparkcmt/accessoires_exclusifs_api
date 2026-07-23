@@ -4,12 +4,59 @@ from django.core.mail import send_mail, EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db.models import Sum, Q
 from allauth.account.signals import email_confirmed
 from allauth.socialaccount.signals import social_account_added
 
 from .models import Prestataire, Notification
 
 User = get_user_model()
+
+import logging as _sig_logger
+logger_fidelite = _sig_logger.getLogger(__name__)
+
+SEUIL_POINTS = 25000  # 1 point tous les 25 000 FCFA dépensés
+
+
+def _recalculer_points_client(client):
+    """
+    Recalcule les points de fidélité d'un client à partir du total de ses commandes payées.
+    Règle : 1 point par tranche de SEUIL_POINTS FCFA.
+    Sauvegarde uniquement si la valeur a changé (évite les écritures inutiles).
+    """
+    from django.db.models import Sum, Q
+    total = client.commandes.filter(
+        statut_paiement='payé'
+    ).aggregate(
+        total=Sum('total_ttc')
+    )['total'] or 0
+
+    nouveaux_points = int(total // SEUIL_POINTS)
+
+    if client.points_fidelite != nouveaux_points:
+        client.points_fidelite = nouveaux_points
+        client.save(update_fields=['points_fidelite'])
+        logger_fidelite.info(
+            "[Fidélité] Client #%d — dépenses totales=%.0f FCFA → %d points",
+            client.pk, total, nouveaux_points
+        )
+
+
+@receiver(post_save, sender='orders.Commande')
+def maj_points_fidelite_sur_paiement(sender, instance, **kwargs):
+    """
+    Recalcule les points de fidélité du client à chaque mise à jour de commande.
+    Ne s'exécute que si la commande est payée et que le client existe.
+    """
+    if instance.statut_paiement == 'payé' and instance.client:
+        try:
+            _recalculer_points_client(instance.client)
+        except Exception as e:
+            logger_fidelite.exception(
+                "[Fidélité] Erreur recalcul points pour client #%s : %s",
+                getattr(instance.client, 'pk', '?'), e
+            )
+
 
 
 @receiver(post_save, sender=Prestataire)

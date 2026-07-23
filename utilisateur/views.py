@@ -2085,30 +2085,34 @@ def admin_best_clients(request):
     """
     Retourne la liste des meilleurs clients, filtrés selon les critères de l'administrateur.
     Query params:
-    - filter_by: 'orders' (le plus de commandes payées) ou 'spent' (ayant dépensé le plus). Par défaut 'spent'.
+    - filter_by:
+        'points'  : classement par points de fidélité décroissants (1 point / 25 000 FCFA).
+        'spent'   : classement par montant total dépensé (payé) décroissant. (défaut)
+        'orders'  : classement par nombre de commandes payées décroissant.
     - limit: Le nombre de clients à retourner. Si non précisé, retourne tout avec pagination de 100.
     """
     filter_by = request.GET.get('filter_by', 'spent')
     limit_param = request.GET.get('limit', None)
-    
+
     clients = Client.objects.annotate(
         total_paid_orders=Count('commandes', filter=Q(commandes__statut_paiement='payé')),
         total_spent=Sum('commandes__total_ttc', filter=Q(commandes__statut_paiement='payé'))
     )
-    
+
     if filter_by == 'orders':
         clients = clients.order_by('-total_paid_orders')
+    elif filter_by == 'points':
+        # Classement par points de fidélité stockés (déjà mis à jour automatiquement par signal)
+        clients = clients.order_by('-points_fidelite', '-total_spent')
     else:
-        # Trier par dépense (ceux qui n'ont rien dépensé auront NULL, on gère avec fallback si nécessaire, 
-        # mais order_by gère les NULL en Django)
+        # Défaut : classement par montant dépensé
         clients = clients.order_by('-total_spent', '-total_paid_orders')
-        
+
     if limit_param and limit_param.isdigit():
         clients = clients[:int(limit_param)]
-        # Sérialisation directe sans pagination si limit est spécifié
         serializer = ClientSerializer(clients, many=True)
         return Response(serializer.data)
-        
+
     # Pagination par défaut si pas de limit
     paginator = PageNumberPagination()
     paginator.page_size = 100

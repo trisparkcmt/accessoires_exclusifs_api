@@ -327,19 +327,70 @@ class MeUpdateSerializer(serializers.ModelSerializer):
 
 
 class ClientSerializer(serializers.ModelSerializer):
-    """Serializer pour le profil Client complet"""
+    """Serializer pour le profil Client complet — utilisé dans le leaderboard admin."""
     user_details = UserSerializer(source='user', read_only=True)
-    
+    # Ces champs sont optionnellement injectés par annotation dans admin_best_clients
+    total_spent = serializers.SerializerMethodField()
+    total_paid_orders = serializers.SerializerMethodField()
+
     class Meta:
         model = Client
-        fields = ['id', 'user_details', 'date_naissance', 'genre', 'points_fidelite']
+        fields = ['id', 'user_details', 'date_naissance', 'genre', 'points_fidelite', 'total_spent', 'total_paid_orders']
+
+    def get_total_spent(self, obj):
+        # Récupère la valeur annotée si disponible, sinon None
+        val = getattr(obj, 'total_spent', None)
+        return float(val) if val is not None else 0.0
+
+    def get_total_paid_orders(self, obj):
+        return getattr(obj, 'total_paid_orders', 0) or 0
+
 
 
 class MeClientSerializer(serializers.ModelSerializer):
-    """Données client rattachées au profil connecté."""
+    """Données client rattachées au profil connecté, incluant les statistiques de fidélité."""
+    total_depenses = serializers.SerializerMethodField()
+    reste_pour_prochain_point = serializers.SerializerMethodField()
+    progression_pourcentage = serializers.SerializerMethodField()
+    rang_classement = serializers.SerializerMethodField()
+
     class Meta:
         model = Client
-        fields = ['id', 'date_naissance', 'genre', 'points_fidelite', 'date_creation']
+        fields = [
+            'id', 'date_naissance', 'genre',
+            'total_depenses', 'points_fidelite',
+            'reste_pour_prochain_point', 'progression_pourcentage',
+            'rang_classement', 'date_creation',
+        ]
+
+    def _get_total_depenses(self, obj):
+        from django.db.models import Sum, Q
+        total = obj.commandes.filter(
+            statut_paiement='payé'
+        ).aggregate(
+            total=Sum('total_ttc')
+        )['total']
+        return float(total or 0)
+
+    def get_total_depenses(self, obj):
+        return round(self._get_total_depenses(obj), 2)
+
+    def get_reste_pour_prochain_point(self, obj):
+        total = self._get_total_depenses(obj)
+        reste = 25000 - (total % 25000)
+        # Si total est un multiple parfait de 25000 (ex: 50000), le reste est 0, pas 25000
+        return round(reste if (total % 25000) != 0 else 0, 2)
+
+    def get_progression_pourcentage(self, obj):
+        total = self._get_total_depenses(obj)
+        return round(((total % 25000) / 25000) * 100, 1)
+
+    def get_rang_classement(self, obj):
+        """Position du client dans le classement général par points."""
+        return Client.objects.filter(
+            points_fidelite__gt=obj.points_fidelite
+        ).count() + 1
+
 
 
 class MeFavoriSerializer(serializers.ModelSerializer):
