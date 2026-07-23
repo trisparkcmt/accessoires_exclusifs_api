@@ -1445,13 +1445,21 @@ def campay_payout_webhook(request):
     Webhook public appelé par Campay pour notifier du statut final d'un virement.
     Campay envoie : processing_number (son ID interne), external_reference (notre UUID), status.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    logger.info("[Campay Webhook] Received webhook call. Method: %s. Headers: %s", request.method, dict(request.headers))
+
     if getattr(settings, 'CAMPAY_WEBHOOK_SECRET', ''):
         if request.method != 'POST':
+            logger.warning("[Campay Webhook] Webhook secret configured, but request is not POST.")
             return Response({"detail": "Webhook Campay signé doit être envoyé en POST."}, status=status.HTTP_403_FORBIDDEN)
         if not _is_valid_campay_webhook_signature(request):
+            logger.error("[Campay Webhook] Invalid signature verification. Expected HMAC matching signature header.")
             return Response({"detail": "Signature webhook invalide."}, status=status.HTTP_403_FORBIDDEN)
 
     data = request.data if request.method == 'POST' else request.query_params
+    logger.info("[Campay Webhook] Payload data: %s", data)
 
     # Campay envoie : processing_number (ID Campay interne) + external_reference (notre UUID)
     campay_pn     = data.get('processing_number') or data.get('payment_ref')
@@ -1459,7 +1467,11 @@ def campay_payout_webhook(request):
     status_val    = (data.get('status') or '').upper()   # SUCCESSFUL / FAILED / PENDING
     message       = data.get('message') or data.get('reason') or data.get('detail')
 
+    logger.info("[Campay Webhook] Parsed parameters: campay_pn=%s, external_ref=%s, status_val=%s, message=%s",
+                campay_pn, external_ref, status_val, message)
+
     if not campay_pn and not external_ref:
+        logger.warning("[Campay Webhook] Missing both processing_number and external_reference.")
         return Response({"detail": "processing_number ou external_reference manquant"}, status=status.HTTP_400_BAD_REQUEST)
 
     # Chercher la transaction :
@@ -1474,9 +1486,11 @@ def campay_payout_webhook(request):
         # Dernier recours : certaines intégrations stockent le PN comme reference_unique
         payout_tx = PayoutTransaction.objects.filter(reference_unique=campay_pn).first()
     if payout_tx is None:
+        logger.warning("[Campay Webhook] Transaction not found for campay_pn=%s or external_ref=%s", campay_pn, external_ref)
         return Response({"detail": "Transaction non trouvée"}, status=status.HTTP_404_NOT_FOUND)
 
     if payout_tx.statut != 'en_cours':
+        logger.info("[Campay Webhook] Transaction already finalized: ID=%s, status=%s", payout_tx.id, payout_tx.statut)
         return Response({"detail": f"Transaction déjà finalisée : {payout_tx.statut}"}, status=status.HTTP_200_OK)
 
     try:
@@ -1484,6 +1498,7 @@ def campay_payout_webhook(request):
             payout_tx = PayoutTransaction.objects.select_for_update().get(pk=payout_tx.pk)
 
             if payout_tx.statut != 'en_cours':
+                logger.info("[Campay Webhook] Transaction already processed inside lock: ID=%s", payout_tx.id)
                 return Response({"detail": "Transaction déjà traitée"}, status=status.HTTP_200_OK)
 
             # Mettre à jour le processing_number si on ne l'avait pas encore
@@ -1500,6 +1515,7 @@ def campay_payout_webhook(request):
                     montant=-payout_tx.montant,
                     description=f"Retrait réussi vers {payout_tx.telephone_destination} (Ref: {payout_tx.reference_unique})."
                 )
+                logger.info("[Campay Webhook] Transaction updated to SUCCESS. ID=%s, Amount=%s", payout_tx.id, payout_tx.montant)
             elif status_val in ('FAILED', 'CANCELLED', 'REJECTED'):
                 payout_tx.statut = 'echec'
                 payout_tx.motif_echec = message or f"Échec notifié par Campay (status={status_val})"
@@ -1508,13 +1524,16 @@ def campay_payout_webhook(request):
                 prestataire = Prestataire.objects.select_for_update().get(pk=payout_tx.prestataire.pk)
                 prestataire.solde_commission += payout_tx.montant
                 prestataire.save()
+                logger.info("[Campay Webhook] Transaction updated to FAILED. ID=%s, Balance refunded.", payout_tx.id)
             else:
                 # PENDING ou autre statut intermédiaire : ne rien faire
                 if campay_pn and not payout_tx.campay_processing_number:
                     payout_tx.save()  # Juste sauvegarder le processing_number
+                logger.info("[Campay Webhook] Transaction received intermediate status: %s. No change.", status_val)
                 return Response({"detail": f"Statut intermédiaire ignoré : {status_val}"}, status=status.HTTP_200_OK)
 
     except Exception as e:
+        logger.exception("[Campay Webhook] Exception occurred while processing webhook transaction update.")
         return Response({"detail": f"Erreur interne : {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     return Response({"detail": "Webhook traité avec succès"}, status=status.HTTP_200_OK)

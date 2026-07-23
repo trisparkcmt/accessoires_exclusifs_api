@@ -1,7 +1,7 @@
 # catalogue/urls.py
 from rest_framework.routers import DefaultRouter
 
-from .views import EssenceLaboViewSet, IngredientViewSet, LotEssenceViewSet, ParfumViewSet, EssenceViewSet, AccessoireViewSet, FlaconViewSet, FavoriViewSet, ProduitFiniEssenceViewSet, PromotionViewSet, BeneficesViewSet, TagEssenceSelectViewSet, TagParfumSelectViewSet, TagViewSet, NotificationCatalogueViewSet, MouvementStockViewSet, BestsellerViewSet, HotsellerViewSet
+from .views import EssenceLaboViewSet, IngredientViewSet, LotEssenceViewSet, ParfumViewSet, EssenceViewSet, AccessoireViewSet, FlaconViewSet, FavoriViewSet, ProduitFiniEssenceViewSet, PromotionViewSet, BeneficesViewSet, TagEssenceSelectViewSet, TagParfumSelectViewSet, TagViewSet, NotificationCatalogueViewSet, MouvementStockViewSet, BestsellerViewSet, HotsellerViewSet, DiffuseurParfumViewSet
 from .views import CategorieParfumViewSet, TypeAccessoireViewSet, TypeFlaconViewSet
 
 # ============================================================
@@ -25,7 +25,7 @@ shop_router.register(r'bestsellers', BestsellerViewSet, basename='bestsellers')
 shop_router.register(r'hotsellers', HotsellerViewSet, basename='hotsellers')
 shop_router.register(r'notifications', NotificationCatalogueViewSet, basename='notificationcatalogue')
 shop_router.register(r'mouvements-stock', MouvementStockViewSet, basename='mouvementstock')
-# FUTURE_UPDATE_DIFFUSEUR: shop_router.register(r'diffuseurs', DiffuseurParfumViewSet, basename='diffuseurparfum')
+shop_router.register(r'diffuseurs', DiffuseurParfumViewSet, basename='diffuseurparfum')
 # ============================================================
 # ROUTER LAB — /api/lab/...
 # Essences

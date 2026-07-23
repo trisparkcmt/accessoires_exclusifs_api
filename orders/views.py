@@ -351,8 +351,9 @@ class PanierLigneDetailView(APIView):
             return PanierLigneParfumPerso, PanierLigneParfumPerso.objects.filter(id=ligne_id, panier=panier).first()
         elif type_ligne == 'essence-personnalisee':
             return PanierLigneEssencePersonnalisee, PanierLigneEssencePersonnalisee.objects.filter(id=ligne_id, panier=panier).first()
-        # FUTURE_UPDATE_DIFFUSEUR: elif type_ligne == 'diffuseur-parfum':
-        # FUTURE_UPDATE_DIFFUSEUR:     return PanierLigneDiffuseurParfum, PanierLigneDiffuseurParfum.objects.filter(id=ligne_id, panier=panier).first()
+        elif type_ligne == 'diffuseur-parfum':
+            from .models import PanierLigneDiffuseurParfum
+            return PanierLigneDiffuseurParfum, PanierLigneDiffuseurParfum.objects.filter(id=ligne_id, panier=panier).first()
         return None, None
 
     def patch(self, request, type_ligne, ligne_id, *args, **kwargs):
@@ -385,9 +386,9 @@ class PanierLigneDetailView(APIView):
             quantite_ml = Decimal(str(quantite)) * Decimal(str(ligne.produit_fini_essence.taille_ml))
             if ligne.produit_fini_essence.essence.stock_total_ml() < quantite_ml:
                 return Response({"quantite": f"Stock d'essence insuffisant pour {ligne.produit_fini_essence.essence.nom}."}, status=status.HTTP_400_BAD_REQUEST)
-        # FUTURE_UPDATE_DIFFUSEUR: elif type_ligne == 'diffuseur-parfum':
-        # FUTURE_UPDATE_DIFFUSEUR:     if ligne.diffuseur.stock_quantite < quantite:
-        # FUTURE_UPDATE_DIFFUSEUR:         return Response({"quantite": f"Stock insuffisant. Seulement {ligne.diffuseur.stock_quantite} disponibles."}, status=status.HTTP_400_BAD_REQUEST)
+        elif type_ligne == 'diffuseur-parfum':
+            if ligne.diffuseur.stock_quantite < quantite:
+                return Response({"quantite": f"Stock insuffisant. Seulement {ligne.diffuseur.stock_quantite} disponibles."}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             ligne.quantite = quantite
@@ -1064,45 +1065,48 @@ class AdminStatistiquesBeneficesView(APIView):
             },
         }, status=status.HTTP_200_OK)
 
+# ============================================================
+# VIEW — AJOUTER DIFFUSEUR AU PANIER
+# ============================================================
+class AjouterDiffuseurParfumView(APIView):
+    permission_classes = [AllowAny]
 
-# ============================================================
-# FUTURE_UPDATE_DIFFUSEUR: VIEW ADD DIFFUSEUR TO CART (COMMENTÉ)
-# ============================================================
-# class AjouterDiffuseurParfumView(APIView):
-#     permission_classes = [AllowAny]
-#
-#     def post(self, request, *args, **kwargs):
-#         serializer = AjouterDiffuseurParfumSerializer(data=request.data, context={'request': request})
-#         serializer.is_valid(raise_exception=True)
-#         
-#         panier_id = serializer.validated_data.get('panier_id')
-#         diffuseur = serializer.validated_data['diffuseur_obj']
-#         quantite = serializer.validated_data['quantite']
-#         
-#         with transaction.atomic():
-#             panier = get_or_create_panier(request, panier_id)
-#             
-#             ligne, created = PanierLigneDiffuseurParfum.objects.get_or_create(
-#                 panier=panier,
-#                 diffuseur=diffuseur,
-#                 defaults={
-#                     'prix_calcule': diffuseur.prix_actuel,
-#                     'quantite': quantite,
-#                     'sous_total': diffuseur.prix_actuel * quantite
-#                 }
-#             )
-#             
-#             if not created:
-#                 total_quantite = ligne.quantite + quantite
-#                 if diffuseur.stock_quantite < total_quantite:
-#                     return Response(
-#                         {"quantite": f"Stock insuffisant. Seulement {diffuseur.stock_quantite} disponibles (vous en avez déjà {ligne.quantite} dans le panier)."},
-#                         status=status.HTTP_400_BAD_REQUEST
-#                     )
-#                 ligne.quantite = total_quantite
-#                 ligne.prix_calcule = diffuseur.prix_actuel
-#                 ligne.save()
-#             
-#             panier.recalculer_total()
-#             
-#         return Response(PanierSerializer(panier, context={'request': request}).data, status=status.HTTP_200_OK)
+    def post(self, request, *args, **kwargs):
+        from .serializers import AjouterDiffuseurParfumSerializer
+        from .models import PanierLigneDiffuseurParfum
+        from .serializers import PanierSerializer
+
+        serializer = AjouterDiffuseurParfumSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+
+        panier_id = serializer.validated_data.get('panier_id')
+        diffuseur = serializer.validated_data['diffuseur_obj']
+        quantite = serializer.validated_data['quantite']
+
+        with transaction.atomic():
+            panier = get_or_create_panier(request, panier_id)
+
+            ligne, created = PanierLigneDiffuseurParfum.objects.get_or_create(
+                panier=panier,
+                diffuseur=diffuseur,
+                defaults={
+                    'prix_calcule': diffuseur.prix_actuel,
+                    'quantite': quantite,
+                    'sous_total': diffuseur.prix_actuel * quantite
+                }
+            )
+
+            if not created:
+                total_quantite = ligne.quantite + quantite
+                if diffuseur.stock_quantite < total_quantite:
+                    return Response(
+                        {"quantite": f"Stock insuffisant. Seulement {diffuseur.stock_quantite} disponibles (vous en avez déjà {ligne.quantite} dans le panier)."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                ligne.quantite = total_quantite
+                ligne.prix_calcule = diffuseur.prix_actuel
+                ligne.save()
+
+            panier.recalculer_total()
+
+        return Response(PanierSerializer(panier, context={'request': request}).data, status=status.HTTP_200_OK)

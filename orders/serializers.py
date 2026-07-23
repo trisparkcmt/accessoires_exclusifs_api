@@ -3,18 +3,20 @@ from django.core.validators import MinValueValidator
 from django.db import transaction
 from decimal import Decimal
 from orders.models import (
-    Panier, 
-    PanierLigneParfum, 
-    PanierLigneAccessoire, 
-    PanierLigneParfumPerso, 
-    PanierLigneProduitFiniEssence, 
+    Panier,
+    PanierLigneParfum,
+    PanierLigneAccessoire,
+    PanierLigneParfumPerso,
+    PanierLigneProduitFiniEssence,
     PanierLigneEssencePersonnalisee,
+    PanierLigneDiffuseurParfum,
     Commande,
     CommandeLigneParfum,
     CommandeLigneAccessoire,
     CommandeProduitFiniEssence,
     CommandeLigneParfumPerso,
     CommandeLigneEssencePersonnalisee,
+    CommandeLigneDiffuseurParfum,
     Facture,
     CodePromoAdmin
 )
@@ -136,19 +138,19 @@ class LigneEssencePersonnaliseeReadSerializer(serializers.ModelSerializer):
         fields = ['id', 'essence_personnalisee', 'nom', 'quantite', 'prix_calcule', 'sous_total']
 
 
-# FUTURE_UPDATE_DIFFUSEUR: class LigneDiffuseurReadSerializer(serializers.ModelSerializer):
-# FUTURE_UPDATE_DIFFUSEUR:     nom = serializers.CharField(source='diffuseur.nom', read_only=True)
-# FUTURE_UPDATE_DIFFUSEUR:     image = serializers.SerializerMethodField()
-# FUTURE_UPDATE_DIFFUSEUR:     
-# FUTURE_UPDATE_DIFFUSEUR:     class Meta:
-# FUTURE_UPDATE_DIFFUSEUR:         model = PanierLigneDiffuseurParfum
-# FUTURE_UPDATE_DIFFUSEUR:         fields = ['id', 'diffuseur', 'nom', 'image', 'quantite', 'prix_calcule', 'sous_total']
-# FUTURE_UPDATE_DIFFUSEUR: 
-# FUTURE_UPDATE_DIFFUSEUR:     def get_image(self, obj):
-# FUTURE_UPDATE_DIFFUSEUR:         request = self.context.get('request')
-# FUTURE_UPDATE_DIFFUSEUR:         if obj.diffuseur.image_principale:
-# FUTURE_UPDATE_DIFFUSEUR:             return request.build_absolute_uri(obj.diffuseur.image_principale.url) if request else obj.diffuseur.image_principale.url
-# FUTURE_UPDATE_DIFFUSEUR:         return None
+class LigneDiffuseurReadSerializer(serializers.ModelSerializer):
+    nom = serializers.CharField(source='diffuseur.nom', read_only=True)
+    image = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PanierLigneDiffuseurParfum
+        fields = ['id', 'diffuseur', 'nom', 'image', 'quantite', 'prix_calcule', 'sous_total']
+
+    def get_image(self, obj):
+        request = self.context.get('request')
+        if obj.diffuseur and obj.diffuseur.image_principale:
+            return request.build_absolute_uri(obj.diffuseur.image_principale.url) if request else obj.diffuseur.image_principale.url
+        return None
 
 
 class PanierSerializer(serializers.ModelSerializer):
@@ -159,7 +161,7 @@ class PanierSerializer(serializers.ModelSerializer):
     # Ah, lines_parfums_perso should map to LigneParfumPersoReadSerializer. Correcting below.
     lignes_parfums_perso = LigneParfumPersoReadSerializer(many=True, read_only=True)
     lignes_essence_personnalisee = LigneEssencePersonnaliseeReadSerializer(many=True, read_only=True)
-    # FUTURE_UPDATE_DIFFUSEUR: lignes_diffuseurs = LigneDiffuseurReadSerializer(many=True, read_only=True)
+    lignes_diffuseurs = LigneDiffuseurReadSerializer(many=True, read_only=True)
 
     class Meta:
         model = Panier
@@ -168,8 +170,8 @@ class PanierSerializer(serializers.ModelSerializer):
             'remise_pourcentage', 'sous_total', 'frais_livraison', 'total', 
             'statut', 'lignes_parfums', 'lignes_accessoires', 
             'lignes_produit_fini_essence', 'lignes_parfums_perso', 
-            'lignes_essence_personnalisee', 'date_creation', 'date_modification'
-            # FUTURE_UPDATE_DIFFUSEUR: , 'lignes_diffuseurs'
+            'lignes_essence_personnalisee', 'date_creation', 'date_modification',
+            'lignes_diffuseurs'
         ]
 
 
@@ -437,13 +439,31 @@ class FactureSerializer(serializers.ModelSerializer):
         fields = ['numero_facture', 'date_emission', 'envoye_par_email', 'fichier_pdf']
 
 
+# ============================================================
+# SERIALIZERS LIGNES COMMANDE DIFFUSEURS
+# ============================================================
+class CommandeLigneDiffuseurParfumSerializer(serializers.ModelSerializer):
+    nom = serializers.CharField(source='nom_snapshot', read_only=True)
+    image = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CommandeLigneDiffuseurParfum
+        fields = ['id', 'diffuseur', 'nom', 'image', 'quantite', 'prix_unitaire_snapshot', 'sous_total']
+
+    def get_image(self, obj):
+        request = self.context.get('request')
+        if obj.diffuseur and obj.diffuseur.image_principale:
+            return request.build_absolute_uri(obj.diffuseur.image_principale.url) if request else obj.diffuseur.image_principale.url
+        return None
+
+
 class CommandeSerializer(serializers.ModelSerializer):
     lignes_parfums = CommandeLigneParfumSerializer(many=True, read_only=True)
     lignes_accessoires = CommandeLigneAccessoireSerializer(many=True, read_only=True)
     lignes_produit_fini_essence = CommandeProduitFiniEssenceSerializer(many=True, read_only=True)
     lignes_parfums_perso = CommandeLigneParfumPersoSerializer(many=True, read_only=True)
     lignes_essence_personnalisee = CommandeLigneEssencePersonnaliseeSerializer(many=True, read_only=True)
-    # FUTURE_UPDATE_DIFFUSEUR: lignes_diffuseurs = CommandeLigneDiffuseurParfumSerializer(many=True, read_only=True)
+    lignes_diffuseurs = CommandeLigneDiffuseurParfumSerializer(many=True, read_only=True)
     facture = FactureSerializer(read_only=True)
     
     client_email = serializers.CharField(source='client.user.email', read_only=True)
@@ -461,8 +481,8 @@ class CommandeSerializer(serializers.ModelSerializer):
             'date_livraison_estimee', 'date_livraison_reelle', 'note_client', 'note_interne',
             'motif_echec_livraison', 'date_creation', 'date_modification',
             'lignes_parfums', 'lignes_accessoires', 'lignes_produit_fini_essence',
-            'lignes_parfums_perso', 'lignes_essence_personnalisee', 'facture'
-            # FUTURE_UPDATE_DIFFUSEUR: , 'lignes_diffuseurs'
+            'lignes_parfums_perso', 'lignes_essence_personnalisee',
+            'lignes_diffuseurs', 'facture'
         ]
 
     def get_livreur_nom(self, obj):
@@ -734,17 +754,17 @@ class PasserCommandeSerializer(serializers.Serializer):
                     statut_laboratoire='en_attente'
                 )
                 
-            # FUTURE_UPDATE_DIFFUSEUR: # Copier les lignes de diffuseurs
-            # FUTURE_UPDATE_DIFFUSEUR: for ligne in panier.lignes_diffuseurs.all():
-            # FUTURE_UPDATE_DIFFUSEUR:     CommandeLigneDiffuseurParfum.objects.create(
-            # FUTURE_UPDATE_DIFFUSEUR:         commande=commande,
-            # FUTURE_UPDATE_DIFFUSEUR:         diffuseur=ligne.diffuseur,
-            # FUTURE_UPDATE_DIFFUSEUR:         nom_snapshot=ligne.diffuseur.nom,
-            # FUTURE_UPDATE_DIFFUSEUR:         quantite=ligne.quantite,
-            # FUTURE_UPDATE_DIFFUSEUR:         prix_unitaire_snapshot=ligne.prix_calcule,
-            # FUTURE_UPDATE_DIFFUSEUR:         remise_ligne=Decimal('0'),
-            # FUTURE_UPDATE_DIFFUSEUR:         sous_total=ligne.sous_total
-            # FUTURE_UPDATE_DIFFUSEUR:     )
+            # Copier les lignes de diffuseurs
+            for ligne in panier.lignes_diffuseurs.all():
+                CommandeLigneDiffuseurParfum.objects.create(
+                    commande=commande,
+                    diffuseur=ligne.diffuseur,
+                    nom_snapshot=ligne.diffuseur.nom,
+                    quantite=ligne.quantite,
+                    prix_unitaire_snapshot=ligne.prix_calcule,
+                    remise_ligne=Decimal('0'),
+                    sous_total=ligne.sous_total
+                )
 
             # Forcer le premier calcul exact
             commande.recalculer_commande()
@@ -753,47 +773,28 @@ class PasserCommandeSerializer(serializers.Serializer):
             # Convertir le panier
             panier.statut = 'converti'
             panier.save()
-            
+
             return commande
 
 
-# ============================================================
-# FUTURE_UPDATE_DIFFUSEUR: SERIALIZERS PANIER/COMMANDE DIFFUSEURS (COMMENTÉ)
-# ============================================================
-# class CommandeLigneDiffuseurParfumSerializer(serializers.ModelSerializer):
-#     nom = serializers.CharField(source='nom_snapshot', read_only=True)
-#     image = serializers.SerializerMethodField()
-#
-#     class Meta:
-#         model = CommandeLigneDiffuseurParfum
-#         fields = ['id', 'diffuseur', 'nom', 'image', 'quantite', 'prix_unitaire_snapshot', 'sous_total']
-#
-#     def get_image(self, obj):
-#         request = self.context.get('request')
-#         if obj.diffuseur and obj.diffuseur.image_principale:
-#             return request.build_absolute_uri(obj.diffuseur.image_principale.url) if request else obj.diffuseur.image_principale.url
-#         return None
-#
-#
-# class AjouterDiffuseurParfumSerializer(serializers.Serializer):
-#     diffuseur_id = serializers.IntegerField()
-#     quantite = serializers.IntegerField(min_value=1, default=1)
-#     panier_id = serializers.IntegerField(required=False, allow_null=True)
-#
-#     def validate(self, data):
-#         from catalogue.models import DiffuseurParfum
-#         try:
-#             diffuseur = DiffuseurParfum.objects.get(id=data['diffuseur_id'])
-#         except DiffuseurParfum.DoesNotExist:
-#             raise serializers.ValidationError({"diffuseur_id": "Diffuseur introuvable."})
-#         
-#         if not diffuseur.actif:
-#             raise serializers.ValidationError({"diffuseur_id": "Ce diffuseur n'est pas actif."})
-#         
-#         if diffuseur.stock_quantite < data['quantite']:
-#             raise serializers.ValidationError({"quantite": f"Stock insuffisant. Seulement {diffuseur.stock_quantite} disponibles."})
-#         
-#         data['diffuseur_obj'] = diffuseur
-#         return data
 
+class AjouterDiffuseurParfumSerializer(serializers.Serializer):
+    diffuseur_id = serializers.IntegerField()
+    quantite = serializers.IntegerField(min_value=1, default=1)
+    panier_id = serializers.IntegerField(required=False, allow_null=True)
 
+    def validate(self, data):
+        from catalogue.models import DiffuseurParfum
+        try:
+            diffuseur = DiffuseurParfum.objects.get(id=data['diffuseur_id'])
+        except DiffuseurParfum.DoesNotExist:
+            raise serializers.ValidationError({"diffuseur_id": "Diffuseur introuvable."})
+
+        if not diffuseur.actif:
+            raise serializers.ValidationError({"diffuseur_id": "Ce diffuseur n'est pas actif."})
+
+        if diffuseur.stock_quantite < data['quantite']:
+            raise serializers.ValidationError({"quantite": f"Stock insuffisant. Seulement {diffuseur.stock_quantite} disponibles."})
+
+        data['diffuseur_obj'] = diffuseur
+        return data

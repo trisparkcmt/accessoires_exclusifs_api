@@ -7,7 +7,7 @@ from drf_spectacular.types import OpenApiTypes
 from django.db import transaction
 from .utils import get_similar_products
 
-from .models import CategorieParfum, LotEssence, ProduitFiniEssence, Tag, Parfum, Essence, Accessoire, Flacon, TypeAccessoire, TypeFlacon, Favori, Ingredient, NotificationCatalogue, MouvementStock
+from .models import CategorieParfum, LotEssence, ProduitFiniEssence, Tag, Parfum, Essence, Accessoire, Flacon, TypeAccessoire, TypeFlacon, Favori, Ingredient, NotificationCatalogue, MouvementStock, DiffuseurParfum
 
 
 # catalogue/serializers.py (ajouter après les imports existants)
@@ -834,115 +834,113 @@ class MouvementStockSerializer(serializers.ModelSerializer):
 
 
 # ============================================================
-# FUTURE_UPDATE_DIFFUSEUR: SERIALIZERS DIFFUSEURS DE PARFUM (COMMENTÉ)
+# SERIALIZERS DIFFUSEURS DE PARFUM
 # ============================================================
-# class DiffuseurParfumSerializer(serializers.ModelSerializer):
-#     prix_actuel = serializers.SerializerMethodField()
-#     en_promotion = serializers.SerializerMethodField()
-#     image_principale = serializers.ImageField(required=False, allow_null=True)
-#     image_supp_1 = serializers.ImageField(required=False, allow_null=True)
-#     image_supp_2 = serializers.ImageField(required=False, allow_null=True)
-#     image_supp_3 = serializers.ImageField(required=False, allow_null=True)
-#     image_supp_4 = serializers.ImageField(required=False, allow_null=True)
-#     produits_similaires = serializers.SerializerMethodField()
-#     is_favori = serializers.SerializerMethodField()
-#
-#     class Meta:
-#         model = DiffuseurParfum
-#         fields = [
-#             'id', 'nom', 'marque', 'slug', 'reference_sku', 'description',
-#             'prix_unitaire', 'prix_promotionnel', 'prix_actuel', 'en_promotion',
-#             'date_debut', 'date_fin', 'stock_quantite', 'seuil_alerte_stock',
-#             'materiau', 'couleur', 'dimensions', 'poids_grammes',
-#             'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',
-#             'actif', 'est_bestseller', 'est_hotseller', 'date_creation', 'date_modification',
-#             'produits_similaires', 'is_favori'
-#         ]
-#
-#     def to_representation(self, instance):
-#         representation = super().to_representation(instance)
-#         representation['image_principale'] = get_image_url(self.context.get('request'), instance.image_principale)
-#         for i in range(1, 5):
-#             img_field = f'image_supp_{i}'
-#             representation[img_field] = get_image_url(self.context.get('request'), getattr(instance, img_field))
-#         return representation
-#
-#     @extend_schema_field(OpenApiTypes.STR)
-#     def get_prix_actuel(self, obj):
-#         return formater_prix(obj.prix_actuel)
-#
-#     @extend_schema_field(OpenApiTypes.BOOL)
-#     def get_en_promotion(self, obj):
-#         return obj.prix_promotionnel_effectif is not None
-#
-#     def get_produits_similaires(self, obj):
-#         from .utils import get_similar_products
-#         similaires = get_similar_products(obj, DiffuseurParfum, limit=4)
-#         return DiffuseurParfumSimilaireSerializer(similaires, many=True, context=self.context).data
-#
-#     def get_is_favori(self, obj):
-#         request = self.context.get('request')
-#         if request and request.user.is_authenticated:
-#             try:
-#                 client = request.user.client
-#                 return Favori.objects.filter(client=client, diffuseur_parfum=obj).exists()
-#             except AttributeError:
-#                 return False
-#         return False
-#
-#
-# class DiffuseurParfumSimilaireSerializer(serializers.ModelSerializer):
-#     prix_actuel = serializers.SerializerMethodField()
-#     image_principale = serializers.SerializerMethodField()
-#
-#     class Meta:
-#         model = DiffuseurParfum
-#         fields = ['id', 'nom', 'slug', 'prix_unitaire', 'prix_actuel', 'image_principale']
-#
-#     @extend_schema_field(OpenApiTypes.STR)
-#     def get_prix_actuel(self, obj):
-#         return formater_prix(obj.prix_actuel)
-#
-#     @extend_schema_field(OpenApiTypes.STR)
-#     def get_image_principale(self, obj):
-#         return get_image_url(self.context.get('request'), obj.image_principale)
-#
-#
-# class DiffuseurParfumAdminListSerializer(DiffuseurParfumSerializer):
-#     prix_achat = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True, required=False)
-#     benefice_unitaire = serializers.SerializerMethodField()
-#
-#     class Meta(DiffuseurParfumSerializer.Meta):
-#         fields = [f for f in DiffuseurParfumSerializer.Meta.fields if f != 'produits_similaires'] + ['prix_achat', 'benefice_unitaire']
-#
-#     def get_benefice_unitaire(self, obj):
-#         if obj.prix_achat and obj.prix_unitaire:
-#             return str((obj.prix_unitaire - obj.prix_achat).quantize(Decimal('0.01')))
-#         return None
-#
-#
-# class DiffuseurParfumAdminDetailSerializer(DiffuseurParfumSerializer):
-#     prix_achat = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True, required=False)
-#     benefice_unitaire = serializers.SerializerMethodField()
-#
-#     class Meta(DiffuseurParfumSerializer.Meta):
-#         fields = DiffuseurParfumSerializer.Meta.fields + ['prix_achat', 'benefice_unitaire']
-#
-#     def get_benefice_unitaire(self, obj):
-#         if obj.prix_achat and obj.prix_unitaire:
-#             return str((obj.prix_unitaire - obj.prix_achat).quantize(Decimal('0.01')))
-#         return None
-#
-#
-# class DiffuseurParfumPublicListSerializer(DiffuseurParfumSerializer):
-#     class Meta(DiffuseurParfumSerializer.Meta):
-#         fields = [f for f in DiffuseurParfumSerializer.Meta.fields if f not in (
-#             'produits_similaires', 'reference_sku', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',
-#             'description', 'poids_grammes'
-#         )]
-#
-#
-# class DiffuseurParfumPublicDetailSerializer(DiffuseurParfumSerializer):
-#     class Meta(DiffuseurParfumSerializer.Meta):
-#         fields = [f for f in DiffuseurParfumSerializer.Meta.fields if f not in ('reference_sku', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')]
+class DiffuseurParfumSerializer(serializers.ModelSerializer):
+    prix_actuel = serializers.SerializerMethodField()
+    en_promotion = serializers.SerializerMethodField()
+    image_principale = serializers.ImageField(required=False, allow_null=True)
+    image_supp_1 = serializers.ImageField(required=False, allow_null=True)
+    image_supp_2 = serializers.ImageField(required=False, allow_null=True)
+    image_supp_3 = serializers.ImageField(required=False, allow_null=True)
+    image_supp_4 = serializers.ImageField(required=False, allow_null=True)
+    produits_similaires = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DiffuseurParfum
+        fields = [
+            'id', 'nom', 'marque', 'slug', 'reference_sku', 'description',
+            'prix_unitaire', 'prix_promotionnel', 'prix_actuel', 'en_promotion',
+            'date_debut', 'date_fin', 'stock_quantite', 'seuil_alerte_stock',
+            'materiau', 'couleur', 'dimensions', 'poids_grammes',
+            'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',
+            'actif', 'est_bestseller', 'est_hotseller', 'date_creation', 'date_modification',
+            # Attributs physiques/technologiques
+            'type_technologie', 'capacite_reservoir_ml', 'type_alimentation',
+            'nombre_vitesses', 'est_connecte', 'surface_couverture_m2', 'a_jeux_de_lumiere',
+            'produits_similaires',
+        ]
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation['image_principale'] = get_image_url(self.context.get('request'), instance.image_principale)
+        for i in range(1, 5):
+            img_field = f'image_supp_{i}'
+            representation[img_field] = get_image_url(self.context.get('request'), getattr(instance, img_field))
+        return representation
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_prix_actuel(self, obj):
+        return formater_prix(obj.prix_actuel)
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_en_promotion(self, obj):
+        return obj.prix_promotionnel_effectif is not None
+
+    def get_produits_similaires(self, obj):
+        similaires = get_similar_products(obj, DiffuseurParfum, limit=4)
+        return DiffuseurParfumSimilaireSerializer(similaires, many=True, context=self.context).data
+
+
+class DiffuseurParfumSimilaireSerializer(serializers.ModelSerializer):
+    prix_actuel = serializers.SerializerMethodField()
+    image_principale = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DiffuseurParfum
+        fields = ['id', 'nom', 'slug', 'prix_unitaire', 'prix_actuel', 'image_principale']
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_prix_actuel(self, obj):
+        return formater_prix(obj.prix_actuel)
+
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_image_principale(self, obj):
+        return get_image_url(self.context.get('request'), obj.image_principale)
+
+
+class DiffuseurParfumAdminListSerializer(DiffuseurParfumSerializer):
+    """Admin : liste (sans produits similaires, avec prix d'achat et bénéfice)"""
+    prix_achat = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True, required=False)
+    benefice_unitaire = serializers.SerializerMethodField()
+
+    class Meta(DiffuseurParfumSerializer.Meta):
+        fields = [f for f in DiffuseurParfumSerializer.Meta.fields if f != 'produits_similaires'] + ['prix_achat', 'benefice_unitaire']
+
+    def get_benefice_unitaire(self, obj):
+        if obj.prix_achat and obj.prix_unitaire:
+            return str((obj.prix_unitaire - obj.prix_achat).quantize(Decimal('0.01')))
+        return None
+
+
+class DiffuseurParfumAdminDetailSerializer(DiffuseurParfumSerializer):
+    """Admin : détail (avec produits similaires et prix d'achat)"""
+    prix_achat = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True, required=False)
+    benefice_unitaire = serializers.SerializerMethodField()
+
+    class Meta(DiffuseurParfumSerializer.Meta):
+        fields = DiffuseurParfumSerializer.Meta.fields + ['prix_achat', 'benefice_unitaire']
+
+    def get_benefice_unitaire(self, obj):
+        if obj.prix_achat and obj.prix_unitaire:
+            return str((obj.prix_unitaire - obj.prix_achat).quantize(Decimal('0.01')))
+        return None
+
+
+class DiffuseurParfumPublicListSerializer(DiffuseurParfumSerializer):
+    """Public : liste (champs réduits, sans infos admin)"""
+    class Meta(DiffuseurParfumSerializer.Meta):
+        fields = [f for f in DiffuseurParfumSerializer.Meta.fields if f not in (
+            'produits_similaires', 'reference_sku',
+            'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',
+            'description', 'poids_grammes',
+        )]
+
+
+class DiffuseurParfumPublicDetailSerializer(DiffuseurParfumSerializer):
+    """Public : détail complet (sans champs admin)"""
+    class Meta(DiffuseurParfumSerializer.Meta):
+        fields = [f for f in DiffuseurParfumSerializer.Meta.fields if f not in (
+            'reference_sku', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',
+        )]
 

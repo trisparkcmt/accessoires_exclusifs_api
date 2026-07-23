@@ -1,7 +1,7 @@
 # catalogue/filters.py
 import django_filters
 from django.db import models
-from .models import Parfum, Essence, Accessoire, Flacon
+from .models import Parfum, Essence, Accessoire, Flacon, DiffuseurParfum
 
 
 # ============================================================
@@ -160,22 +160,29 @@ class FlaconFilter(django_filters.FilterSet):
 
 
 # ============================================================
-# FUTURE_UPDATE_DIFFUSEUR: FILTRE DIFFUSEURS (COMMENTÉ)
+# FILTRE DIFFUSEURS
 # ============================================================
-# class DiffuseurParfumFilter(django_filters.FilterSet):
-#     marque    = django_filters.CharFilter(field_name='marque', lookup_expr='icontains')
-#     prix_min  = django_filters.NumberFilter(field_name='prix_unitaire', lookup_expr='gte')
-#     prix_max  = django_filters.NumberFilter(field_name='prix_unitaire', lookup_expr='lte')
-#     couleur   = django_filters.CharFilter(field_name='couleur',  lookup_expr='icontains')
-#     materiau  = django_filters.CharFilter(field_name='materiau', lookup_expr='icontains')
-#     en_stock  = django_filters.BooleanFilter(method='filter_en_stock')
-#
-#     def filter_en_stock(self, queryset, name, value):
-#         if value:
-#             return queryset.filter(stock_quantite__gt=models.F('seuil_alerte_stock'))
-#         return queryset.filter(stock_quantite__lte=models.F('seuil_alerte_stock'))
-#
-#     class Meta:
-#         model  = DiffuseurParfum
-#         fields = ['marque', 'couleur', 'materiau']
+class DiffuseurParfumFilter(django_filters.FilterSet):
+    marque              = django_filters.CharFilter(field_name='marque', lookup_expr='icontains')
+    prix_min            = django_filters.NumberFilter(field_name='prix_unitaire', lookup_expr='gte')
+    prix_max            = django_filters.NumberFilter(field_name='prix_unitaire', lookup_expr='lte')
+    couleur             = django_filters.CharFilter(field_name='couleur',  lookup_expr='icontains')
+    materiau            = django_filters.CharFilter(field_name='materiau', lookup_expr='icontains')
+    type_technologie    = django_filters.CharFilter(field_name='type_technologie')
+    type_alimentation   = django_filters.CharFilter(field_name='type_alimentation')
+    est_connecte        = django_filters.BooleanFilter(field_name='est_connecte')
+    a_jeux_de_lumiere   = django_filters.BooleanFilter(field_name='a_jeux_de_lumiere')
+    capacite_min        = django_filters.NumberFilter(field_name='capacite_reservoir_ml', lookup_expr='gte')
+    capacite_max        = django_filters.NumberFilter(field_name='capacite_reservoir_ml', lookup_expr='lte')
+    surface_min         = django_filters.NumberFilter(field_name='surface_couverture_m2', lookup_expr='gte')
+    en_stock            = django_filters.BooleanFilter(method='filter_en_stock')
+
+    def filter_en_stock(self, queryset, name, value):
+        if value:
+            return queryset.filter(stock_quantite__gt=models.F('seuil_alerte_stock'))
+        return queryset.filter(stock_quantite__lte=models.F('seuil_alerte_stock'))
+
+    class Meta:
+        model  = DiffuseurParfum
+        fields = ['marque', 'couleur', 'materiau', 'type_technologie', 'type_alimentation']
 

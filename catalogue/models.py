@@ -888,89 +888,138 @@ class LotEssenceConsommation(models.Model):
 
 
 # ============================================================
-# FUTURE_UPDATE_DIFFUSEUR: MODÈLE DIFFUSEUR DE PARFUM (COMMENTÉ)
+# FUTURE_UPDATE_DIFFUSEUR: MODÈLE DIFFUSEUR DE PARFUM
 # ============================================================
-# def upload_to_diffuseur(instance, filename):
-#     import os
-#     import uuid
-#     ext = filename.split('.')[-1]
-#     new_filename = f"{uuid.uuid4().hex}.{ext}"
-#     return os.path.join('diffuseurs', new_filename)
-#
-# def upload_to_diffuseur_galerie(instance, filename):
-#     import os
-#     import uuid
-#     ext = filename.split('.')[-1]
-#     new_filename = f"{uuid.uuid4().hex}.{ext}"
-#     return os.path.join('diffuseurs/galerie', new_filename)
-#
-# class DiffuseurParfum(models.Model):
-#     nom = models.CharField(max_length=200)
-#     marque = models.CharField(max_length=200, blank=True)
-#     slug = models.SlugField(max_length=220, unique=True, blank=True)
-#     reference_sku = models.CharField(max_length=100, unique=True, null=True, blank=True)
-#     description = models.TextField(blank=True)
-#     prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
-#     prix_promotionnel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-#     prix_achat = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Prix d'achat unitaire (visible admin uniquement)")
-#     date_debut = models.DateTimeField(null=True, blank=True)
-#     date_fin = models.DateTimeField(null=True, blank=True)
-#     stock_quantite = models.IntegerField(default=0)
-#     seuil_alerte_stock = models.IntegerField(default=3)
-#     materiau = models.CharField(max_length=100, blank=True, help_text="Matériau principal (bois, verre, plastique, etc.)")
-#     couleur = models.CharField(max_length=50, blank=True)
-#     dimensions = models.CharField(max_length=100, blank=True, help_text="ex: 12cm x 12cm x 15cm")
-#     poids_grammes = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
-#     image_principale = models.ImageField(
-#         upload_to=upload_to_diffuseur,
-#         blank=True, null=True,
-#         help_text="Image principale du diffuseur"
-#     )
-#     image_supp_1 = models.ImageField(upload_to=upload_to_diffuseur_galerie, blank=True, null=True, help_text="Image supplémentaire 1")
-#     image_supp_2 = models.ImageField(upload_to=upload_to_diffuseur_galerie, blank=True, null=True, help_text="Image supplémentaire 2")
-#     image_supp_3 = models.ImageField(upload_to=upload_to_diffuseur_galerie, blank=True, null=True, help_text="Image supplémentaire 3")
-#     image_supp_4 = models.ImageField(upload_to=upload_to_diffuseur_galerie, blank=True, null=True, help_text="Image supplémentaire 4")
-#     actif = models.BooleanField(default=True)
-#     date_creation = models.DateTimeField(auto_now_add=True)
-#     date_modification = models.DateTimeField(auto_now=True)
-#     est_bestseller = models.BooleanField(default=False)
-#     est_hotseller = models.BooleanField(default=False)
-#
-#     class Meta:
-#         db_table = 'diffuseur_parfum'
-#         verbose_name = 'Diffuseur de parfum'
-#         verbose_name_plural = 'Diffuseurs de parfum'
-#
-#     def __str__(self):
-#         return f"{self.nom} - {self.prix_unitaire} FCFA"
-#
-#     def save(self, *args, **kwargs):
-#         if not self.slug:
-#             from django.utils.text import slugify
-#             self.slug = slugify(self.nom)
-#         super().save(*args, **kwargs)
-#
-#     @property
-#     def prix_actuel(self):
-#         from django.utils import timezone
-#         now = timezone.now()
-#         if self.prix_promotionnel:
-#             if self.date_debut and self.date_fin:
-#                 if self.date_debut <= now <= self.date_fin:
-#                     return self.prix_promotionnel
-#             else:
-#                 return self.prix_promotionnel
-#         return self.prix_unitaire
-#
-#     @property
-#     def prix_promotionnel_effectif(self):
-#         from django.utils import timezone
-#         now = timezone.now()
-#         if self.prix_promotionnel:
-#             if self.date_debut and self.date_fin:
-#                 if self.date_debut <= now <= self.date_fin:
-#                     return self.prix_promotionnel
-#             else:
-#                 return self.prix_promotionnel
-#         return None
+def upload_to_diffuseur(instance, filename):
+    import os
+    import uuid
+    ext = filename.split('.')[-1]
+    new_filename = f"{uuid.uuid4().hex}.{ext}"
+    return os.path.join('diffuseurs', new_filename)
 
+def upload_to_diffuseur_galerie(instance, filename):
+    import os
+    import uuid
+    ext = filename.split('.')[-1]
+    new_filename = f"{uuid.uuid4().hex}.{ext}"
+    return os.path.join('diffuseurs/galerie', new_filename)
+
+class DiffuseurParfum(models.Model):
+    TECHNOLOGIE_CHOICES = [
+        ('nebulisation', 'Nébulisation'),
+        ('ultrasons', 'Ultrasons'),
+        ('chaleur_douce', 'Chaleur douce'),
+        ('ventilation', 'Ventilation'),
+    ]
+    ALIMENTATION_CHOICES = [
+        ('secteur', 'Secteur'),
+        ('batterie_rechargeable', 'Batterie rechargeable'),
+        ('usb', 'USB'),
+        ('piles', 'Piles'),
+    ]
+
+    nom = models.CharField(max_length=200)
+    marque = models.CharField(max_length=200, blank=True)
+    slug = models.SlugField(max_length=220, unique=True, blank=True)
+    reference_sku = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    description = models.TextField(blank=True)
+    prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
+    prix_promotionnel = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    prix_achat = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Prix d'achat unitaire (visible admin uniquement)")
+    date_debut = models.DateTimeField(null=True, blank=True)
+    date_fin = models.DateTimeField(null=True, blank=True)
+    stock_quantite = models.IntegerField(default=0)
+    seuil_alerte_stock = models.IntegerField(default=3)
+    materiau = models.CharField(max_length=100, blank=True, help_text="Matériau principal (bois, verre, plastique, etc.)")
+    couleur = models.CharField(max_length=50, blank=True)
+    dimensions = models.CharField(max_length=100, blank=True, help_text="ex: 12cm x 12cm x 15cm")
+    poids_grammes = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    image_principale = models.ImageField(
+        upload_to=upload_to_diffuseur,
+        blank=True, null=True,
+        help_text="Image principale du diffuseur"
+    )
+    image_supp_1 = models.ImageField(upload_to=upload_to_diffuseur_galerie, blank=True, null=True, help_text="Image supplémentaire 1")
+    image_supp_2 = models.ImageField(upload_to=upload_to_diffuseur_galerie, blank=True, null=True, help_text="Image supplémentaire 2")
+    image_supp_3 = models.ImageField(upload_to=upload_to_diffuseur_galerie, blank=True, null=True, help_text="Image supplémentaire 3")
+    image_supp_4 = models.ImageField(upload_to=upload_to_diffuseur_galerie, blank=True, null=True, help_text="Image supplémentaire 4")
+    actif = models.BooleanField(default=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+    est_bestseller = models.BooleanField(default=False)
+    est_hotseller = models.BooleanField(default=False)
+
+    # Nouveaux attributs physiques/technologiques
+    type_technologie = models.CharField(
+        max_length=50,
+        choices=TECHNOLOGIE_CHOICES,
+        default='ultrasons',
+        help_text="Type de technologie de diffusion"
+    )
+    capacite_reservoir_ml = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Capacité du réservoir en ml"
+    )
+    type_alimentation = models.CharField(
+        max_length=50,
+        choices=ALIMENTATION_CHOICES,
+        default='secteur',
+        help_text="Type d'alimentation électrique"
+    )
+    nombre_vitesses = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Nombre de vitesses de diffusion"
+    )
+    est_connecte = models.BooleanField(
+        default=False,
+        help_text="Savoir si on peut contrôler le diffuseur à distance"
+    )
+    surface_couverture_m2 = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Surface de couverture maximale en m²"
+    )
+    a_jeux_de_lumiere = models.BooleanField(
+        default=False,
+        help_text="Indique si le diffuseur possède des jeux de lumière"
+    )
+
+    class Meta:
+        db_table = 'diffuseur_parfum'
+        verbose_name = 'Diffuseur de parfum'
+        verbose_name_plural = 'Diffuseurs de parfum'
+
+    def __str__(self):
+        return f"{self.nom} - {self.prix_unitaire} FCFA"
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            from django.utils.text import slugify
+            self.slug = slugify(self.nom)
+        super().save(*args, **kwargs)
+
+    @property
+    def prix_actuel(self):
+        from django.utils import timezone
+        now = timezone.now()
+        if self.prix_promotionnel:
+            if self.date_debut and self.date_fin:
+                if self.date_debut <= now <= self.date_fin:
+                    return self.prix_promotionnel
+            else:
+                return self.prix_promotionnel
+        return self.prix_unitaire
+
+    @property
+    def prix_promotionnel_effectif(self):
+        from django.utils import timezone
+        now = timezone.now()
+        if self.prix_promotionnel:
+            if self.date_debut and self.date_fin:
+                if self.date_debut <= now <= self.date_fin:
+                    return self.prix_promotionnel
+            else:
+                return self.prix_promotionnel
+        return None

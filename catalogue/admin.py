@@ -5,7 +5,9 @@ from django.utils.safestring import mark_safe
 from .models import (
     Favori, Tag, TagParfum, TagEssence,
     CategorieParfum, Parfum, Essence, Ingredient,
-    TypeAccessoire, Accessoire, TypeFlacon, Flacon, NotificationCatalogue
+    LotEssence, ProduitFiniEssence,
+    TypeAccessoire, Accessoire, TypeFlacon, Flacon, NotificationCatalogue,
+    DiffuseurParfum
 )
 
 
@@ -281,16 +283,6 @@ class ParfumAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('categorie').prefetch_related('tags')
-# catalogue/admin.py (extrait modifié)
-
-# ... gardez toutes les importations et helpers existants ...
-# Ajoutez les nouveaux modèles dans les imports
-from .models import (
-    Tag, TagParfum, TagEssence,
-    CategorieParfum, Parfum, Essence, LotEssence, ProduitFiniEssence,
-    TypeAccessoire, Accessoire, TypeFlacon, Flacon
-)
-
 # ============================================================
 # ESSENCES (catalogue uniquement)
 # ============================================================
@@ -710,59 +702,72 @@ class NotificationCatalogueAdmin(admin.ModelAdmin):
         updated = queryset.update(est_lu=False)
         self.message_user(request, f"{updated} notification(s) marquée(s) comme non-lue(s).")
 
-
 # ============================================================
-# FUTURE_UPDATE_DIFFUSEUR: ADMIN DIFFUSEURS (COMMENTÉ)
+# ADMIN DIFFUSEURS DE PARFUM
 # ============================================================
-# @admin.register(DiffuseurParfum)
-# class DiffuseurParfumAdmin(admin.ModelAdmin):
-#     list_display = (
-#         'id', 'apercu_image_col', 'nom', 'marque', 'materiau',
-#         'prix_unitaire', 'prix_promotionnel', 'date_debut', 'date_fin',
-#         'statut_stock', 'actif'
-#     )
-#     list_filter = ('marque', 'materiau', 'couleur', 'actif', 'date_creation')
-#     search_fields = ('nom', 'reference_sku', 'description')
-#     readonly_fields = ('date_creation', 'date_modification')
-#     prepopulated_fields = {'slug': ('nom',)}
-#     list_editable = ('prix_unitaire', 'prix_promotionnel', 'actif')
-#     list_per_page = 50
-#
-#     fieldsets = (
-#         ('Informations générales', {
-#             'fields': ('nom', 'slug', 'reference_sku')
-#         }),
-#         ('Descriptions', {
-#             'fields': ('description',)
-#         }),
-#         ('Caractéristiques', {
-#             'fields': ('materiau', 'couleur', 'dimensions', 'poids_grammes')
-#         }),
-#         ('Prix', {
-#             'fields': ('prix_unitaire', 'prix_promotionnel', 'date_debut', 'date_fin', 'stock_quantite', 'seuil_alerte_stock')
-#         }),
-#         ('Finances (Admin uniquement)', {
-#             'description': 'Prix d’achat réel payé au fournisseur (pour calcul de bénéfice).',
-#             'fields': ('prix_achat',),
-#             'classes': ('collapse',)
-#         }),
-#         ('Images', {
-#             'fields': ('image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')
-#         }),
-#         ('Statut', {
-#             'fields': ('actif', 'est_bestseller', 'est_hotseller')
-#         }),
-#         ('Dates', {
-#             'fields': ('date_creation', 'date_modification'),
-#             'classes': ('collapse',)
-#         }),
-#     )
-#
-#     @admin.display(description="Aperçu")
-#     def apercu_image_col(self, obj):
-#         return apercu_image(obj.image_principale)
-#
-#     @admin.display(description="Stock")
-#     def statut_stock(self, obj):
-#         return statut_stock_html(obj.stock_quantite, obj.seuil_alerte_stock)
+@admin.register(DiffuseurParfum)
+class DiffuseurParfumAdmin(admin.ModelAdmin):
+    list_display = (
+        'id', 'apercu_image_col', 'nom', 'marque',
+        'type_technologie', 'type_alimentation',
+        'prix_unitaire', 'prix_promotionnel',
+        'statut_stock', 'actif'
+    )
+    list_filter = (
+        'marque', 'type_technologie', 'type_alimentation',
+        'est_connecte', 'a_jeux_de_lumiere',
+        'actif', 'est_bestseller', 'est_hotseller', 'date_creation'
+    )
+    search_fields   = ('nom', 'reference_sku', 'description', 'marque')
+    readonly_fields = ('date_creation', 'date_modification')
+    prepopulated_fields = {'slug': ('nom',)}
+    list_editable   = ('prix_unitaire', 'prix_promotionnel', 'actif')
+    list_per_page   = 50
 
+    fieldsets = (
+        ('Informations générales', {
+            'fields': ('nom', 'marque', 'slug', 'reference_sku')
+        }),
+        ('Description', {
+            'fields': ('description',)
+        }),
+        ('Caractéristiques physiques', {
+            'fields': ('materiau', 'couleur', 'dimensions', 'poids_grammes')
+        }),
+        ('Attributs technologiques', {
+            'fields': (
+                'type_technologie', 'type_alimentation',
+                'capacite_reservoir_ml', 'nombre_vitesses',
+                'est_connecte', 'surface_couverture_m2', 'a_jeux_de_lumiere'
+            )
+        }),
+        ('Prix & Stock', {
+            'fields': ('prix_unitaire', 'prix_promotionnel', 'date_debut', 'date_fin', 'stock_quantite', 'seuil_alerte_stock')
+        }),
+        ('Finances (Admin uniquement)', {
+            'description': "Prix d'achat réel payé au fournisseur (pour calcul de bénéfice).",
+            'fields': ('prix_achat',),
+            'classes': ('collapse',)
+        }),
+        ('Images', {
+            'fields': ('image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')
+        }),
+        ('Statut', {
+            'fields': ('actif', 'est_bestseller', 'est_hotseller')
+        }),
+        ('Dates', {
+            'fields': ('date_creation', 'date_modification'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    @admin.display(description="Aperçu")
+    def apercu_image_col(self, obj):
+        return apercu_image(obj.image_principale)
+
+    @admin.display(description="Stock")
+    def statut_stock(self, obj):
+        return statut_stock_html(obj.stock_quantite, obj.seuil_alerte_stock)
+
+    def get_queryset(self, request):
+        return super().get_queryset(request)
