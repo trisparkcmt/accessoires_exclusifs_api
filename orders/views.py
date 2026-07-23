@@ -37,6 +37,7 @@ from orders.serializers import (
     CommandeSerializer,
     PasserCommandeSerializer,
     FactureSerializer,
+    AdminFactureSerializer,
     CodePromoAdminSerializer,
     CommanderCompositionDirecteSerializer
 )
@@ -712,7 +713,11 @@ class AdminFactureListView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
             
-        factures = Facture.objects.all().order_by('-date_emission')
+        factures = Facture.objects.select_related(
+            'commande',
+            'commande__client',
+            'commande__client__user'
+        ).all().order_by('-date_emission')
         
         # Filtres possibles par recherche de numéro de facture ou de commande
         search = request.query_params.get('search')
@@ -727,10 +732,10 @@ class AdminFactureListView(APIView):
         paginator = CommandePagination() # réutilisation du paginateur de commande
         page = paginator.paginate_queryset(factures, request, view=self)
         if page is not None:
-            serializer = FactureSerializer(page, many=True, context={'request': request})
+            serializer = AdminFactureSerializer(page, many=True, context={'request': request})
             return paginator.get_paginated_response(serializer.data)
             
-        serializer = FactureSerializer(factures, many=True, context={'request': request})
+        serializer = AdminFactureSerializer(factures, many=True, context={'request': request})
         return Response(serializer.data)
 
 

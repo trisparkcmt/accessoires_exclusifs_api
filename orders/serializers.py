@@ -433,10 +433,57 @@ class CommandeLigneEssencePersonnaliseeSerializer(serializers.ModelSerializer):
         fields = ['id', 'essence_personnalise', 'nom', 'quantite', 'prix_snapshot', 'sous_total', 'statut_laboratoire', 'note_laboratoire']
 
 
+class FactureCommandeSerializer(serializers.ModelSerializer):
+    """Informations simplifiées de la commande et du client rattachés à la facture."""
+    client_id = serializers.IntegerField(source='client.id', read_only=True, default=None)
+    client_email = serializers.CharField(source='client.user.email', read_only=True, default=None)
+    client_nom_complet = serializers.SerializerMethodField()
+    client_telephone = serializers.CharField(source='client.user.telephone', read_only=True, default=None)
+    detail_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Commande
+        fields = [
+            'id', 'numero_commande', 'total_ttc', 'statut', 
+            'statut_paiement', 'statut_livraison', 'date_creation',
+            'client_id', 'client_email', 'client_nom_complet', 'client_telephone',
+            'livraison_nom_complet', 'livraison_telephone',
+            'detail_url'
+        ]
+
+    def get_client_nom_complet(self, obj):
+        if obj.client and obj.client.user:
+            return obj.client.user.get_full_name() or obj.client.user.email
+        return obj.livraison_nom_complet or ''
+
+    def get_detail_url(self, obj):
+        request = self.context.get('request')
+        path = f"/api/v1/orders/commandes/{obj.numero_commande}/"
+        if request:
+            return request.build_absolute_uri(path)
+        return path
+
+
 class FactureSerializer(serializers.ModelSerializer):
+    montant_total = serializers.DecimalField(source='commande.total_ttc', max_digits=10, decimal_places=2, read_only=True, default=None)
+
     class Meta:
         model = Facture
-        fields = ['numero_facture', 'date_emission', 'envoye_par_email', 'fichier_pdf']
+        fields = ['id', 'numero_facture', 'date_emission', 'envoye_par_email', 'email_envoye_a', 'fichier_pdf', 'montant_total']
+
+
+class AdminFactureSerializer(serializers.ModelSerializer):
+    """Serializer complet pour l'administration des factures."""
+    montant_total = serializers.DecimalField(source='commande.total_ttc', max_digits=10, decimal_places=2, read_only=True, default=None)
+    commande = FactureCommandeSerializer(read_only=True)
+
+    class Meta:
+        model = Facture
+        fields = [
+            'id', 'numero_facture', 'date_emission', 'envoye_par_email',
+            'email_envoye_a', 'fichier_pdf', 'montant_total', 'commande'
+        ]
+
 
 
 # ============================================================
