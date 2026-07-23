@@ -391,6 +391,8 @@ CAMPAY_USERNAME = os.getenv('CAMPAY_USERNAME', '')
 CAMPAY_PASSWORD = os.getenv('CAMPAY_PASSWORD', '')
 CAMPAY_WEBHOOK_SECRET = os.getenv('CAMPAY_WEBHOOK_SECRET', '')
 CAMPAY_WEBHOOK_SIGNATURE_HEADER = os.getenv('CAMPAY_WEBHOOK_SIGNATURE_HEADER', 'X-Campay-Signature')
+# URL appelée par Campay quand une transaction est finalisée (envoyée DANS chaque requête /withdraw/)
+# Définir cette variable sur Render : CAMPAY_WEBHOOK_URL=https://accessoires-exclusifs-api.onrender.com/api/v1/auth/payout/webhook/
 CAMPAY_WEBHOOK_URL = os.getenv('CAMPAY_WEBHOOK_URL', '')
 
 #gerer les images 
