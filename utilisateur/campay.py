@@ -49,6 +49,9 @@ def payout_to_phone(to_phone: str, amount_fcfa: int, description: str = '', exte
     - amount_fcfa : entier
     - external_reference : uuid4 string unique (si None, en génère une)
 
+    Campay appellera automatiquement CAMPAY_WEBHOOK_URL (settings) une fois la
+    transaction finalisée (SUCCESSFUL ou FAILED).
+
     Retourne (success: bool, response_data: dict or None, error_message: str or None)
     response_data contient notamment :
       - 'processing_number'  : ID interne Campay à stocker pour le webhook
@@ -62,12 +65,23 @@ def payout_to_phone(to_phone: str, amount_fcfa: int, description: str = '', exte
     if external_reference is None:
         external_reference = str(uuid.uuid4())
 
+    # Récupérer l'URL du webhook depuis les settings (variable d'env CAMPAY_WEBHOOK_URL)
+    # C'est ce champ qui dit à Campay où envoyer la notification de statut final.
+    webhook_url = getattr(settings, 'CAMPAY_WEBHOOK_URL', '')
+
     payload = {
         'amount': str(int(amount_fcfa)),
         'to': to_phone,
         'description': description or 'Payout prestataire',
         'external_reference': external_reference,
     }
+
+    # Ajouter le callback uniquement s'il est configuré
+    if webhook_url:
+        payload['redirect_url'] = webhook_url  # champ Campay pour les notifications de withdraw
+
+    logger.info('[Campay] Payout payload préparé. to=%s amount=%s external_ref=%s webhook=%s',
+                to_phone, amount_fcfa, external_reference, webhook_url or '(non configuré)')
 
     try:
         resp = requests.post(f"{settings.CAMPAY_API_URL}/withdraw/", json=payload, headers=headers, timeout=15)
