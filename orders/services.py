@@ -60,6 +60,7 @@ def generer_facture(commande):
         'lignes_produit_fini_essence': commande.lignes_produit_fini_essence.all(),
         'lignes_parfums_perso': commande.lignes_parfums_perso.all(),
         'lignes_essence_personnalisee': commande.lignes_essence_personnalisee.all(),
+        'lignes_diffuseurs': commande.lignes_diffuseurs.all(),
         'DEVISE': 'FCFA',
     }
 

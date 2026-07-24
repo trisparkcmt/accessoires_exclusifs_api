@@ -276,6 +276,20 @@
         </tr>
         {% endfor %}
 
+        <!-- Diffuseurs de parfum -->
+        {% for ligne in lignes_diffuseurs %}
+        <tr>
+          <td><strong>{{ ligne.nom_snapshot }} (Diffuseur)</strong></td>
+          <td class="text-right">
+            {{ ligne.prix_unitaire_snapshot|floatformat:0 }} {{ DEVISE }}
+          </td>
+          <td class="text-right">{{ ligne.quantite }}</td>
+          <td class="text-right">
+            {{ ligne.sous_total|floatformat:0 }} {{ DEVISE }}
+          </td>
+        </tr>
+        {% endfor %}
+
         <!-- Parfums personnalisés -->
         {% for ligne in lignes_parfums_perso %}
         <tr>
