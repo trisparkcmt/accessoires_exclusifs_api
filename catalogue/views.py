@@ -240,6 +240,17 @@ class ParfumViewSet(viewsets.ModelViewSet):
             prix_unitaire__gt=0
         ).select_related('categorie').prefetch_related('tags')
 
+    def get_object(self):
+        queryset = self.filter_queryset(self.get_queryset())
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        val = self.kwargs.get(lookup_url_kwarg)
+        if val and str(val).isdigit():
+            obj = get_object_or_404(queryset, pk=int(val))
+        else:
+            obj = get_object_or_404(queryset, **{self.lookup_field: val})
+        self.check_object_permissions(self.request, obj)
+        return obj
+
     def get_serializer_class(self):
         is_admin = self.request.user.is_staff
         if self.action == 'list':
@@ -1260,6 +1271,17 @@ class AccessoireViewSet(viewsets.ModelViewSet):
             prix_unitaire__gt=0
         ).select_related('type_accessoire').order_by('?')
 
+    def get_object(self):
+        queryset = self.filter_queryset(self.get_queryset())
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        val = self.kwargs.get(lookup_url_kwarg)
+        if val and str(val).isdigit():
+            obj = get_object_or_404(queryset, pk=int(val))
+        else:
+            obj = get_object_or_404(queryset, **{self.lookup_field: val})
+        self.check_object_permissions(self.request, obj)
+        return obj
+
     def get_serializer_class(self):
         is_admin = self.request.user.is_staff
         if self.action == 'list':
@@ -1427,10 +1449,19 @@ class FlaconViewSet(viewsets.ModelViewSet):
         if self.request.user.is_staff or is_active_serveuse(self.request.user):
             return Flacon.objects.all().select_related('type_flacon')
         return Flacon.objects.filter(
-            actif=True,
-            stock_quantite__gt=0,
-            prix_unitaire__gt=0
+            actif=True
         ).select_related('type_flacon')
+
+    def get_object(self):
+        queryset = self.filter_queryset(self.get_queryset())
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        val = self.kwargs.get(lookup_url_kwarg)
+        if val and str(val).isdigit():
+            obj = get_object_or_404(queryset, pk=int(val))
+        else:
+            obj = get_object_or_404(queryset, **{self.lookup_field: val})
+        self.check_object_permissions(self.request, obj)
+        return obj
 
     def get_serializer_class(self):
         if self.action == 'list':
