@@ -3,8 +3,8 @@ from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from .models import (
-    Panier, PanierLigneParfum, PanierLigneParfumPerso, PanierLigneAccessoire,
-    Commande, CommandeLigneParfum, CommandeLigneParfumPerso, CommandeLigneAccessoire,
+    Panier, PanierLigneParfum, PanierLigneParfumPerso, PanierLigneAccessoire, PanierLigneDiffuseurParfum,
+    Commande, CommandeLigneParfum, CommandeLigneParfumPerso, CommandeLigneAccessoire, CommandeLigneDiffuseurParfum,
     AffectationLivraison, CodePromoAdmin
 )
 
@@ -36,13 +36,21 @@ class PanierLigneAccessoireInline(admin.TabularInline):
     autocomplete_fields = ('accessoire',)
 
 
+class PanierLigneDiffuseurParfumInline(admin.TabularInline):
+    model = PanierLigneDiffuseurParfum
+    extra = 0
+    fields = ('diffuseur', 'quantite', 'prix_calcule', 'sous_total')
+    readonly_fields = ('sous_total',)
+    autocomplete_fields = ('diffuseur',)
+
+
 @admin.register(Panier)
 class PanierAdmin(admin.ModelAdmin):
     list_display = ('id', 'client_info', 'sous_total', 'total', 'statut', 'date_creation')
     list_filter = ('statut', 'date_creation', 'date_modification')
     search_fields = ('client__user__email', 'client__user__username')
     readonly_fields = ('date_creation', 'date_modification', 'sous_total', 'total')
-    inlines = [PanierLigneParfumInline, PanierLigneParfumPersoInline, PanierLigneAccessoireInline]
+    inlines = [PanierLigneParfumInline, PanierLigneParfumPersoInline, PanierLigneAccessoireInline, PanierLigneDiffuseurParfumInline]
     
     fieldsets = (
         ('Client', {
@@ -64,11 +72,11 @@ class PanierAdmin(admin.ModelAdmin):
     )
     
     def client_info(self, obj):
-        if obj.client:
+        if obj.client and hasattr(obj.client, 'user') and obj.client.user:
             return format_html(
                 '<b>{}</b><br/><small>{}</small>',
                 obj.client.user.get_full_name() or obj.client.user.email,
-                obj.client.telephone
+                obj.client.telephone or ''
             )
         return f"Panier #{obj.id}"
     client_info.short_description = 'Client'
@@ -98,6 +106,13 @@ class CommandeLigneAccessoireInline(admin.TabularInline):
     readonly_fields = ('sous_total',)
 
 
+class CommandeLigneDiffuseurParfumInline(admin.TabularInline):
+    model = CommandeLigneDiffuseurParfum
+    extra = 0
+    fields = ('nom_snapshot', 'quantite', 'prix_unitaire_snapshot', 'remise_ligne', 'sous_total')
+    readonly_fields = ('sous_total',)
+
+
 class AffectationLivraisonInline(admin.TabularInline):
     model = AffectationLivraison
     extra = 0
@@ -120,6 +135,7 @@ class CommandeAdmin(admin.ModelAdmin):
         CommandeLigneParfumInline, 
         CommandeLigneParfumPersoInline, 
         CommandeLigneAccessoireInline,
+        CommandeLigneDiffuseurParfumInline,
         AffectationLivraisonInline
     ]
     
@@ -153,12 +169,15 @@ class CommandeAdmin(admin.ModelAdmin):
     )
     
     def client_info(self, obj):
-        return format_html(
-            '<b>{}</b><br/><small>{}</small>',
-            obj.client.user.get_full_name() or obj.client.user.email,
-            obj.client.telephone
-        )
+        if obj.client and hasattr(obj.client, 'user') and obj.client.user:
+            nom = obj.client.user.get_full_name() or obj.client.user.email or obj.livraison_nom_complet or "Invité"
+            tel = obj.client.telephone or obj.livraison_telephone or ""
+            return format_html('<b>{}</b><br/><small>{}</small>', nom, tel)
+        nom = obj.livraison_nom_complet or "Invité / POS"
+        tel = obj.livraison_telephone or ""
+        return format_html('<b>{}</b><br/><small>{}</small>', nom, tel)
     client_info.short_description = 'Client'
+
     
     def actions_links(self, obj):
         """Liens d'action rapide"""
