@@ -419,10 +419,16 @@ class CommandeProduitFiniEssenceSerializer(serializers.ModelSerializer):
 
 class CommandeLigneParfumPersoSerializer(serializers.ModelSerializer):
     nom = serializers.CharField(source='parfum_personnalise.nom', read_only=True)
+    composition = ParfumPersoDetailSerializer(source='parfum_personnalise', read_only=True)
 
     class Meta:
         model = CommandeLigneParfumPerso
-        fields = ['id', 'parfum_personnalise', 'nom', 'quantite', 'prix_snapshot', 'sous_total', 'statut_laboratoire', 'note_laboratoire']
+        fields = [
+            'id', 'parfum_personnalise', 'nom', 'composition',
+            'quantite', 'prix_snapshot', 'sous_total',
+            'statut_laboratoire', 'note_laboratoire'
+        ]
+
 
 
 class CommandeLigneEssencePersonnaliseeSerializer(serializers.ModelSerializer):

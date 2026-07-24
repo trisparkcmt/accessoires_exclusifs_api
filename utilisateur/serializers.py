@@ -15,6 +15,7 @@ from orders.models import (
     CommandeLigneParfum,
     CommandeLigneParfumPerso,
 )
+from orders.serializers import ParfumPersoDetailSerializer
 
 
 @extend_schema_serializer(
@@ -514,11 +515,13 @@ class MeCommandeLigneParfumSerializer(serializers.ModelSerializer):
 class MeCommandeLigneParfumPersoSerializer(serializers.ModelSerializer):
     parfum_personnalise_id = serializers.IntegerField(source='parfum_personnalise.id', read_only=True)
     parfum_personnalise_nom = serializers.CharField(source='parfum_personnalise.nom', read_only=True)
+    composition = ParfumPersoDetailSerializer(source='parfum_personnalise', read_only=True)
 
     class Meta:
         model = CommandeLigneParfumPerso
         fields = [
             'id', 'parfum_personnalise_id', 'parfum_personnalise_nom',
+            'composition',
             'quantite', 'prix_snapshot', 'sous_total', 'statut_laboratoire',
             'proportions_mises_a_jour', 'note_laboratoire'
         ]
