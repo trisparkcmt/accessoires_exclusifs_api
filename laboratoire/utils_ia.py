@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def get_catalogue_context():
     """Récupère et formate le catalogue pour l'IA"""
-    from catalogue.models import LotEssence
+    from catalogue.models import LotEssence, DiffuseurParfum
     parfums = Parfum.objects.filter(actif=True).values('id', 'nom', 'contenance_ml', 'description_ia', 'prix_unitaire')
     # Essences : uniquement celles actives, avec prix et en stock (au moins un lot actif avec stock)
     essence_ids_en_stock = LotEssence.objects.filter(
@@ -25,6 +25,7 @@ def get_catalogue_context():
     ingredients = Ingredient.objects.filter(actif=True).values('id', 'nom', 'prix_par_ml')
     accessoires = Accessoire.objects.filter(actif=True).values('id', 'nom', 'description_courte', 'prix_unitaire')
     flacons = Flacon.objects.filter(actif=True).values('id', 'nom', 'contenance_ml', 'prix_unitaire')
+    diffuseurs = DiffuseurParfum.objects.filter(actif=True, stock_quantite__gt=0).values('id', 'nom', 'description', 'prix_unitaire', 'prix_promotionnel')
 
     
     context = "Catalogue actuel de la parfumerie :\n\n"
@@ -48,6 +49,12 @@ def get_catalogue_context():
     context += "\n=== ACCESSOIRES ===\n"
     for a in accessoires:
         context += f"- ID: {a['id']}, Nom: {a['nom']}, Prix: {a['prix_unitaire']} FCFA, Description: {a['description_courte']}\n"
+        
+    context += "\n=== DIFFUSEURS DE PARFUM ===\n"
+    for d in diffuseurs:
+        prix = d['prix_promotionnel'] if d.get('prix_promotionnel') is not None else d['prix_unitaire']
+        desc = (d.get('description') or '').replace('\n', ' ')[:100]
+        context += f"- ID: {d['id']}, Nom: {d['nom']}, Prix: {prix} FCFA, Description: {desc}\n"
         
     return context
 
@@ -81,8 +88,8 @@ def validate_ia_response_schema(reponse):
     if not isinstance(reponse.get('parfums_existants_recommandes'), list):
         return False, 'Le champ parfums_existants_recommandes doit être une liste.'
 
-    if not isinstance(reponse.get('accessoires'), list):
-        return False, 'Le champ accessoires doit être une liste.'
+    if 'diffuseurs' in reponse and not isinstance(reponse.get('diffuseurs'), list):
+        return False, 'Le champ diffuseurs doit être une liste.'
 
     return True, None
 
@@ -212,6 +219,12 @@ def get_relevant_catalogue_context(prompt_utilisateur, top_n=4):
     for f in Flacon.objects.filter(actif=True).values('id', 'nom', 'contenance_ml', 'prix_unitaire')[:4]:
         context += f"- ID: {f['id']}, Nom: {f['nom']}, Contenance: {f['contenance_ml']}ml, Prix: {f['prix_unitaire']} FCFA\n"
 
+    context += "\n=== DIFFUSEURS DE PARFUM ===\n"
+    from catalogue.models import DiffuseurParfum
+    for d in DiffuseurParfum.objects.filter(actif=True, stock_quantite__gt=0).values('id', 'nom', 'prix_unitaire', 'prix_promotionnel')[:4]:
+        prix = d['prix_promotionnel'] if d.get('prix_promotionnel') is not None else d['prix_unitaire']
+        context += f"- ID: {d['id']}, Nom: {d['nom']}, Prix: {prix} FCFA\n"
+
     return context
 
 
@@ -263,15 +276,16 @@ Analyse la demande du client et respecte IMPÉRATIVEMENT toutes les règles suiv
 - Si le client n'indique pas de quantité en ml, choisis un flacon adapté de notre catalogue.
 
 3. PROPOSITIONS ASSORTIES ET VENTE COMPLÉMENTAIRE (CROSS-SELLING) :
-- Lorsque le client demande ou accepte un produit (par exemple un parfum), propose-lui SYSTEMATIQUEMENT quelque chose qui s'associe très bien avec (un accessoire assorti de notre catalogue comme un diffuseur ou un vaporisateur de voyage, ou un autre produit complémentaire). Explique chaleureusement dans ton message pourquoi ce produit supplémentaire complète parfaitement sa sélection.
+- Lorsque le client demande ou accepte un produit (par exemple un parfum), propose-lui SYSTEMATIQUEMENT quelque chose qui s'associe très bien avec (un accessoire assorti comme un vaporisateur de voyage, ou un diffuseur de parfum de notre catalogue). Explique chaleureusement dans ton message pourquoi ce produit supplémentaire complète parfaitement sa sélection.
+- Si le client demande explicitement un diffuseur de parfum (ex: "je veux un diffuseur", "propose-moi un diffuseur d'ambiance"), recommande les IDs des diffuseurs adaptés dans la liste `diffuseurs` du JSON.
 
 4. BUDGET ET PRIX :
-- Pour chaque produit ou élément que tu sélectionnes (parfums existants, flacons, essences, ingrédients, accessoires), calcule mentalement leur prix total à l'aide des prix indiqués dans le catalogue ci-dessous.
+- Pour chaque produit ou élément que tu sélectionnes (parfums existants, flacons, essences, ingrédients, accessoires, diffuseurs), calcule mentalement leur prix total à l'aide des prix indiqués dans le catalogue ci-dessous.
 - Si le client a spécifié un budget maximum (ou si un budget est mentionné dans l'historique), tu dois STRICTEMENT proposer des produits dont le prix total combiné ne dépasse pas ce budget.
 - Mentionne explicitement dans ton "message" les prix individuels des produits que tu proposes pour que le client voie clairement le coût de chaque élément.
 
 5. FORMAT DE RÉPONSE :
-- Les listes `parfums_existants_recommandes` et `accessoires` doivent uniquement contenir les IDs numériques des produits (ex: [1, 2]), PAS des objets/dictionnaires.
+- Les listes `parfums_existants_recommandes`, `accessoires` et `diffuseurs` doivent uniquement contenir les IDs numériques des produits (ex: [1, 2]), PAS des objets/dictionnaires.
 - Ne propose que des produits présents dans le catalogue ci-dessous.
 
 Catalogue disponible :
@@ -279,7 +293,7 @@ Catalogue disponible :
 
 Réponds au format JSON strict uniquement, sans aucun texte avant ou après, et sans balises de code markdown (pas de ```json) :
 {{
-    "message": "Ton message chaleureux avec les prix de chaque élément proposé et la recommandation du produit ou accessoire complémentaire assorti (2 phrases maximum, mots complets, pas d'abréviations).",
+    "message": "Ton message chaleureux avec les prix de chaque élément proposé et la recommandation du produit ou accessoire/diffuseur complémentaire assorti (2 phrases maximum, mots complets, pas d'abréviations).",
     "quantite_demandee_ml": 0,
     "budget_max_fcfa": 0,
     "flacon_id": 0,
@@ -290,7 +304,8 @@ Réponds au format JSON strict uniquement, sans aucun texte avant ou après, et 
         {{"id": 5, "quantite_ml": 5}}
     ],
     "parfums_existants_recommandes": [1, 2],
-    "accessoires": [1]
+    "accessoires": [1],
+    "diffuseurs": [1]
 }}
 """
 

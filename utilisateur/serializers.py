@@ -14,6 +14,7 @@ from orders.models import (
     CommandeLigneAccessoire,
     CommandeLigneParfum,
     CommandeLigneParfumPerso,
+    CommandeLigneDiffuseurParfum,
 )
 from orders.serializers import ParfumPersoDetailSerializer
 
@@ -539,10 +540,24 @@ class MeCommandeLigneAccessoireSerializer(serializers.ModelSerializer):
         ]
 
 
+class MeCommandeLigneDiffuseurSerializer(serializers.ModelSerializer):
+    diffuseur_id = serializers.IntegerField(source='diffuseur.id', read_only=True)
+
+    class Meta:
+        model = CommandeLigneDiffuseurParfum
+        fields = [
+            'id', 'diffuseur_id', 'nom_snapshot', 'quantite',
+            'prix_unitaire_snapshot', 'remise_ligne', 'sous_total',
+            'mouvement_stock_genere'
+        ]
+
+
+
 class MeCommandeSerializer(serializers.ModelSerializer):
     lignes_parfums = MeCommandeLigneParfumSerializer(many=True, read_only=True)
     lignes_parfums_perso = MeCommandeLigneParfumPersoSerializer(many=True, read_only=True)
     lignes_accessoires = MeCommandeLigneAccessoireSerializer(many=True, read_only=True)
+    lignes_diffuseurs = MeCommandeLigneDiffuseurSerializer(many=True, read_only=True)
 
     class Meta:
         model = Commande
@@ -554,7 +569,8 @@ class MeCommandeSerializer(serializers.ModelSerializer):
             'livraison_ville', 'livraison_telephone',
             'date_livraison_estimee', 'date_livraison_reelle',
             'note_client', 'lignes_parfums', 'lignes_parfums_perso',
-            'lignes_accessoires', 'date_creation', 'date_modification'
+            'lignes_accessoires', 'lignes_diffuseurs',
+            'date_creation', 'date_modification'
         ]
 
 

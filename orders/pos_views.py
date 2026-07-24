@@ -4,7 +4,7 @@ from rest_framework import status
 from django.db.models import Q
 from django.conf import settings
 
-from catalogue.models import Parfum, Accessoire, ProduitFiniEssence
+from catalogue.models import Parfum, Accessoire, ProduitFiniEssence, DiffuseurParfum
 from orders.pos_serializers import POSCommandeCreateSerializer
 from orders.serializers import CommandeSerializer
 from utilisateur.permissions import IsSuperadminOrActiveServeuse
@@ -109,6 +109,35 @@ class POSProductSearchView(APIView):
                     "reference_sku": f"ESS-{e.essence.id}-{e.taille_ml}",
                     "prix": float(prix),
                     "stock_disponible": stock_flacons,
+                    "image_url": image_url
+                })
+
+        # 4. Recherche des Diffuseurs (actifs, en stock, prix > 0)
+        if not product_type or product_type == 'diffuseur':
+            diffuseurs = DiffuseurParfum.objects.filter(
+                actif=True,
+                stock_quantite__gt=0,
+                prix_unitaire__gt=0,
+            )
+            if q:
+                diffuseurs = diffuseurs.filter(
+                    Q(nom__icontains=q) |
+                    Q(marque__icontains=q) |
+                    Q(reference_sku__icontains=q)
+                )
+            for d in diffuseurs[:50]:
+                prix = d.prix_promotionnel if d.prix_promotionnel is not None else d.prix_unitaire
+                if prix <= 0:
+                    continue
+                image_url = request.build_absolute_uri(d.image_principale.url) if d.image_principale else None
+                results.append({
+                    "id": d.id,
+                    "type": "diffuseur",
+                    "nom": d.nom,
+                    "marque": d.marque,
+                    "reference_sku": d.reference_sku or "",
+                    "prix": float(prix),
+                    "stock_disponible": d.stock_quantite,
                     "image_url": image_url
                 })
 

@@ -260,8 +260,10 @@ class Commande(models.Model):
         total_accessoires = sum(ligne.sous_total for ligne in self.lignes_accessoires.all())
         total_produits_finis = sum(ligne.sous_total for ligne in self.lignes_produit_fini_essence.all())
         total_essences_perso = sum(ligne.sous_total for ligne in self.lignes_essence_personnalisee.all())
+        total_diffuseurs = sum(ligne.sous_total for ligne in self.lignes_diffuseurs.all())
         
-        self.sous_total = total_parfums + total_persos + total_accessoires + total_produits_finis + total_essences_perso
+        self.sous_total = total_parfums + total_persos + total_accessoires + total_produits_finis + total_essences_perso + total_diffuseurs
+
         
         if self.prestataire:
             self.remise_code_promo = self.sous_total * (self.prestataire.reduction_client_pourcentage / 100)

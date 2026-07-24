@@ -10,9 +10,10 @@ from orders.models import (
     CommandeLigneParfum,
     CommandeLigneAccessoire,
     CommandeProduitFiniEssence,
+    CommandeLigneDiffuseurParfum,
     CodePromoAdmin,
 )
-from catalogue.models import Parfum, Accessoire, ProduitFiniEssence
+from catalogue.models import Parfum, Accessoire, ProduitFiniEssence, DiffuseurParfum
 from utilisateur.models import Client, Prestataire
 from allauth.account.models import EmailAddress
 
@@ -20,7 +21,7 @@ User = get_user_model()
 
 
 class POSCommandLineSerializer(serializers.Serializer):
-    type = serializers.ChoiceField(choices=['parfum', 'accessoire', 'essence'])
+    type = serializers.ChoiceField(choices=['parfum', 'accessoire', 'essence', 'diffuseur'])
     id = serializers.IntegerField()
     quantite = serializers.IntegerField(min_value=1)
 
@@ -132,6 +133,22 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                     'product_obj': product,
                     'quantite': qty,
                     'prix_unitaire': product.prix_promotionnel if (product.prix_promotionnel is not None) else product.prix
+                })
+
+            elif product_type == 'diffuseur':
+                try:
+                    product = DiffuseurParfum.objects.get(id=product_id)
+                except DiffuseurParfum.DoesNotExist:
+                    raise serializers.ValidationError({"lignes": f"Diffuseur avec l'ID {product_id} introuvable."})
+                if not product.actif:
+                    raise serializers.ValidationError({"lignes": f"Le diffuseur '{product.nom}' n'est pas actif."})
+                if product.stock_quantite < qty:
+                    raise serializers.ValidationError({"lignes": f"Stock insuffisant pour le diffuseur '{product.nom}'. Disponible: {product.stock_quantite}, Demandé: {qty}."})
+                validated_lines.append({
+                    'type': 'diffuseur',
+                    'product_obj': product,
+                    'quantite': qty,
+                    'prix_unitaire': product.prix_promotionnel if (product.prix_promotionnel is not None) else product.prix_unitaire
                 })
 
         data['validated_lines'] = validated_lines
@@ -357,6 +374,16 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                         commande=commande,
                         produit_fini_essence=prod,
                         nom_snapshot=prod.essence.nom,
+                        quantite=qty,
+                        prix_unitaire_snapshot=prix_unitaire,
+                        remise_ligne=Decimal('0'),
+                        sous_total=prix_unitaire * qty
+                    )
+                elif l_type == 'diffuseur':
+                    CommandeLigneDiffuseurParfum.objects.create(
+                        commande=commande,
+                        diffuseur=prod,
+                        nom_snapshot=prod.nom,
                         quantite=qty,
                         prix_unitaire_snapshot=prix_unitaire,
                         remise_ligne=Decimal('0'),

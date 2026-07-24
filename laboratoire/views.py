@@ -170,11 +170,15 @@ def ia_recommandation(request):
     ingredients_data = reponse_ia.get('ingredients_sur_mesure', [])
     ids_accessoires = reponse_ia.get('accessoires', [])
     ids_accessoires = [a.get('id') if isinstance(a, dict) else a for a in ids_accessoires if a is not None]
+    ids_diffuseurs = reponse_ia.get('diffuseurs', [])
+    ids_diffuseurs = [d.get('id') if isinstance(d, dict) else d for d in ids_diffuseurs if d is not None]
     flacon_id = reponse_ia.get('flacon_id')
     quantite_demandee_ml = reponse_ia.get('quantite_demandee_ml', 50)
 
     parfums = Parfum.objects.filter(id__in=ids_parfums, actif=True, stock_quantite__gt=0)
     accessoires = Accessoire.objects.filter(id__in=ids_accessoires, actif=True, stock_quantite__gt=0)
+    from catalogue.models import DiffuseurParfum as DiffuseurModel
+    diffuseurs = DiffuseurModel.objects.filter(id__in=ids_diffuseurs, actif=True, stock_quantite__gt=0)
     flacon = None
     essences_recommandees = []
     ingredients_recommandees = []
@@ -241,6 +245,7 @@ def ia_recommandation(request):
         )
         IAConversationMessage.objects.filter(id__in=ids_a_supprimer).delete()
 
+    from .serializers import DiffuseurLabSerializer
     response_data = {
         'message': assistant_message,
         'quantite_demandee_ml': quantite_demandee_ml,
@@ -252,8 +257,10 @@ def ia_recommandation(request):
         } if flacon and afficher_flacon else None,
         'parfums_existants': ParfumLabSerializer(parfums, many=True).data,
         'essences_pre_faites': essences_recommandees,
-        'ingredients_sur_mesure': ingredients_recommandees,
+        'ingredients_sur_mesure': ingredients_recommandes,
         'accessoires': AccessoireLabSerializer(accessoires, many=True).data,
+        'diffuseurs': DiffuseurLabSerializer(diffuseurs, many=True).data,
     }
 
     return Response(response_data)
+

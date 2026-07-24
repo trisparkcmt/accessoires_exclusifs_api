@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from catalogue.models import Essence, Flacon, Accessoire, Parfum, Ingredient, LotEssence
+from catalogue.models import Essence, Flacon, Accessoire, Parfum, Ingredient, LotEssence, DiffuseurParfum
 from laboratoire.models import ParfumPersonnalise, ParfumPersonnaliseLigne, EssencePersonnalisee, EssencePersonnaliseeLigne
 from django.db import transaction
 from decimal import Decimal
@@ -33,6 +33,17 @@ class ParfumLabSerializer(serializers.ModelSerializer):
         model = Parfum
         fields = ['id', 'nom', 'prix_unitaire', 'image_principale']
         read_only_fields = fields
+
+class DiffuseurLabSerializer(serializers.ModelSerializer):
+    prix_actuel = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DiffuseurParfum
+        fields = ['id', 'nom', 'prix_unitaire', 'prix_promotionnel', 'prix_actuel', 'image_principale']
+        read_only_fields = fields
+
+    def get_prix_actuel(self, obj):
+        return str(obj.prix_promotionnel if obj.prix_promotionnel is not None else obj.prix_unitaire)
 
 class EssencePersonnaliseeLigneSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
