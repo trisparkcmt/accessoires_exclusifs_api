@@ -13,11 +13,19 @@ logger = logging.getLogger(__name__)
 
 def get_catalogue_context():
     """Récupère et formate le catalogue pour l'IA"""
+    from catalogue.models import LotEssence
     parfums = Parfum.objects.filter(actif=True).values('id', 'nom', 'contenance_ml', 'description_ia', 'prix_unitaire')
-    essences = Essence.objects.filter(actif=True).values('id', 'nom', 'description_ia', 'prix_par_ml', 'categorie')
+    # Essences : uniquement celles actives, avec prix et en stock (au moins un lot actif avec stock)
+    essence_ids_en_stock = LotEssence.objects.filter(
+        actif=True, stock_ml__gt=0
+    ).values_list('essence_id', flat=True).distinct()
+    essences = Essence.objects.filter(
+        actif=True, prix_par_ml__gt=0, id__in=essence_ids_en_stock
+    ).values('id', 'nom', 'description_ia', 'prix_par_ml', 'categorie')
     ingredients = Ingredient.objects.filter(actif=True).values('id', 'nom', 'prix_par_ml')
     accessoires = Accessoire.objects.filter(actif=True).values('id', 'nom', 'description_courte', 'prix_unitaire')
     flacons = Flacon.objects.filter(actif=True).values('id', 'nom', 'contenance_ml', 'prix_unitaire')
+
     
     context = "Catalogue actuel de la parfumerie :\n\n"
     
@@ -230,16 +238,28 @@ def demander_recommandation_ia(prompt_utilisateur, history=None, client_info=Non
     system_prompt = f"""Tu es un expert parfumeur et conseiller de vente pour la boutique Accessoire Exclusif.
 {client_context}Prends en compte l'historique de la discussion pour adapter tes réponses et comprendre le contexte global.
 
-Analyse la demande du client et respecte impérativement les règles suivantes :
+Analyse la demande du client et respecte IMPÉRATIVEMENT toutes les règles suivantes :
+
+0. LANGAGE ET ORTHOGRAPHE (CRITIQUE — NON NÉGOCIABLE) :
+- Tu dois écrire en français parfait, sans AUCUNE abréviation. JAMAIS.
+- Interdit : « pr », « tt », « tjrs », « pcq », « svp », « bcp », « qd », « qq », « etc. » ou tout autre raccourci.
+- Écris TOUJOURS les mots en entier : « pour », « tout », « toujours », « parce que », « s'il vous plaît », « beaucoup », « quand », « quelques ».
+- Un message de qualité professionnelle est obligatoire.
 
 1. COMPORTEMENT ET LOGIQUE DE CONVERSATION :
 - Si la demande est un simple salut (ex: "bonjour", "salut"), une politesse, ou une question d'information générale sans intention d'achat/recommandation, réponds chaleureusement et naturellement dans le champ "message". Ne propose aucun produit, mets "flacon_id" à 0 et laisse toutes les listes de produits vides.
 - Si le client demande des recommandations de produits ou une création sur mesure, réponds chaleureusement en justifiant tes choix.
 - Le champ "message" doit être écrit en français sans faute et composé de 2 phrases maximum.
 
-2. FLACON ET COMPOSITION (SUR MESURE) :
+2. FLACON ET COMPOSITION (SUR MESURE) — CALCUL OBLIGATOIRE :
 - Un flacon ("flacon_id") ne doit être choisi (valeur > 0) QUE si tu proposes une composition sur mesure (c'est-à-dire si tu mets des éléments dans "essences_pre_faites" ou "ingredients_sur_mesure"). Si tu ne recommandes pas de création personnalisée, "flacon_id" doit être égal à 0.
-- RÈGLE DES 45% (CRITIQUE) : Si tu crées un parfum personnalisé, la somme totale des quantités (en ml) de toutes les essences et ingrédients de ta composition DOIT ÊTRE EXACTEMENT égale à 45% de la contenance du flacon choisi.
+- RÈGLE DES 45% (CRITIQUE ET ABSOLUE) : La somme totale des quantités (en ml) de TOUTES les essences et ingrédients réunis doit être EXACTEMENT égale à 45% de la contenance du flacon choisi.
+  * Méthode de calcul OBLIGATOIRE avant de répondre :
+    1. Note la contenance du flacon choisi : X ml.
+    2. Calcule le volume cible : volume_cible = X × 0.45 ml.
+    3. Répartis les essences de façon à ce que leur somme = volume_cible exactement.
+    4. Vérifie : somme de toutes les quantite_ml = volume_cible. Si ce n'est pas exact, ajuste.
+  * Exemple : Flacon de 50ml → volume_cible = 50 × 0.45 = 22.5ml. Si tu proposes 3 essences, elles doivent totaliser exactement 22.5ml (ex: 10ml + 8ml + 4.5ml = 22.5ml ✓).
 - Si le client n'indique pas de quantité en ml, choisis un flacon adapté de notre catalogue.
 
 3. PROPOSITIONS ASSORTIES ET VENTE COMPLÉMENTAIRE (CROSS-SELLING) :
@@ -259,7 +279,7 @@ Catalogue disponible :
 
 Réponds au format JSON strict uniquement, sans aucun texte avant ou après, et sans balises de code markdown (pas de ```json) :
 {{
-    "message": "Ton message chaleureux avec les prix de chaque élément proposé et la recommandation du produit ou accessoire complémentaire assorti (2 phrases maximum).",
+    "message": "Ton message chaleureux avec les prix de chaque élément proposé et la recommandation du produit ou accessoire complémentaire assorti (2 phrases maximum, mots complets, pas d'abréviations).",
     "quantite_demandee_ml": 0,
     "budget_max_fcfa": 0,
     "flacon_id": 0,

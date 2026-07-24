@@ -247,6 +247,7 @@ def ia_recommandation(request):
         'flacon': {
             'id': flacon.id,
             'nom': flacon.nom,
+            'contenance_ml': flacon.contenance_ml,
             'prix_unitaire': str(flacon.prix_unitaire),
         } if flacon and afficher_flacon else None,
         'parfums_existants': ParfumLabSerializer(parfums, many=True).data,

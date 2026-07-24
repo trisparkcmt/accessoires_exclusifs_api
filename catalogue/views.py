@@ -427,9 +427,14 @@ class EssenceViewSet(viewsets.ModelViewSet):
     lookup_field = 'slug'
 
     def get_queryset(self):
-        if self.request.user.is_staff:
+        from utilisateur.permissions import is_active_serveuse
+        if self.request.user.is_staff or is_active_serveuse(self.request.user):
             return Essence.objects.all().prefetch_related('tags')
-        return Essence.objects.filter(actif=True).prefetch_related('tags')
+        # Public : uniquement les essences actives, en stock et avec un prix défini
+        return Essence.objects.filter(
+            actif=True,
+            prix_par_ml__gt=0
+        ).prefetch_related('tags')
     
     def get_serializer_class(self):
         if self.action == 'create':
