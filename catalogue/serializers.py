@@ -677,14 +677,25 @@ class FlaconAdminSerializer(FlaconSerializer):
     
 class FlaconPublicSerializer(serializers.ModelSerializer):
     image_principale = serializers.SerializerMethodField()
+    stock_suffisant = serializers.SerializerMethodField()
 
     class Meta:
         model = Flacon
-        fields = ['id', 'nom', 'slug', 'image_principale', 'prix_unitaire', 'contenance_ml']
+        fields = [
+            'id', 'nom', 'slug', 'image_principale',
+            'prix_unitaire', 'contenance_ml',
+            'stock_quantite', 'stock_suffisant',
+            'matiere', 'couleur', 'type_flacon',
+        ]
 
     @extend_schema_field(OpenApiTypes.URI)
     def get_image_principale(self, obj):
         return get_image_url(self.context.get('request'), obj.image_principale)
+
+    @extend_schema_field(OpenApiTypes.BOOL)
+    def get_stock_suffisant(self, obj) -> bool:
+        return obj.stock_quantite > obj.seuil_alerte_stock
+
  
 #favori 
 
