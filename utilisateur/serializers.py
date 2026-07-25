@@ -687,9 +687,25 @@ class MeSerializer(serializers.ModelSerializer):
 class PrestataireSerializer(serializers.ModelSerializer):
     """Serializer complet pour l'affichage (Admin)"""
     user_details = UserSerializer(source='client.user', read_only=True)
+    total_gains = serializers.SerializerMethodField()
+    total_paid_orders = serializers.SerializerMethodField()
+
     class Meta:
         model = Prestataire
-        fields = '__all__'
+        fields = [
+            'id', 'client', 'user_details', 'code_promo',
+            'taux_commission', 'reduction_client_pourcentage',
+            'solde_commission', 'statut', 'date_creation', 'date_modification',
+            'total_gains', 'total_paid_orders'
+        ]
+
+    def get_total_gains(self, obj):
+        val = getattr(obj, 'total_gains', None)
+        return float(val) if val is not None else 0.0
+
+    def get_total_paid_orders(self, obj):
+        return getattr(obj, 'total_paid_orders', 0) or 0
+
 
 # ============================================================
 # SERIALIZERS ADMINISTRATION

@@ -2077,7 +2077,8 @@ class DepenseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(cree_par=self.request.user)
 
-from django.db.models import Count, Sum, Q
+from django.db.models import Count, Sum, Q, Value, F
+from django.db.models.functions import Coalesce
 
 @api_view(['GET'])
 @permission_classes([IsSuperadminOrActiveServeuse])
@@ -2095,18 +2096,17 @@ def admin_best_clients(request):
     limit_param = request.GET.get('limit', None)
 
     clients = Client.objects.annotate(
-        total_paid_orders=Count('commandes', filter=Q(commandes__statut_paiement='payé')),
-        total_spent=Sum('commandes__total_ttc', filter=Q(commandes__statut_paiement='payé'))
+        total_paid_orders=Coalesce(Count('commandes', filter=Q(commandes__statut_paiement='payé')), Value(0)),
+        total_spent=Coalesce(Sum('commandes__total_ttc', filter=Q(commandes__statut_paiement='payé')), Value(Decimal('0')))
     )
 
     if filter_by == 'orders':
-        clients = clients.order_by('-total_paid_orders')
+        clients = clients.order_by(F('total_paid_orders').desc(nulls_last=True), F('total_spent').desc(nulls_last=True), '-id')
     elif filter_by == 'points':
-        # Classement par points de fidélité stockés (déjà mis à jour automatiquement par signal)
-        clients = clients.order_by('-points_fidelite', '-total_spent')
+        clients = clients.order_by('-points_fidelite', F('total_spent').desc(nulls_last=True), '-id')
     else:
         # Défaut : classement par montant dépensé
-        clients = clients.order_by('-total_spent', '-total_paid_orders')
+        clients = clients.order_by(F('total_spent').desc(nulls_last=True), F('total_paid_orders').desc(nulls_last=True), '-id')
 
     if limit_param and limit_param.isdigit():
         clients = clients[:int(limit_param)]
@@ -2133,15 +2133,15 @@ def admin_best_prestataires(request):
     limit_param = request.GET.get('limit', None)
     
     prestataires = Prestataire.objects.annotate(
-        total_paid_orders=Count('commandes', filter=Q(commandes__statut_paiement='payé')),
-        total_gains=Sum('commandes__commission_montant', filter=Q(commandes__statut_paiement='payé'))
+        total_paid_orders=Coalesce(Count('commandes', filter=Q(commandes__statut_paiement='payé')), Value(0)),
+        total_gains=Coalesce(Sum('commandes__commission_montant', filter=Q(commandes__statut_paiement='payé')), Value(Decimal('0')))
     )
     
     if filter_by == 'orders':
-        prestataires = prestataires.order_by('-total_paid_orders')
+        prestataires = prestataires.order_by(F('total_paid_orders').desc(nulls_last=True), F('total_gains').desc(nulls_last=True), '-id')
     else:
         # Trier par gains (montant total des commissions)
-        prestataires = prestataires.order_by('-total_gains', '-total_paid_orders')
+        prestataires = prestataires.order_by(F('total_gains').desc(nulls_last=True), F('total_paid_orders').desc(nulls_last=True), '-id')
         
     if limit_param and limit_param.isdigit():
         prestataires = prestataires[:int(limit_param)]
@@ -2155,6 +2155,7 @@ def admin_best_prestataires(request):
     paginated_prestataires = paginator.paginate_queryset(prestataires, request)
     serializer = PrestataireSerializer(paginated_prestataires, many=True)
     return paginator.get_paginated_response(serializer.data)
+
 
 
 # ============================================================

@@ -194,8 +194,9 @@ class ParfumAdminListSerializer(ParfumSerializer):
         fields = [f for f in ParfumSerializer.Meta.fields if f != 'produits_similaires'] + ['prix_achat', 'benefice_unitaire']
 
     def get_benefice_unitaire(self, obj):
-        if obj.prix_achat and obj.prix_unitaire:
-            return str((obj.prix_unitaire - obj.prix_achat).quantize(Decimal('0.01')))
+        if obj.prix_achat is not None and obj.prix_unitaire:
+            prix_vente = obj.prix_promotionnel if (obj.prix_promotionnel is not None) else obj.prix_unitaire
+            return str((prix_vente - obj.prix_achat).quantize(Decimal('0.01')))
         return None
 
 class ParfumAdminDetailSerializer(ParfumSerializer):
@@ -207,8 +208,9 @@ class ParfumAdminDetailSerializer(ParfumSerializer):
         fields = ParfumSerializer.Meta.fields + ['prix_achat', 'benefice_unitaire']
 
     def get_benefice_unitaire(self, obj):
-        if obj.prix_achat and obj.prix_unitaire:
-            return str((obj.prix_unitaire - obj.prix_achat).quantize(Decimal('0.01')))
+        if obj.prix_achat is not None and obj.prix_unitaire:
+            prix_vente = obj.prix_promotionnel if (obj.prix_promotionnel is not None) else obj.prix_unitaire
+            return str((prix_vente - obj.prix_achat).quantize(Decimal('0.01')))
         return None
 
 class ParfumPublicListSerializer(ParfumSerializer):
