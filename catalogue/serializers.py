@@ -325,24 +325,49 @@ class EssenceLaboDetailSerializer(EssenceSerializer):
 # ============================================================
 # CATALOGUE : produits finis (essences vendues en flacon)
 # ============================================================
+
+class EssencePublicSerializer(serializers.ModelSerializer):
+    """Informations publiques d'une essence parente (pour les produits finis)."""
+    famille_olfactive = serializers.ListField(child=serializers.CharField(), read_only=True)
+    humeurs_compatibles = serializers.ListField(child=serializers.CharField(), read_only=True)
+    occasions = serializers.ListField(child=serializers.CharField(), read_only=True)
+    saisons_compatibles = serializers.ListField(child=serializers.CharField(), read_only=True)
+    moments_journee = serializers.ListField(child=serializers.CharField(), read_only=True)
+    stock_total_ml = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Essence
+        fields = [
+            'id', 'marque', 'nom', 'slug', 'categorie', 'code_reference',
+            'description', 'origine_pays', 'concentration_max', 'couleur',
+            'duree', 'intensite', 'genre_cible',
+            'notes_tete', 'notes_coeur', 'notes_fond',
+            'famille_olfactive', 'humeurs_compatibles',
+            'occasions', 'saisons_compatibles', 'moments_journee',
+            'prix_par_ml', 'actif', 'stock_total_ml',
+        ]
+
+    def get_stock_total_ml(self, obj):
+        return obj.stock_total_ml()
+
+
 class ProduitFiniEssencePublicSerializer(serializers.ModelSerializer):
     marque = serializers.CharField(source='essence.marque', read_only=True)
     nom = serializers.CharField(source='essence.nom', read_only=True)
     categorie = serializers.CharField(source='essence.categorie', read_only=True)
+    essence_details = EssencePublicSerializer(source='essence', read_only=True)
     stock_disponible = serializers.SerializerMethodField()
 
     class Meta:
         model = ProduitFiniEssence
-        fields = ['id', 'marque', 'nom', 'categorie', 'taille_ml', 'prix_actuel', 'stock_disponible']
+        fields = ['id', 'essence', 'essence_details', 'marque', 'nom', 'categorie', 'taille_ml', 'prix', 'prix_promotionnel', 'prix_actuel', 'stock_disponible', 'actif']
 
     @extend_schema_field(OpenApiTypes.INT)
     def get_stock_disponible(self, obj):
         if obj.taille_ml > 0:
             return int(obj.essence.stock_total_ml() // obj.taille_ml)
         return 0
-# ============================================================
-# LOTessence et produit finis 
-# ============================================================
+
 class LotEssenceSerializer(serializers.ModelSerializer):
     essence_details = EssenceLaboListSerializer(source='essence', read_only=True)
     cout_achat_total = serializers.SerializerMethodField()
