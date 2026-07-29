@@ -270,3 +270,26 @@ class IAConversationMessage(models.Model):
 
     def __str__(self):
         return f"[{self.role}] {self.content[:60]}"
+
+
+class IAConversationSummary(models.Model):
+    """
+    Résumé auto-généré par l'IA après chaque échange.
+    Remplace l'envoi du full historique dans le system prompt, ce qui
+    raccourcit les tokens et accélère les réponses.
+    """
+    conversation = models.OneToOneField(
+        IAConversation,
+        on_delete=models.CASCADE,
+        related_name='summary'
+    )
+    summary_text = models.TextField(default='', blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ia_conversation_summary'
+        verbose_name = 'Résumé de conversation IA'
+        verbose_name_plural = 'Résumés de conversations IA'
+
+    def __str__(self):
+        return f"Résumé conv #{self.conversation_id} ({self.updated_at.strftime('%d/%m/%Y %H:%M')})"

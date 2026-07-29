@@ -3,6 +3,7 @@ from decimal import Decimal
 from io import BytesIO
 from PIL import Image as PILImage
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 from django.test import TestCase, override_settings
 from django.conf import settings
@@ -12,8 +13,9 @@ from .utils import get_similar_products
 
 from .models import (
     Tag, Parfum, Essence, Accessoire, Flacon, LotEssence, ProduitFiniEssence,
-    CategorieParfum, TypeAccessoire, TypeFlacon
+    CategorieParfum, TypeAccessoire, TypeFlacon, Ingredient
 )
+from utilisateur.models import Serveuse
 
 
 # ============================================================
@@ -602,6 +604,60 @@ class EssenceAPITest(APITestCase):
         self.assertEqual(response.data['count'], 1)
         response_vide = self.client.get('/api/v1/lab/essences/?prix_max=100')
         self.assertEqual(response_vide.data['count'], 0)
+
+
+class IngredientVisibilityAPITest(APITestCase):
+    def setUp(self):
+        self.ingredient_disponible = Ingredient.objects.create(
+            nom='Huile disponible', prix_par_ml=Decimal('500.00'),
+            stock_ml=Decimal('10.000'), actif=True,
+        )
+        self.ingredient_rupture = Ingredient.objects.create(
+            nom='Huile en rupture', prix_par_ml=Decimal('500.00'),
+            stock_ml=Decimal('0.000'), actif=True,
+        )
+        self.ingredient_sans_prix = Ingredient.objects.create(
+            nom='Huile sans prix', prix_par_ml=Decimal('0.00'),
+            stock_ml=Decimal('10.000'), actif=True,
+        )
+
+        user_model = get_user_model()
+        self.admin = user_model.objects.create_user(
+            email='admin-ingredients@example.com', password='password123',
+            telephone='+237600000001', is_staff=True,
+        )
+        self.serveuse_user = user_model.objects.create_user(
+            email='serveuse-ingredients@example.com', password='password123',
+            telephone='+237600000002',
+        )
+        Serveuse.objects.create(client=self.serveuse_user.client, actif=True)
+
+    def test_public_ne_voit_que_les_ingredients_en_stock_avec_prix(self):
+        response = self.client.get('/api/v1/lab/ingredients/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['resultats'][0]['id'], self.ingredient_disponible.id)
+        self.assertEqual(
+            self.client.get(f'/api/v1/lab/ingredients/{self.ingredient_rupture.slug}/').status_code,
+            404,
+        )
+
+    def test_admin_voit_aussi_ingredients_sans_stock_ou_prix(self):
+        self.client.force_authenticate(self.admin)
+
+        response = self.client.get('/api/v1/lab/ingredients/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 3)
+
+    def test_serveuse_active_voit_aussi_ingredients_sans_stock_ou_prix(self):
+        self.client.force_authenticate(self.serveuse_user)
+
+        response = self.client.get('/api/v1/lab/ingredients/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 3)
 
 
 class AccessoireAPITest(APITestCase):

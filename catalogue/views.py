@@ -23,6 +23,7 @@ from drf_spectacular.types import OpenApiTypes
 from rest_framework.permissions import IsAuthenticated
 from orders.models import CommandeLigneAccessoire, CommandeLigneParfum, CommandeProduitFiniEssence
 from .permissions import IsAdminOrReadOnly, IsAdmin, IsAdminOrServeuse, IsAdminOrServeuseOrReadOnly
+from utilisateur.permissions import is_active_serveuse
 
 from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Flacon, Favori, Ingredient, ProduitFiniEssence, Tag, TypeAccessoire, TypeFlacon, NotificationCatalogue, MouvementStock
 from .serializers import (
@@ -1153,7 +1154,13 @@ class IngredientViewSet(viewsets.ModelViewSet):
     ordering           = ['-nom']
 
     def get_queryset(self):
-        return Ingredient.objects.filter(actif=True)
+        queryset = Ingredient.objects.filter(actif=True)
+        user = self.request.user
+
+        if user.is_staff or is_active_serveuse(user):
+            return queryset
+
+        return queryset.filter(stock_ml__gt=0, prix_par_ml__gt=0)
 
 
 # ============================================================
@@ -1751,4 +1758,3 @@ class DiffuseurParfumViewSet(viewsets.ModelViewSet):
             'status': 'success',
             'message': f"Le statut du diffuseur a été défini sur {'actif' if diffuseur.actif else 'inactif'}."
         })
-

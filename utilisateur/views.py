@@ -1,3 +1,4 @@
+from decimal import Decimal
 from allauth.account.forms import AddEmailForm
 from allauth.account.forms import default_token_generator
 from allauth.account.models import EmailConfirmation, EmailConfirmationHMAC

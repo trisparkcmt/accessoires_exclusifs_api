@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 
-from .models import ParfumPersonnalise, EssencePersonnalisee, IAConversation, IAConversationMessage
+from .models import ParfumPersonnalise, EssencePersonnalisee, IAConversation, IAConversationMessage, IAConversationSummary
 from .serializers import (
     ParfumPersonnaliseSerializer,
     EssencePersonnaliseeSerializer,
@@ -18,7 +18,8 @@ from .serializers import (
 from .permissions import IsCreatorOrReadOnly
 from catalogue.pagination import StandardPagination
 from catalogue.models import Parfum, Essence, Accessoire, Flacon, Ingredient
-from .utils_ia import demander_recommandation_ia
+from .utils_ia import demander_recommandation_ia, generer_resume_conversation
+
 
 
 class ParfumPersonnaliseViewSet(viewsets.ModelViewSet):
@@ -140,30 +141,97 @@ def get_ia_conversation(request):
 @permission_classes([AllowAny])
 def ia_recommandation(request):
     """
-    Reçoit un prompt de l'utilisateur, interroge l'IA Gemini et renvoie des produits.
+    Reçoit un prompt de l'utilisateur, interroge l'IA et renvoie des produits.
+    Utilise le résumé de conversation en DB pour le contexte (plus efficace que l'historique complet).
+    Génère et sauvegarde un nouveau résumé après chaque échange.
     """
     prompt = request.data.get('prompt')
+    print(f"\n>>> [VIEW ia_recommandation] Requete POST recue avec prompt: '{prompt}'", flush=True)
     if not prompt:
         return Response({"error": "Veuillez fournir un 'prompt'."}, status=status.HTTP_400_BAD_REQUEST)
 
     conversation = get_ia_conversation(request)
     IAConversationMessage.objects.create(conversation=conversation, role='user', content=prompt)
 
-    history = list(conversation.messages.order_by('-created_at')[:20].values('role', 'content'))
-    history.reverse()
-
-    # Récupérer les informations sur le client pour personnaliser la discussion
-    client_info = None
+    # --- Récupération du résumé et des infos client ---
     if getattr(request.user, 'is_authenticated', False) and hasattr(request.user, 'client'):
+        client = request.user.client
         client_info = {
             'nom': f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
             'email': request.user.email,
         }
+    else:
+        client = None
+        client_info = None
 
-    reponse_ia = demander_recommandation_ia(prompt, history, client_info=client_info)
+    # Récupérer le résumé existant de la conversation courante
+    try:
+        summary_obj = conversation.summary
+        resume_existant = summary_obj.summary_text or ''
+    except IAConversationSummary.DoesNotExist:
+        summary_obj = None
+        resume_existant = ''
+
+    # Fallback : si pas encore de résumé, envoyer les 6 derniers messages bruts
+    history = []
+    if not resume_existant:
+        history_qs = conversation.messages.order_by('-created_at')[:6].values('role', 'content')
+        history = list(reversed(list(history_qs)))
+
+    print(f"[VIEW ia_recommandation] Résumé existant: {bool(resume_existant)} ({len(resume_existant)} chars)", flush=True)
+
+    # --- Appel IA ---
+    reponse_ia = demander_recommandation_ia(
+        prompt,
+        history=history,
+        client_info=client_info,
+        resume=resume_existant or None,
+    )
     if "error" in reponse_ia:
         return Response(reponse_ia, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    # --- Sauvegarde du message assistant ---
+    assistant_message = reponse_ia.get('message', 'Voici quelques recommandations :')
+    IAConversationMessage.objects.create(conversation=conversation, role='assistant', content=assistant_message)
+
+    # --- Mise à jour du résumé EN ARRIÈRE-PLAN (thread daemon) ---
+    # Le client reçoit sa réponse immédiatement.
+    # Le résumé est généré et sauvegardé après coup, sans bloquer.
+    import threading
+
+    def _mettre_a_jour_resume():
+        try:
+            from django.db import connection as _conn
+            messages_pour_resume = list(
+                conversation.messages.order_by('-created_at')[:10].values('role', 'content')
+            )
+            messages_pour_resume.reverse()
+            nouveau_resume = generer_resume_conversation(messages_pour_resume, resume_existant=resume_existant)
+            if summary_obj:
+                summary_obj.summary_text = nouveau_resume
+                summary_obj.save(update_fields=['summary_text', 'updated_at'])
+            else:
+                IAConversationSummary.objects.create(conversation=conversation, summary_text=nouveau_resume)
+            print(f"[RESUME THREAD] Résumé mis à jour en BD pour conv #{conversation.id}.", flush=True)
+        except Exception as e:
+            print(f"[RESUME THREAD] Erreur (non bloquant): {e}", flush=True)
+        finally:
+            # Fermer la connexion DB proprement dans le thread secondaire
+            from django.db import connections
+            connections.close_all()
+
+    t = threading.Thread(target=_mettre_a_jour_resume, daemon=True)
+    t.start()
+
+    # --- Nettoyage : ne garder que les 30 derniers messages ---
+    total_messages = conversation.messages.count()
+    if total_messages > 30:
+        ids_a_supprimer = list(
+            conversation.messages.order_by('created_at')[:total_messages - 30].values_list('id', flat=True)
+        )
+        IAConversationMessage.objects.filter(id__in=ids_a_supprimer).delete()
+
+    # --- Construction de la réponse ---
     ids_parfums = reponse_ia.get('parfums_existants_recommandes', [])
     ids_parfums = [p.get('id') if isinstance(p, dict) else p for p in ids_parfums if p is not None]
     essences_data = reponse_ia.get('essences_pre_faites', [])
@@ -181,7 +249,7 @@ def ia_recommandation(request):
     diffuseurs = DiffuseurModel.objects.filter(id__in=ids_diffuseurs, actif=True, stock_quantite__gt=0)
     flacon = None
     essences_recommandees = []
-    ingredients_recommandees = []
+    ingredients_recommandes = []
 
     if flacon_id:
         try:
@@ -190,42 +258,40 @@ def ia_recommandation(request):
             flacon = None
 
     essence_ids = [e.get('id') for e in essences_data if isinstance(e, dict)]
-    essences_db = {e.id: e for e in Essence.objects.filter(id__in=essence_ids, actif=True, prix_par_ml__gt=0)}
-    
-    # Précharger les lots d'essence actifs correspondants pour le laboratoire
-    from catalogue.models import LotEssence
-    lots_db = {}
-    for lot in LotEssence.objects.filter(essence_id__in=essence_ids, actif=True, stock_ml__gt=0).select_related('essence'):
-        if lot.essence_id not in lots_db:
-            lots_db[lot.essence_id] = lot
+    if essence_ids and flacon:
+        from catalogue.models import LotEssence
+        for e_data in essences_data:
+            if not isinstance(e_data, dict):
+                continue
+            essence_id = e_data.get('id')
+            quantite_ml = float(e_data.get('quantite_ml', 0) or 0)
+            if not essence_id or quantite_ml <= 0:
+                continue
+            lot = LotEssence.objects.filter(
+                essence_id=essence_id, actif=True, stock_ml__gte=quantite_ml
+            ).order_by('date_fabrication').first()
+            if not lot:
+                continue
+            essences_recommandees.append({
+                'id': lot.essence.id,
+                'lot_essence_id': lot.id,
+                'nom': lot.essence.nom,
+                'code_reference': lot.essence.code_reference,
+                'prix_par_ml': str(lot.essence.prix_par_ml),
+                'quantite_ml': quantite_ml,
+                'prix_total_quantite': str(lot.essence.prix_par_ml * quantite_ml),
+            })
 
-    for essence_data in essences_data:
-        if isinstance(essence_data, dict):
-            essence_id = essence_data.get('id')
-            quantite_ml = Decimal(str(essence_data.get('quantite_ml', 0)))
-            if essence_id in essences_db:
-                essence = essences_db[essence_id]
-                lot = lots_db.get(essence.id)
-                if lot:
-                    essences_recommandees.append({
-                        'id': essence.id,
-                        'lot_essence_id': lot.id,
-                        'nom': essence.nom,
-                        'code_reference': essence.code_reference,
-                        'prix_par_ml': str(essence.prix_par_ml),
-                        'quantite_ml': quantite_ml,
-                        'prix_total_quantite': str(essence.prix_par_ml * quantite_ml),
-                    })
-
-    ingredients_recommandes = []
-    ingredient_ids = [i.get('id') for i in ingredients_data if isinstance(i, dict)]
-    ingredients_db = {i.id: i for i in Ingredient.objects.filter(id__in=ingredient_ids, actif=True)}
-    for ing_data in ingredients_data:
-        if isinstance(ing_data, dict):
-            ing_id = ing_data.get('id')
-            quantite_ml = Decimal(str(ing_data.get('quantite_ml', 0)))
-            if ing_id in ingredients_db:
-                ingredient = ingredients_db[ing_id]
+    if ingredients_data and flacon:
+        for i_data in ingredients_data:
+            if not isinstance(i_data, dict):
+                continue
+            ingredient_id = i_data.get('id')
+            quantite_ml = float(i_data.get('quantite_ml', 0) or 0)
+            if not ingredient_id or quantite_ml <= 0:
+                continue
+            try:
+                ingredient = Ingredient.objects.get(id=ingredient_id, actif=True)
                 ingredients_recommandes.append({
                     'id': ingredient.id,
                     'nom': ingredient.nom,
@@ -233,17 +299,10 @@ def ia_recommandation(request):
                     'quantite_ml': quantite_ml,
                     'prix_total_quantite': str(ingredient.prix_par_ml * quantite_ml),
                 })
+            except Ingredient.DoesNotExist:
+                continue
 
-    afficher_flacon = bool(essences_recommandees or ingredients_recommandees)
-    assistant_message = reponse_ia.get('message', 'Voici quelques recommandations :')
-    IAConversationMessage.objects.create(conversation=conversation, role='assistant', content=assistant_message)
-
-    total_messages = conversation.messages.count()
-    if total_messages > 20:
-        ids_a_supprimer = list(
-            conversation.messages.order_by('created_at')[:total_messages - 20].values_list('id', flat=True)
-        )
-        IAConversationMessage.objects.filter(id__in=ids_a_supprimer).delete()
+    afficher_flacon = bool(essences_recommandees or ingredients_recommandes)
 
     from .serializers import DiffuseurLabSerializer
     response_data = {
@@ -262,5 +321,93 @@ def ia_recommandation(request):
         'diffuseurs': DiffuseurLabSerializer(diffuseurs, many=True).data,
     }
 
+    print(f"<<< [VIEW ia_recommandation] Succes! Reponse finale envoyee: '{assistant_message[:120]}...'\n", flush=True)
     return Response(response_data)
 
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def ia_conversations(request):
+    """
+    Retourne l'historique de chat sous forme de liste plate de messages.
+    - Utilisateur connecté : tous ses messages, toutes conversations confondues.
+    - Utilisateur anonyme : messages de la session en cours uniquement.
+    """
+    if getattr(request.user, 'is_authenticated', False) and hasattr(request.user, 'client'):
+        # Utilisateur connecté : on récupère tous ses messages, toutes conversations
+        client = request.user.client
+        messages_qs = IAConversationMessage.objects.filter(
+            conversation__client=client
+        ).order_by('created_at').values('id', 'role', 'content', 'created_at')
+        client_label = request.user.first_name or request.user.username
+    else:
+        # Utilisateur anonyme : messages de la session en cours uniquement
+        session_key = request.session.session_key
+        if not session_key:
+            return Response({'client': 'Anonyme', 'total_messages': 0, 'messages': []})
+        try:
+            conversation = IAConversation.objects.get(session_key=session_key)
+            messages_qs = conversation.messages.order_by('created_at').values('id', 'role', 'content', 'created_at')
+        except IAConversation.DoesNotExist:
+            return Response({'client': 'Anonyme', 'total_messages': 0, 'messages': []})
+        client_label = 'Anonyme'
+
+    messages_list = [
+        {
+            'id': m['id'],
+            'role': m['role'],
+            'content': m['content'],
+            'created_at': m['created_at'].isoformat(),
+        }
+        for m in messages_qs
+    ]
+
+    return Response({
+        'client': client_label,
+        'total_messages': len(messages_list),
+        'messages': messages_list,
+    })
+
+
+@api_view(['DELETE'])
+@permission_classes([AllowAny])
+def vider_resume(request):
+    """
+    Vide le résumé IA de la conversation en cours.
+    - Utilisateur connecté : vide le résumé de sa conversation active (la plus récente).
+    - Utilisateur anonyme : vide le résumé de sa session en cours.
+    Un utilisateur ne peut vider QUE son propre résumé.
+    """
+    # --- Identifier la conversation à cibler ---
+    if getattr(request.user, 'is_authenticated', False) and hasattr(request.user, 'client'):
+        client = request.user.client
+        # On prend la conversation la plus récente du client (celle qu'il utilise en ce moment)
+        conversation = IAConversation.objects.filter(client=client).order_by('-updated_at').first()
+        if not conversation:
+            return Response({'detail': 'Aucune conversation trouvée pour cet utilisateur.'},
+                            status=status.HTTP_404_NOT_FOUND)
+    else:
+        # Anonyme : on cherche via la session
+        session_key = request.session.session_key
+        if not session_key:
+            return Response({'detail': 'Aucune session active. Pas de résumé à vider.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        try:
+            conversation = IAConversation.objects.get(session_key=session_key)
+        except IAConversation.DoesNotExist:
+            return Response({'detail': 'Aucune conversation trouvée pour cette session.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+    # --- Vider le résumé ---
+    try:
+        summary = conversation.summary
+        ancien_resume = summary.summary_text
+        summary.summary_text = ''
+        summary.save(update_fields=['summary_text', 'updated_at'])
+        print(f"[VIDER RESUME] Résumé vidé pour conv #{conversation.id} "
+              f"(était: '{ancien_resume[:80]}...')", flush=True)
+        return Response({'detail': 'Résumé vidé avec succès. La prochaine réponse de Lia '
+                                   'se basera uniquement sur les messages récents.'})
+    except IAConversationSummary.DoesNotExist:
+        return Response({'detail': 'Aucun résumé existant pour cette conversation.'},
+                        status=status.HTTP_404_NOT_FOUND)

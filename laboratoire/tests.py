@@ -1,6 +1,7 @@
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from decimal import Decimal
+from rest_framework.test import APITestCase
 
 from laboratoire.models import ParfumPersonnalise, ParfumPersonnaliseLigne
 from laboratoire.serializers import ParfumPersonnaliseSerializer
@@ -154,3 +155,42 @@ class ParfumPersonnaliseSerializerTests(TestCase):
         self.assertEqual(self.parfum.lignes.count(), 0)
         self.assertEqual(self.parfum.prix_essences, Decimal('0.00'))
         self.assertEqual(self.parfum.prix_total, self.parfum.prix_flacon_snapshot)
+
+
+class ParfumPersonnaliseAPITest(APITestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            username='parfum-perso-api',
+            email='parfum-perso-api@example.com',
+            password='test1234',
+            telephone='+1234567891',
+        )
+        self.flacon = Flacon.objects.create(
+            nom='Flacon API',
+            reference_sku='FL-API',
+            contenance_ml=50,
+            prix_unitaire=Decimal('1000.00'),
+            stock_quantite=10,
+            actif=True,
+        )
+        self.parfum = ParfumPersonnalise.objects.create(
+            client=self.user.client,
+            flacon=self.flacon,
+            nom='Parfum API',
+            prix_essences=Decimal('1200.00'),
+            prix_flacon_snapshot=Decimal('1000.00'),
+            prix_total=Decimal('2200.00'),
+            enregistre=True,
+        )
+
+    def test_liste_parfums_personnalises_contient_prix_total(self):
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get('/api/v1/lab/parfums-perso/')
+
+        self.assertEqual(response.status_code, 200)
+        resultat = response.data['resultats'][0]
+        self.assertEqual(resultat['id'], self.parfum.id)
+        self.assertIn('prix_total', resultat)
+        self.assertEqual(Decimal(resultat['prix_total']), Decimal('2200.00'))

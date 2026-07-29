@@ -4,6 +4,8 @@ from laboratoire.views import (
     ParfumPersonnaliseViewSet,
     EssencePersonnaliseeViewSet,
     ia_recommandation,
+    ia_conversations,
+    vider_resume,
 )
 from catalogue.urls import lab_urlpatterns
 
@@ -13,6 +15,8 @@ router.register(r'essences-perso', EssencePersonnaliseeViewSet, basename='essenc
 
 urlpatterns = [
     path('ia-recommandation/', ia_recommandation, name='ia-recommandation'),
+    path('ia-conversations/', ia_conversations, name='ia-conversations'),
+    path('ia-conversations/resume/', vider_resume, name='vider-resume'),
     path('', include(router.urls)),
     path('', include(lab_urlpatterns)),
 ]
