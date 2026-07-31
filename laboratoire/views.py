@@ -195,16 +195,9 @@ def ia_recommandation(request):
     if "error" in reponse_ia:
         return Response(reponse_ia, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # --- Sauvegarde du message assistant + JSON complet ---
+    # --- Extraction du message texte de LIA ---
     assistant_message = reponse_ia.get('message', 'Voici quelques recommandations :')
-    # On garde tout le JSON LIA dans metadata (sauf le champ 'message' déjà dans content)
-    assistant_metadata = {k: v for k, v in reponse_ia.items() if k != 'message'}
-    IAConversationMessage.objects.create(
-        conversation=conversation,
-        role='assistant',
-        content=assistant_message,
-        metadata=assistant_metadata,
-    )
+    # (La sauvegarde en BD est faite APRÈS la construction de response_data enrichi)
 
     # --- Mise à jour du résumé EN ARRIÈRE-PLAN (thread daemon) ---
     # Le client reçoit sa réponse immédiatement.
@@ -332,6 +325,26 @@ def ia_recommandation(request):
         'accessoires': AccessoireLabSerializer(accessoires, many=True).data,
         'diffuseurs': DiffuseurLabSerializer(diffuseurs, many=True).data,
     }
+
+    # --- Sauvegarde du message assistant avec le JSON enrichi (noms, prix, images) ---
+    # On sauvegarde response_data (sans 'message' déjà dans content) pour avoir les détails complets.
+    assistant_metadata = {k: v for k, v in response_data.items() if k != 'message'}
+    # Convertir les objets ReturnList/ReturnDict de DRF en types JSON natifs
+    import json as _json
+    from rest_framework.utils.serializer_helpers import ReturnList, ReturnDict
+    def _serialize_drf(obj):
+        if isinstance(obj, (ReturnList, ReturnDict, list)):
+            return [_serialize_drf(i) for i in obj]
+        if isinstance(obj, dict):
+            return {k: _serialize_drf(v) for k, v in obj.items()}
+        return obj
+    assistant_metadata = _serialize_drf(assistant_metadata)
+    IAConversationMessage.objects.create(
+        conversation=conversation,
+        role='assistant',
+        content=assistant_message,
+        metadata=assistant_metadata,
+    )
 
     print(f"<<< [VIEW ia_recommandation] Succes! Reponse finale envoyee: '{assistant_message[:120]}...'\n", flush=True)
     return Response(response_data)
