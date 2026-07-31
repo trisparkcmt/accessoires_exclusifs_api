@@ -685,7 +685,8 @@ class PasserCommandeSerializer(serializers.Serializer):
             panier.lignes_accessoires.exists() or
             panier.lignes_produit_fini_essence.exists() or
             panier.lignes_parfums_perso.exists() or
-            panier.lignes_essence_personnalisee.exists()
+            panier.lignes_essence_personnalisee.exists() or
+            panier.lignes_diffuseurs.exists()
         )
         if not has_items:
             raise serializers.ValidationError({"detail": "Le panier est vide."})

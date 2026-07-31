@@ -478,9 +478,18 @@ class CommandeListView(APIView):
         if user.is_superuser or is_active_serveuse(user):
             commandes = Commande.objects.all().order_by('-date_creation')
         elif is_active_livreur(user):
-            commandes = Commande.objects.filter(livreur=user.client.livreur).order_by('-date_creation')
+            client = getattr(user, 'client', None)
+            livreur = getattr(client, 'livreur', None) if client else None
+            if livreur:
+                commandes = Commande.objects.filter(livreur=livreur).order_by('-date_creation')
+            else:
+                commandes = Commande.objects.none()
         elif is_active_client(user):
-            commandes = Commande.objects.filter(client=user.client).order_by('-date_creation')
+            client = getattr(user, 'client', None)
+            if client:
+                commandes = Commande.objects.filter(client=client).order_by('-date_creation')
+            else:
+                commandes = Commande.objects.none()
         else:
             commandes = Commande.objects.none()
             
