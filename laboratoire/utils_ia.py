@@ -410,7 +410,16 @@ def meubler_contexte_historique(history=None, client_info=None, resume=None):
     """
     client_context = ""
     if client_info:
-        client_context = f"Le client actuel s'appelle {client_info.get('nom')} (Email : {client_info.get('email')}). N'hésite pas à t'adresser à lui de manière personnalisée.\n"
+        prenom = client_info.get('prenom', '').strip()
+        nom_complet = client_info.get('nom', '').strip()
+        email = client_info.get('email', '').strip()
+        # Utiliser le prénom seul si dispo, sinon le nom complet
+        appellation = prenom if prenom else nom_complet
+        if appellation:
+            client_context = (
+                f"Le client connecté s'appelle {appellation} (nom complet : {nom_complet}, email : {email}). "
+                f"Adresse-toi à lui par son prénom '{appellation}' de manière chaleureuse et personnalisée.\n"
+            )
 
     contexte_str = ""
     if resume and resume.strip():

@@ -260,6 +260,11 @@ class IAConversationMessage(models.Model):
     )
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     content = models.TextField()
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Pour le rôle 'assistant' : JSON complet retourné par LIA (produits, essences, etc.)."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

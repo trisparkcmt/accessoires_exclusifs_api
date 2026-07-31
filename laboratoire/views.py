@@ -156,8 +156,13 @@ def ia_recommandation(request):
     # --- Récupération du résumé et des infos client ---
     if getattr(request.user, 'is_authenticated', False) and hasattr(request.user, 'client'):
         client = request.user.client
+        prenom = (request.user.first_name or '').strip()
+        nom = (request.user.last_name or '').strip()
+        nom_complet = f"{prenom} {nom}".strip() or request.user.username
         client_info = {
-            'nom': f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username,
+            'nom': nom_complet,
+            'prenom': prenom,
+            'nom_famille': nom,
             'email': request.user.email,
         }
     else:
@@ -190,9 +195,16 @@ def ia_recommandation(request):
     if "error" in reponse_ia:
         return Response(reponse_ia, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # --- Sauvegarde du message assistant ---
+    # --- Sauvegarde du message assistant + JSON complet ---
     assistant_message = reponse_ia.get('message', 'Voici quelques recommandations :')
-    IAConversationMessage.objects.create(conversation=conversation, role='assistant', content=assistant_message)
+    # On garde tout le JSON LIA dans metadata (sauf le champ 'message' déjà dans content)
+    assistant_metadata = {k: v for k, v in reponse_ia.items() if k != 'message'}
+    IAConversationMessage.objects.create(
+        conversation=conversation,
+        role='assistant',
+        content=assistant_message,
+        metadata=assistant_metadata,
+    )
 
     # --- Mise à jour du résumé EN ARRIÈRE-PLAN (thread daemon) ---
     # Le client reçoit sa réponse immédiatement.
@@ -338,7 +350,7 @@ def ia_conversations(request):
         client = request.user.client
         messages_qs = IAConversationMessage.objects.filter(
             conversation__client=client
-        ).order_by('created_at').values('id', 'role', 'content', 'created_at')
+        ).order_by('created_at').values('id', 'role', 'content', 'metadata', 'created_at')
         client_label = request.user.first_name or request.user.username
     else:
         # Utilisateur anonyme : messages de la session en cours uniquement
@@ -347,7 +359,7 @@ def ia_conversations(request):
             return Response({'client': 'Anonyme', 'total_messages': 0, 'messages': []})
         try:
             conversation = IAConversation.objects.get(session_key=session_key)
-            messages_qs = conversation.messages.order_by('created_at').values('id', 'role', 'content', 'created_at')
+            messages_qs = conversation.messages.order_by('created_at').values('id', 'role', 'content', 'metadata', 'created_at')
         except IAConversation.DoesNotExist:
             return Response({'client': 'Anonyme', 'total_messages': 0, 'messages': []})
         client_label = 'Anonyme'
@@ -357,6 +369,7 @@ def ia_conversations(request):
             'id': m['id'],
             'role': m['role'],
             'content': m['content'],
+            'metadata': m['metadata'],
             'created_at': m['created_at'].isoformat(),
         }
         for m in messages_qs
