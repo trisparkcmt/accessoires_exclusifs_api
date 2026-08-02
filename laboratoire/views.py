@@ -284,6 +284,7 @@ def ia_recommandation(request):
             ).order_by('date_reception').first()
             if not lot:
                 continue
+            from decimal import Decimal as D
             essences_recommandees.append({
                 'id': lot.essence.id,
                 'lot_essence_id': lot.id,
@@ -291,7 +292,7 @@ def ia_recommandation(request):
                 'code_reference': lot.essence.code_reference,
                 'prix_par_ml': str(lot.essence.prix_par_ml),
                 'quantite_ml': quantite_ml,
-                'prix_total_quantite': str(lot.essence.prix_par_ml * quantite_ml),
+                'prix_total_quantite': str(lot.essence.prix_par_ml * D(str(quantite_ml))),
             })
 
     if ingredients_data and flacon:
@@ -304,12 +305,13 @@ def ia_recommandation(request):
                 continue
             try:
                 ingredient = Ingredient.objects.get(id=ingredient_id, actif=True)
+                from decimal import Decimal as D
                 ingredients_recommandes.append({
                     'id': ingredient.id,
                     'nom': ingredient.nom,
                     'prix_par_ml': str(ingredient.prix_par_ml),
                     'quantite_ml': quantite_ml,
-                    'prix_total_quantite': str(ingredient.prix_par_ml * quantite_ml),
+                    'prix_total_quantite': str(ingredient.prix_par_ml * D(str(quantite_ml))),
                 })
             except Ingredient.DoesNotExist:
                 continue
