@@ -24,6 +24,7 @@ from django.db import transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
 from dj_rest_auth.views import LoginView, PasswordResetView, LogoutView
+from dj_rest_auth.jwt_auth import get_refresh_view
 from dj_rest_auth.app_settings import api_settings as dj_rest_auth_settings
 from .serializers import (
     UserSerializer, PrestataireSerializer, PrestataireApplicationSerializer,
@@ -146,6 +147,47 @@ class MobileLoginView(LoginView):
             # Suppression des cookies de la réponse pour le client mobile
             if hasattr(response, 'cookies'):
                 response.cookies.clear()
+        return response
+
+
+BaseRefreshView = get_refresh_view()
+
+class HybridTokenRefreshView(BaseRefreshView):
+    """
+    Vue de rafraîchissement de jeton (refresh token) intelligente et adaptative :
+    - Si la requête provient d'un Navigateur Web : les jetons sont transmis exclusivement
+      dans les cookies HttpOnly (Set-Cookie). Ils sont retirés du corps JSON de la réponse
+      pour empêcher tout accès JS (protection XSS).
+    - Si la requête provient d'une App Mobile / Client API : les jetons sont retournés directement
+      dans le corps JSON de la réponse, et aucun cookie n'est conservé.
+    """
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+
+        if response.status_code == status.HTTP_200_OK:
+            user_agent = request.META.get('HTTP_USER_AGENT', '').lower()
+            client_type = request.headers.get('X-Client-Type', '').lower()
+            sec_fetch_dest = request.META.get('HTTP_SEC_FETCH_DEST', '').lower()
+            origin = request.META.get('HTTP_ORIGIN', '').lower()
+
+            is_browser = (
+                any(ua in user_agent for ua in ['mozilla', 'chrome', 'safari', 'firefox', 'edge'])
+                or sec_fetch_dest != ''
+                or bool(origin)
+            ) and client_type != 'mobile'
+
+            if is_browser:
+                # Client WEB : Transmis dans le cookie HttpOnly, retiré du JSON pour la sécurité XSS
+                response.data.pop('access', None)
+                response.data.pop('refresh', None)
+                response.data.pop('access_expiration', None)
+                response.data.pop('refresh_expiration', None)
+                response.data['detail'] = "Jeton rafraîchi avec succès."
+            else:
+                # Client MOBILE : Les jetons sont retournés dans le corps JSON
+                if hasattr(response, 'cookies'):
+                    response.cookies.clear()
+
         return response
 
 

@@ -11,19 +11,35 @@ from orders.models import (
     CommandeLigneAccessoire,
     CommandeProduitFiniEssence,
     CommandeLigneDiffuseurParfum,
+    CommandeLigneParfumPerso,
+    CommandeLigneEssencePersonnalisee,
+    Panier,
     CodePromoAdmin,
 )
 from catalogue.models import Parfum, Accessoire, ProduitFiniEssence, DiffuseurParfum
+from laboratoire.models import ParfumPersonnalise, EssencePersonnalisee
 from utilisateur.models import Client, Prestataire
 from allauth.account.models import EmailAddress
 
 User = get_user_model()
 
 
+class POSCompositionLigneSerializer(serializers.Serializer):
+    lot_essence_id = serializers.IntegerField(required=True)
+    quantite_ml = serializers.DecimalField(max_digits=8, decimal_places=3, min_value=Decimal('0.1'))
+
+
+class POSCompositionRecetteSerializer(serializers.Serializer):
+    flacon_id = serializers.IntegerField(required=True)
+    nom = serializers.CharField(required=False, allow_blank=True, max_length=200, default='')
+    lignes = POSCompositionLigneSerializer(many=True, required=True)
+
+
 class POSCommandLineSerializer(serializers.Serializer):
-    type = serializers.ChoiceField(choices=['parfum', 'accessoire', 'essence', 'diffuseur'])
-    id = serializers.IntegerField()
-    quantite = serializers.IntegerField(min_value=1)
+    type = serializers.ChoiceField(choices=['parfum', 'accessoire', 'essence', 'diffuseur', 'parfum_perso', 'essence_perso'])
+    id = serializers.IntegerField(required=False, allow_null=True)
+    quantite = serializers.IntegerField(min_value=1, default=1)
+    recette = POSCompositionRecetteSerializer(required=False, allow_null=True)
 
 
 class POSCommandeCreateSerializer(serializers.Serializer):
@@ -81,12 +97,16 @@ class POSCommandeCreateSerializer(serializers.Serializer):
 
         # 2. Valider les lignes et les stocks
         validated_lines = []
-        for line in data.get('lignes', []):
+
+        for idx, line in enumerate(data.get('lignes', [])):
             product_type = line['type']
-            product_id = line['id']
+            product_id = line.get('id')
             qty = line['quantite']
+            recette = line.get('recette')
 
             if product_type == 'parfum':
+                if not product_id:
+                    raise serializers.ValidationError({"lignes": f"L'ID du parfum est requis (ligne {idx+1})."})
                 try:
                     product = Parfum.objects.get(id=product_id)
                 except Parfum.DoesNotExist:
@@ -103,6 +123,8 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                 })
 
             elif product_type == 'accessoire':
+                if not product_id:
+                    raise serializers.ValidationError({"lignes": f"L'ID de l'accessoire est requis (ligne {idx+1})."})
                 try:
                     product = Accessoire.objects.get(id=product_id)
                 except Accessoire.DoesNotExist:
@@ -119,6 +141,8 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                 })
 
             elif product_type == 'essence':
+                if not product_id:
+                    raise serializers.ValidationError({"lignes": f"L'ID du produit fini essence est requis (ligne {idx+1})."})
                 try:
                     product = ProduitFiniEssence.objects.get(id=product_id)
                 except ProduitFiniEssence.DoesNotExist:
@@ -136,6 +160,8 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                 })
 
             elif product_type == 'diffuseur':
+                if not product_id:
+                    raise serializers.ValidationError({"lignes": f"L'ID du diffuseur est requis (ligne {idx+1})."})
                 try:
                     product = DiffuseurParfum.objects.get(id=product_id)
                 except DiffuseurParfum.DoesNotExist:
@@ -150,6 +176,89 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                     'quantite': qty,
                     'prix_unitaire': product.prix_promotionnel if (product.prix_promotionnel is not None) else product.prix_unitaire
                 })
+
+            elif product_type == 'parfum_perso':
+                if recette:
+                    # Validation d'une recette sur-mesure directe envoyée dans le POS
+                    flacon_id = recette.get('flacon_id')
+                    nom_perso = recette.get('nom', '')
+                    lignes_recette = recette.get('lignes', [])
+
+                    if not lignes_recette:
+                        raise serializers.ValidationError({"lignes": f"La recette de création sur-mesure (ligne {idx+1}) ne contient aucune essence."})
+
+                    from catalogue.models import Flacon, LotEssence
+                    try:
+                        flacon = Flacon.objects.get(id=flacon_id, actif=True)
+                    except Flacon.DoesNotExist:
+                        raise serializers.ValidationError({"lignes": f"Le flacon #{flacon_id} n'existe pas ou n'est pas actif."})
+
+                    if flacon.stock_quantite < qty:
+                        raise serializers.ValidationError({"lignes": f"Stock de flacon insuffisant pour '{flacon.nom}'. Disponible: {flacon.stock_quantite}."})
+
+                    lot_ids = [l['lot_essence_id'] for l in lignes_recette]
+                    lots = LotEssence.objects.filter(id__in=lot_ids, actif=True).select_related('essence')
+                    lots_dict = {lot.id: lot for lot in lots}
+
+                    total_volume = Decimal('0')
+                    recette_lignes_valid = []
+                    for l_idx, l_item in enumerate(lignes_recette):
+                        lot_id = l_item['lot_essence_id']
+                        qty_ml = Decimal(str(l_item['quantite_ml']))
+                        if lot_id not in lots_dict:
+                            raise serializers.ValidationError({"lignes": f"Le lot d'essence #{lot_id} n'existe pas ou n'est pas actif."})
+                        lot = lots_dict[lot_id]
+                        if lot.stock_ml < qty_ml * Decimal(str(qty)):
+                            raise serializers.ValidationError({"lignes": f"Stock d'essence insuffisant pour '{lot.essence.nom}'. Disponible: {lot.stock_ml}ml."})
+                        total_volume += qty_ml
+                        recette_lignes_valid.append((lot, qty_ml))
+
+                    contenance = Decimal(str(flacon.contenance_ml))
+                    volume_max = contenance * Decimal('0.45')
+                    if total_volume > volume_max:
+                        raise serializers.ValidationError({"lignes": f"Le volume total d'essences ({total_volume}ml) dépasse 45% de la contenance du flacon ({volume_max}ml max)."})
+
+                    validated_lines.append({
+                        'type': 'parfum_perso',
+                        'product_obj': None,
+                        'recette_data': {
+                            'flacon': flacon,
+                            'nom': nom_perso,
+                            'lignes': recette_lignes_valid,
+                        },
+                        'quantite': qty,
+                        'prix_unitaire': None
+                    })
+                elif product_id:
+                    try:
+                        product = ParfumPersonnalise.objects.get(id=product_id)
+                    except ParfumPersonnalise.DoesNotExist:
+                        raise serializers.ValidationError({"lignes": f"Parfum personnalisé avec l'ID {product_id} introuvable."})
+                    validated_lines.append({
+                        'type': 'parfum_perso',
+                        'product_obj': product,
+                        'quantite': qty,
+                        'prix_unitaire': product.prix_total
+                    })
+                else:
+                    raise serializers.ValidationError({"lignes": f"Pour un parfum_perso (ligne {idx+1}), vous devez fournir un 'id' ou une 'recette'."})
+
+            elif product_type == 'essence_perso':
+                if not product_id:
+                    raise serializers.ValidationError({"lignes": f"L'ID de l'essence personnalisée est requis (ligne {idx+1})."})
+                try:
+                    product = EssencePersonnalisee.objects.get(id=product_id)
+                except EssencePersonnalisee.DoesNotExist:
+                    raise serializers.ValidationError({"lignes": f"Essence personnalisée avec l'ID {product_id} introuvable."})
+                validated_lines.append({
+                    'type': 'essence_perso',
+                    'product_obj': product,
+                    'quantite': qty,
+                    'prix_unitaire': product.prix_par_ml_calcule
+                })
+
+        if not validated_lines:
+            raise serializers.ValidationError({"lignes": "La commande ne contient aucun article."})
 
         data['validated_lines'] = validated_lines
         return data
@@ -345,9 +454,10 @@ class POSCommandeCreateSerializer(serializers.Serializer):
             # 3. Ajouter les lignes de commande
             for line in validated_data['validated_lines']:
                 l_type = line['type']
-                prod = line['product_obj']
+                prod = line.get('product_obj')
                 qty = line['quantite']
-                prix_unitaire = line['prix_unitaire']
+                prix_unitaire = line.get('prix_unitaire')
+                recette_data = line.get('recette_data')
 
                 if l_type == 'parfum':
                     CommandeLigneParfum.objects.create(
@@ -387,6 +497,44 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                         quantite=qty,
                         prix_unitaire_snapshot=prix_unitaire,
                         remise_ligne=Decimal('0'),
+                        sous_total=prix_unitaire * qty
+                    )
+                elif l_type == 'parfum_perso':
+                    if not prod and recette_data:
+                        from laboratoire.models import LigneParfumPersonnalise
+                        flacon = recette_data['flacon']
+                        nom_recette = recette_data['nom'] or f"Création Sur Mesure POS #{random.randint(100, 999)}"
+
+                        prod = ParfumPersonnalise.objects.create(
+                            client=client_obj,
+                            flacon=flacon,
+                            nom=nom_recette,
+                            enregistre=False
+                        )
+                        for lot, qty_ml in recette_data['lignes']:
+                            prix_ligne = qty_ml * (lot.prix_vente_par_ml or Decimal('0'))
+                            LigneParfumPersonnalise.objects.create(
+                                parfum_personnalise=prod,
+                                essence=lot,
+                                quantite_ml=qty_ml,
+                                prix_ligne=prix_ligne
+                            )
+                        prod.recalculer_prix()
+                        prix_unitaire = prod.prix_total
+
+                    CommandeLigneParfumPerso.objects.create(
+                        commande=commande,
+                        parfum_personnalise=prod,
+                        quantite=qty,
+                        prix_snapshot=prix_unitaire,
+                        sous_total=prix_unitaire * qty
+                    )
+                elif l_type == 'essence_perso':
+                    CommandeLigneEssencePersonnalisee.objects.create(
+                        commande=commande,
+                        essence_personnalisee=prod,
+                        quantite=qty,
+                        prix_calcule=prix_unitaire,
                         sous_total=prix_unitaire * qty
                     )
 

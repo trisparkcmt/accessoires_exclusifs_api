@@ -16,7 +16,7 @@ from utilisateur.views import (
     # Serveuse & Admin Serveuse views
     admin_serveuses_list, admin_promote_to_serveuse, admin_update_serveuse, admin_delete_serveuse,
     # Connexion personnalisée
-    WebLoginView, MobileLoginView, DeprecatedLoginView,
+    WebLoginView, MobileLoginView, DeprecatedLoginView, HybridTokenRefreshView,
     ThrottledPasswordResetView, ThrottledRegisterView,
     ThrottledVerifyEmailView, ThrottledResendEmailVerificationView,
     CustomLogoutView
@@ -27,6 +27,7 @@ urlpatterns = [
     path('login/', DeprecatedLoginView.as_view(), name='rest_login'),
     path('web/login/', WebLoginView.as_view(), name='web_login'),
     path('mobile/login/', MobileLoginView.as_view(), name='mobile_login'),
+    path('token/refresh/', HybridTokenRefreshView.as_view(), name='token_refresh'),
     path('password/reset/', ThrottledPasswordResetView.as_view(), name='rest_password_reset'),
     path('logout/', CustomLogoutView.as_view(), name='rest_logout'),
     path('', include('dj_rest_auth.urls')),

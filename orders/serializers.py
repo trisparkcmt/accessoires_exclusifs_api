@@ -70,8 +70,17 @@ class LigneProduitFiniEssenceReadSerializer(serializers.ModelSerializer):
 
     def get_image(self, obj):
         request = self.context.get('request')
-        if obj.produit_fini_essence.image_principale:
-            return request.build_absolute_uri(obj.produit_fini_essence.image_principale.url) if request else obj.produit_fini_essence.image_principale.url
+        produit = obj.produit_fini_essence
+        if not produit:
+            return None
+
+        image_field = getattr(produit, 'image_principale', None)
+        if not image_field:
+            essence = getattr(produit, 'essence', None)
+            image_field = getattr(essence, 'image_principale', None) if essence else None
+
+        if image_field:
+            return request.build_absolute_uri(image_field.url) if request else image_field.url
         return None
 
 

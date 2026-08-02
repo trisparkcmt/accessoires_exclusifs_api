@@ -743,14 +743,19 @@ class FavoriSerializer(serializers.ModelSerializer):
     def get_nom_produit(self, obj):
         if obj.parfum:
             return obj.parfum.nom
-        return obj.accessoire.nom if obj.accessoire else None
+        if obj.accessoire:
+            return obj.accessoire.nom
+        if obj.produit_fini_essence:
+            return f"{obj.produit_fini_essence.essence.nom} - {obj.produit_fini_essence.taille_ml}ml"
+        return None
 
     def get_prix_produit(self, obj):
         if obj.parfum:
-            # Utilise le prix actuel (promotion ou non)
             return str(obj.parfum.prix_actuel)
         if obj.accessoire:
             return str(obj.accessoire.prix_actuel)
+        if obj.produit_fini_essence:
+            return str(obj.produit_fini_essence.prix_actuel)
         return None
 
     def get_image_produit(self, obj):
@@ -763,17 +768,25 @@ class FavoriSerializer(serializers.ModelSerializer):
         return None
 
     def get_type_produit(self, obj):
-        return "parfum" if obj.parfum else "accessoire"
+        if obj.produit_fini_essence:
+            return 'produit_fini_essence'
+        return 'parfum' if obj.parfum else 'accessoire'
 
     def get_slug_produit(self, obj):
         if obj.parfum:
             return obj.parfum.slug
-        return obj.accessoire.slug if obj.accessoire else None
+        if obj.accessoire:
+            return obj.accessoire.slug
+        return None
 
     def get_id_produit(self, obj):
         if obj.parfum:
             return obj.parfum.id
-        return obj.accessoire.id if obj.accessoire else None
+        if obj.accessoire:
+            return obj.accessoire.id
+        if obj.produit_fini_essence:
+            return obj.produit_fini_essence.id
+        return None
 
 
 class CategorieParfumSerializer(serializers.ModelSerializer):

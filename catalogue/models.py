@@ -53,6 +53,7 @@ class Favori(models.Model):
     client = models.ForeignKey('utilisateur.Client', on_delete=models.CASCADE, related_name='favoris')
     parfum = models.ForeignKey('catalogue.Parfum', on_delete=models.CASCADE, null=True, blank=True)
     accessoire = models.ForeignKey('catalogue.Accessoire', on_delete=models.CASCADE, null=True, blank=True)
+    produit_fini_essence = models.ForeignKey('catalogue.ProduitFiniEssence', on_delete=models.CASCADE, null=True, blank=True, related_name='favoris')
     date_ajout = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -62,10 +63,18 @@ class Favori(models.Model):
         constraints = [
             models.UniqueConstraint(fields=['client', 'parfum'], condition=models.Q(parfum__isnull=False), name='unique_favori_parfum'),
             models.UniqueConstraint(fields=['client', 'accessoire'], condition=models.Q(accessoire__isnull=False), name='unique_favori_accessoire'),
+            models.UniqueConstraint(fields=['client', 'produit_fini_essence'], condition=models.Q(produit_fini_essence__isnull=False), name='unique_favori_produit_fini_essence'),
         ]
 
     def __str__(self):
-        produit = self.parfum.nom if self.parfum else self.accessoire.nom
+        if self.parfum:
+            produit = self.parfum.nom
+        elif self.accessoire:
+            produit = self.accessoire.nom
+        elif self.produit_fini_essence:
+            produit = f"{self.produit_fini_essence.essence.nom} - {self.produit_fini_essence.taille_ml}ml"
+        else:
+            produit = '(sans produit)'
         return f"{self.client.user.email} - {produit}"
 
 

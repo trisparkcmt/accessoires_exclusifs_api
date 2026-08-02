@@ -12,7 +12,7 @@ import tempfile, os
 from .utils import get_similar_products
 
 from .models import (
-    Tag, Parfum, Essence, Accessoire, Flacon, LotEssence, ProduitFiniEssence,
+    Tag, Parfum, Essence, Accessoire, Flacon, LotEssence, ProduitFiniEssence, Favori,
     CategorieParfum, TypeAccessoire, TypeFlacon, Ingredient
 )
 from utilisateur.models import Serveuse
@@ -119,6 +119,43 @@ class AccessoireImageTest(APITestCase):
 # ============================================================
 # TESTS SIGNALS & RÉDUCTIONS
 # ============================================================
+class ProduitFiniEssenceFavoriTest(APITestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='favori-produit-fini',
+            email='favori-produit-fini@example.com',
+            password='test1234',
+            telephone='+1234567892',
+        )
+        self.essence = Essence.objects.create(
+            marque='Maison Test',
+            nom='Rose de Nuit',
+            categorie='premium',
+            code_reference='ESS-FAV-001',
+            actif=True,
+        )
+        self.produit = ProduitFiniEssence.objects.create(
+            essence=self.essence,
+            taille_ml=30,
+            prix=Decimal('15000.00'),
+            actif=True,
+        )
+
+    def test_toggle_favori_produit_fini_essence(self):
+        self.client.force_authenticate(self.user)
+        url = f'/api/v1/shop/produits-essence/{self.produit.id}/favori/'
+
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], 'ajouté')
+        self.assertTrue(Favori.objects.filter(client=self.user.client, produit_fini_essence=self.produit).exists())
+
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['status'], 'retiré')
+        self.assertFalse(Favori.objects.filter(client=self.user.client, produit_fini_essence=self.produit).exists())
+
+
 class ProduitFiniEssenceVirtualStockTest(TestCase):
     """Teste le nouveau modèle 'vente à la demande' où ProduitFiniEssence
     n'a plus de stock propre — le stock est calculé virtuellement depuis

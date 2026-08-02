@@ -481,6 +481,20 @@ class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
             return ProduitFiniEssenceSerializer
         return ProduitFiniEssencePublicSerializer
 
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def favori(self, request, pk=None):
+        produit = self.get_object()
+        try:
+            client = request.user.client
+        except AttributeError:
+            return Response({'detail': 'Client non associé'}, status=400)
+
+        favori, created = Favori.objects.get_or_create(client=client, produit_fini_essence=produit)
+        if not created:
+            favori.delete()
+            return Response({'status': 'retiré', 'is_favori': False})
+        return Response({'status': 'ajouté', 'is_favori': True})
+
 
 class BeneficesViewSet(viewsets.ViewSet):
     permission_classes = [IsAdmin]  # Réservé exclusivement aux administrateurs
@@ -526,6 +540,7 @@ class BeneficesViewSet(viewsets.ViewSet):
             if start_date:
                 return queryset.filter(**{f'{field_name}__gte': start_date})
             return queryset.filter(**{f'{field_name}__lte': end_date})
+
 
         def to_decimal(value):
             return value if isinstance(value, Decimal) else Decimal(str(value or 0))
@@ -1489,9 +1504,8 @@ class FavoriViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         try:
             client = self.request.user.client
-            # On ajoute select_related pour charger parfum et accessoire en une seule fois
             return (Favori.objects.filter(client=client)
-                    .select_related('parfum', 'accessoire')
+                    .select_related('parfum', 'accessoire', 'produit_fini_essence', 'produit_fini_essence__essence')
                     .order_by('-date_ajout'))
         except AttributeError:
             return Favori.objects.none()
