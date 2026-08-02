@@ -281,7 +281,7 @@ def ia_recommandation(request):
                 continue
             lot = LotEssence.objects.filter(
                 essence_id=essence_id, actif=True, stock_ml__gte=quantite_ml
-            ).order_by('date_fabrication').first()
+            ).order_by('date_reception').first()
             if not lot:
                 continue
             essences_recommandees.append({
