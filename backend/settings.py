@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
 import os
 
@@ -337,6 +338,14 @@ REST_AUTH = {
     'USER_DETAILS_SERIALIZER': 'utilisateur.serializers.UserSerializer',
 }
 
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+}
+
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 # EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
@@ -348,6 +357,8 @@ EMAIL_HOST_PASSWORD = 'qvfs vdfn uyny xjqw'
 DEFAULT_FROM_EMAIL = 'Accessoire Exclusif <handougregoire@gmail.com>'
 
 # Configuration des cookies pour le Cross-Site (Frontend distant)
+# Conserve les hosts existants et autorise explicitement le partage des cookies
+# avec le frontend Vercel via SameSite=None.
 SESSION_COOKIE_SAMESITE = 'None'
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SAMESITE = 'None'

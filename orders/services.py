@@ -44,12 +44,13 @@ def generer_facture(commande):
         facture = Facture(commande=commande)
         facture.numero_facture = Facture.generer_numero()
         max_retries = 5
-        for attempt in range(max_retries):
+        for attempt in range(max_retries): 
             try:
+            
                 facture.save()
                 break
             except IntegrityError as e:
-                if 'numero_facture' in str(e):
+                if 'numero_facture' in str(e):     
                     logger.warning(
                         f"[FACTURE] Conflit numéro facture {facture.numero_facture}, tentative {attempt + 1}/{max_retries}"
                     )
@@ -67,11 +68,15 @@ def generer_facture(commande):
     # Chemin absolu du logo pour que xhtml2pdf puisse le lire
     logo_path = os.path.join(settings.BASE_DIR, 'staticfiles', 'img', 'logo.png')
 
+    # gérer le cas où la commande est passée par un invité (client peut être None)
+    client_obj = commande.client if getattr(commande, 'client', None) else None
+    user_obj = getattr(client_obj, 'user', None) if client_obj else None
+
     context = {
         'facture': facture,
         'commande': commande,
-        'client': commande.client,
-        'user': commande.client.user,
+        'client': client_obj,
+        'user': user_obj,
         'logo_path': logo_path,
         'date_emission': facture.date_emission,
         'lignes_parfums': commande.lignes_parfums.all(),
@@ -126,7 +131,11 @@ def generer_facture(commande):
     facture.save()
 
     # ── 7. Envoyer l'email au client ──────────────────────────────────
-    email_client = commande.client.user.email
+    # L'adresse peut être absente si commande.client est None (invité)
+    email_client = None
+    if client_obj and getattr(client_obj, 'user', None) and getattr(client_obj.user, 'email', None):
+        email_client = client_obj.user.email
+
     if email_client:
         try:
             envoyer_email_facture(facture, pdf_content, email_client)
