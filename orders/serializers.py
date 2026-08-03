@@ -421,9 +421,65 @@ class CommandeLigneAccessoireSerializer(serializers.ModelSerializer):
 
 
 class CommandeProduitFiniEssenceSerializer(serializers.ModelSerializer):
+    essence_nom = serializers.SerializerMethodField()
+    essence_marque = serializers.SerializerMethodField()
+    taille_ml = serializers.SerializerMethodField()
+    prix_actuel = serializers.SerializerMethodField()
+    prix_par_ml = serializers.SerializerMethodField()
+    categorie = serializers.SerializerMethodField()
+    detail_produit = serializers.SerializerMethodField()
+
     class Meta:
         model = CommandeProduitFiniEssence
-        fields = ['id', 'produit_fini_essence', 'nom_snapshot', 'quantite', 'prix_unitaire_snapshot', 'remise_ligne', 'sous_total']
+        fields = [
+            'id', 'produit_fini_essence', 'nom_snapshot', 'essence_nom', 'essence_marque',
+            'taille_ml', 'categorie', 'prix_actuel', 'prix_par_ml', 'quantite',
+            'prix_unitaire_snapshot', 'remise_ligne', 'sous_total', 'detail_produit'
+        ]
+
+    def get_essence_nom(self, obj):
+        return obj.produit_fini_essence.essence.nom if obj.produit_fini_essence and obj.produit_fini_essence.essence else None
+
+    def get_essence_marque(self, obj):
+        return obj.produit_fini_essence.essence.marque if obj.produit_fini_essence and obj.produit_fini_essence.essence else None
+
+    def get_taille_ml(self, obj):
+        return obj.produit_fini_essence.taille_ml if obj.produit_fini_essence else None
+
+    def get_prix_actuel(self, obj):
+        if obj.produit_fini_essence:
+            return str(obj.produit_fini_essence.prix_actuel)
+        return None
+
+    def get_prix_par_ml(self, obj):
+        if obj.produit_fini_essence:
+            return str(obj.produit_fini_essence.prix_par_ml)
+        return None
+
+    def get_categorie(self, obj):
+        if obj.produit_fini_essence and obj.produit_fini_essence.essence:
+            return obj.produit_fini_essence.essence.categorie
+        return None
+
+    def get_detail_produit(self, obj):
+        if not obj.produit_fini_essence:
+            return None
+
+        produit = obj.produit_fini_essence
+        essence = produit.essence
+        return {
+            'id': produit.id,
+            'nom': produit.essence.nom if essence else None,
+            'marque': essence.marque if essence else None,
+            'taille_ml': produit.taille_ml,
+            'prix': str(produit.prix),
+            'prix_promotionnel': str(produit.prix_promotionnel) if produit.prix_promotionnel is not None else None,
+            'prix_actuel': str(produit.prix_actuel),
+            'prix_par_ml': str(produit.prix_par_ml),
+            'categorie': essence.categorie if essence else None,
+            'code_reference': essence.code_reference if essence else None,
+            'actif': produit.actif,
+        }
 
 
 class CommandeLigneParfumPersoSerializer(serializers.ModelSerializer):
