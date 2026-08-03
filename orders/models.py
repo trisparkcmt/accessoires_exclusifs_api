@@ -940,11 +940,24 @@ class Facture(models.Model):
     @classmethod
     def generer_numero(cls):
         """Génère le prochain numéro FAC-YYYY-NNNN auto-incrémenté par année."""
+        from django.db.models import Max
         from django.utils import timezone
+
         annee = timezone.now().year
-        # Compter le nombre de factures de cette année
-        count = cls.objects.filter(numero_facture__startswith=f'FAC-{annee}-').count()
-        return f'FAC-{annee}-{str(count + 1).zfill(4)}'
+        prefix = f'FAC-{annee}-'
+        dernier_numero = cls.objects.filter(numero_facture__startswith=prefix).aggregate(
+            max_numero=Max('numero_facture')
+        )['max_numero']
+
+        if not dernier_numero:
+            return f'{prefix}0001'
+
+        try:
+            dernier_suffix = int(dernier_numero.split('-')[-1])
+        except (IndexError, ValueError):
+            dernier_suffix = cls.objects.filter(numero_facture__startswith=prefix).count()
+
+        return f'{prefix}{str(dernier_suffix + 1).zfill(4)}'
 
 
 class CodePromoAdmin(models.Model):
