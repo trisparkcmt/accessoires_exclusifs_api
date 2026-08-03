@@ -17,6 +17,7 @@ import os
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.mail import EmailMessage
+from django.db import IntegrityError
 from django.template.loader import render_to_string
 from django.utils import timezone
 
@@ -42,7 +43,24 @@ def generer_facture(commande):
     except Facture.DoesNotExist:
         facture = Facture(commande=commande)
         facture.numero_facture = Facture.generer_numero()
-        facture.save()
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                facture.save()
+                break
+            except IntegrityError as e:
+                if 'numero_facture' in str(e):
+                    logger.warning(
+                        f"[FACTURE] Conflit numéro facture {facture.numero_facture}, tentative {attempt + 1}/{max_retries}"
+                    )
+                    facture.numero_facture = Facture.generer_numero()
+                    continue
+                raise
+        else:
+            logger.error(
+                f"[FACTURE] Échec création facture après {max_retries} tentatives pour {commande.numero_commande}"
+            )
+            raise
         logger.info(f"[FACTURE] Création de {facture.numero_facture} pour {commande.numero_commande}")
 
     # ── 2. Préparer le contexte du template ───────────────────────────
