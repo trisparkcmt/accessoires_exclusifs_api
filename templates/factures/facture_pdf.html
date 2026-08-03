@@ -304,7 +304,16 @@
             <br /><small style="color: #666">Composition :</small>
             <ul style="margin: 5px 0 0 12px; color: #666; font-size: 9pt; padding-left: 0; list-style: disc;">
               {% for comp in ligne.parfum_personnalise.lignes.all %}
-              <li style="margin-bottom: 2px;">{{ comp.essence.essence.nom if comp.essence else comp.essence_personnalisee.nom }} — {{ comp.quantite_ml }} ml</li>
+              <li style="margin-bottom: 2px;">
+                {% if comp.essence and comp.essence.essence %}
+                  {{ comp.essence.essence.nom }}
+                {% elif comp.essence_personnalisee %}
+                  {{ comp.essence_personnalisee.nom }}
+                {% else %}
+                  Essence inconnue
+                {% endif %}
+                — {{ comp.quantite_ml }} ml
+              </li>
               {% endfor %}
             </ul>
             {% endif %}
