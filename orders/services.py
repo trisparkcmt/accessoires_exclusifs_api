@@ -42,6 +42,7 @@ def generer_facture(commande):
     except Facture.DoesNotExist:
         facture = Facture(commande=commande)
         facture.numero_facture = Facture.generer_numero()
+        facture.save()
         logger.info(f"[FACTURE] Création de {facture.numero_facture} pour {commande.numero_commande}")
 
     # ── 2. Préparer le contexte du template ───────────────────────────
@@ -54,7 +55,7 @@ def generer_facture(commande):
         'client': commande.client,
         'user': commande.client.user,
         'logo_path': logo_path,
-        'date_emission': timezone.now(),
+        'date_emission': facture.date_emission,
         'lignes_parfums': commande.lignes_parfums.all(),
         'lignes_accessoires': commande.lignes_accessoires.all(),
         'lignes_produit_fini_essence': commande.lignes_produit_fini_essence.all(),

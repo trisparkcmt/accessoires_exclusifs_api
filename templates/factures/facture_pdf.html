@@ -294,10 +294,23 @@
         {% for ligne in lignes_parfums_perso %}
         <tr>
           <td>
-            <strong>{{ ligne.nom }} (Parfum Personnalisé)</strong>
+            <strong>{{ ligne.parfum_personnalise.nom }} (Parfum Personnalisé)</strong>
+            {% if ligne.parfum_personnalise.flacon %}
+            <br /><small style="color: #666"
+              >Flacon : {{ ligne.parfum_personnalise.flacon.nom }} — {{ ligne.parfum_personnalise.flacon.contenance_ml }} ml</small
+            >
+            {% endif %}
+            {% if ligne.parfum_personnalise.lignes.exists %}
+            <br /><small style="color: #666">Composition :</small>
+            <ul style="margin: 5px 0 0 12px; color: #666; font-size: 9pt; padding-left: 0; list-style: disc;">
+              {% for comp in ligne.parfum_personnalise.lignes.all %}
+              <li style="margin-bottom: 2px;">{{ comp.essence.essence.nom if comp.essence else comp.essence_personnalisee.nom }} — {{ comp.quantite_ml }} ml</li>
+              {% endfor %}
+            </ul>
+            {% endif %}
             {% if ligne.note_laboratoire %}
             <br /><small style="color: #666"
-              >Note : {{ ligne.note_laboratoire }}</small
+              >Note labo : {{ ligne.note_laboratoire }}</small
             >
             {% endif %}
           </td>
