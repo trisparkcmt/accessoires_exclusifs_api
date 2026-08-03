@@ -501,7 +501,7 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                     )
                 elif l_type == 'parfum_perso':
                     if not prod and recette_data:
-                        from laboratoire.models import LigneParfumPersonnalise
+                        from laboratoire.models import ParfumPersonnaliseLigne
                         flacon = recette_data['flacon']
                         nom_recette = recette_data['nom'] or f"Création Sur Mesure POS #{random.randint(100, 999)}"
 
