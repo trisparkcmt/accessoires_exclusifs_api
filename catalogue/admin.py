@@ -7,7 +7,7 @@ from .models import (
     CategorieParfum, Parfum, Essence, Ingredient,
     LotEssence, ProduitFiniEssence,
     TypeAccessoire, Accessoire, TypeFlacon, Flacon, NotificationCatalogue,
-    DiffuseurParfum
+    DiffuseurParfum, EntrepriseInfo
 )
 
 
@@ -127,6 +127,12 @@ class TagEssenceAdmin(admin.ModelAdmin):
     list_display = ('id', 'essence', 'tag')
     search_fields = ('essence__nom', 'tag__nom')
     autocomplete_fields = ('essence', 'tag')
+
+
+@admin.register(EntrepriseInfo)
+class EntrepriseInfoAdmin(admin.ModelAdmin):
+    list_display = ('id', 'nom', 'telephone_principal', 'whatsapp', 'localisation')
+    search_fields = ('nom', 'localisation')
 
 
 @admin.register(Favori)

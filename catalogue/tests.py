@@ -14,7 +14,7 @@ from .utils import get_similar_products
 
 from .models import (
     Tag, Parfum, Essence, Accessoire, Flacon, LotEssence, ProduitFiniEssence, Favori,
-    CategorieParfum, TypeAccessoire, TypeFlacon, Ingredient
+    CategorieParfum, TypeAccessoire, TypeFlacon, Ingredient, EntrepriseInfo
 )
 from utilisateur.models import Serveuse
 
@@ -32,6 +32,66 @@ def creer_image_test(nom='test.jpg', format='JPEG', couleur=(255, 0, 0)):
     img.save(buffer, format=format)
     buffer.seek(0)
     return SimpleUploadedFile(nom, buffer.read(), content_type=f'image/{format.lower()}')
+
+
+class EntrepriseInfoApiTest(APITestCase):
+    def setUp(self):
+        self.admin_user = get_user_model().objects.create_user(
+            username='admin-entreprise',
+            email='admin-entreprise@example.com',
+            password='test1234',
+            is_staff=True,
+        )
+        self.client.force_authenticate(self.admin_user)
+        self.entreprise = EntrepriseInfo.objects.create(
+            nom='Accessoires Exclusif',
+            jours_ouverture=[
+                {'jour': 'Lundi', 'ouvert': True, 'heure_ouverture': '09:00', 'heure_fermeture': '18:00'},
+                {'jour': 'Mardi', 'ouvert': True, 'heure_ouverture': '09:00', 'heure_fermeture': '18:00'},
+                {'jour': 'Mercredi', 'ouvert': False, 'heure_ouverture': None, 'heure_fermeture': None, 'note': 'Fermé'}
+            ],
+            telephone_principal='+2250700000000',
+            whatsapp='+2250700000001',
+            facebook_url='https://facebook.com/accessoiresexclusif',
+            instagram_url='https://instagram.com/accessoiresexclusif',
+            localisation='Abidjan, Côte d\'Ivoire',
+        )
+
+    def test_get_is_public(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.get('/api/v1/shop/infos-entreprise/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]['nom'], 'Accessoires Exclusif')
+
+    def test_non_admin_cannot_create(self):
+        user = get_user_model().objects.create_user(
+            username='simple-user',
+            email='simple-user@example.com',
+            password='test1234',
+        )
+        self.client.force_authenticate(user)
+        response = self.client.post('/api/v1/shop/infos-entreprise/', {
+            'nom': 'Nouvelle entreprise',
+            'jours_ouverture': ['Vendredi'],
+            'telephone_principal': '+2250700000002',
+            'localisation': 'Yopougon',
+        }, format='json')
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_can_patch(self):
+        response = self.client.patch('/api/v1/shop/infos-entreprise/1/', {
+            'nom': 'Accessoires Exclusif Updated',
+            'localisation': 'Plateau, Abidjan',
+            'jours_ouverture': [
+                {'jour': 'Vendredi', 'ouvert': True, 'heure_ouverture': '10:00', 'heure_fermeture': '19:00'},
+                {'jour': 'Samedi', 'ouvert': False, 'heure_ouverture': None, 'heure_fermeture': None, 'note': 'Fermé'}
+            ],
+        }, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.entreprise.refresh_from_db()
+        self.assertEqual(self.entreprise.nom, 'Accessoires Exclusif Updated')
+        self.assertEqual(self.entreprise.jours_ouverture[0]['jour'], 'Vendredi')
+        self.assertFalse(self.entreprise.jours_ouverture[1]['ouvert'])
 
 
 # ============================================================

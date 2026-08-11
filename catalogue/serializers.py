@@ -7,7 +7,7 @@ from drf_spectacular.types import OpenApiTypes
 from django.db import transaction
 from .utils import get_similar_products
 
-from .models import CategorieParfum, LotEssence, ProduitFiniEssence, Tag, Parfum, Essence, Accessoire, Flacon, TypeAccessoire, TypeFlacon, Favori, Ingredient, NotificationCatalogue, MouvementStock, DiffuseurParfum
+from .models import CategorieParfum, LotEssence, ProduitFiniEssence, Tag, Parfum, Essence, Accessoire, Flacon, TypeAccessoire, TypeFlacon, Favori, Ingredient, NotificationCatalogue, MouvementStock, DiffuseurParfum, EntrepriseInfo
 
 
 # catalogue/serializers.py (ajouter après les imports existants)
@@ -74,6 +74,41 @@ class TagSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Tag
         fields = ['id', 'nom', 'slug', 'type']
+
+
+class JourOuvertureSerializer(serializers.Serializer):
+    jour = serializers.CharField(required=True)
+    ouvert = serializers.BooleanField(required=True)
+    heure_ouverture = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    heure_fermeture = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    note = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def validate(self, attrs):
+        ouvert = attrs.get('ouvert', True)
+        if ouvert:
+            if not attrs.get('heure_ouverture') or not attrs.get('heure_fermeture'):
+                raise serializers.ValidationError({
+                    'heure_ouverture': 'Les horaires sont requis pour un jour ouvert.',
+                    'heure_fermeture': 'Les horaires sont requis pour un jour ouvert.'
+                })
+        return attrs
+
+
+class EntrepriseInfoSerializer(serializers.ModelSerializer):
+    jours_ouverture = serializers.ListField(
+        child=JourOuvertureSerializer(),
+        required=False,
+        allow_empty=True,
+        default=list,
+    )
+
+    class Meta:
+        model = EntrepriseInfo
+        fields = [
+            'id', 'nom', 'jours_ouverture', 'telephone_principal',
+            'telephone_secondaire', 'whatsapp', 'facebook_url',
+            'instagram_url', 'localisation', 'date_creation', 'date_modification'
+        ]
 
 
 class TagSelectSerializer(serializers.ModelSerializer):

@@ -25,11 +25,11 @@ from orders.models import CommandeLigneAccessoire, CommandeLigneParfum, Commande
 from .permissions import IsAdminOrReadOnly, IsAdmin, IsAdminOrServeuse, IsAdminOrServeuseOrReadOnly
 from utilisateur.permissions import is_active_serveuse
 
-from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Flacon, Favori, Ingredient, ProduitFiniEssence, Tag, TypeAccessoire, TypeFlacon, NotificationCatalogue, MouvementStock
+from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Flacon, Favori, Ingredient, ProduitFiniEssence, Tag, TypeAccessoire, TypeFlacon, NotificationCatalogue, MouvementStock, EntrepriseInfo
 from .serializers import (
     AccessoireAdminDetailSerializer, AccessoireAdminListSerializer, AccessoirePublicDetailSerializer, AccessoirePublicListSerializer, AccessoireSimilaireSerializer, CategorieParfumSerializer, EssenceLaboDetailSerializer, EssenceLaboListSerializer, LotEssenceSerializer, ParfumAdminDetailSerializer, ParfumAdminListSerializer, ParfumPublicDetailSerializer, ParfumPublicListSerializer, ParfumSerializer, EssenceSerializer,
     AccessoireSerializer, FlaconSerializer, FlaconPublicSerializer, ParfumSimilaireSerializer, EssenceCreateFullSerializer,
-    IngredientSerializer, FavoriSerializer, ProduitFiniEssencePublicSerializer, ProduitFiniEssenceSerializer, PromotionSerializer, TagSelectSerializer, TagSerializer, TypeAccessoireSerializer, TypeFlaconSerializer, NotificationCatalogueSerializer, NotificationCatalogueUpdateSerializer,
+    IngredientSerializer, FavoriSerializer, ProduitFiniEssencePublicSerializer, ProduitFiniEssenceSerializer, PromotionSerializer, TagSelectSerializer, TagSerializer, TypeAccessoireSerializer, TypeFlaconSerializer, NotificationCatalogueSerializer, NotificationCatalogueUpdateSerializer, EntrepriseInfoSerializer,
     get_image_url, UnifiedBestsellerHotsellerSerializer,
 )
 from django.db.models import Case, When
@@ -38,6 +38,12 @@ from .filters import (
     AccessoireFilter, FlaconFilter,
 )
 from .pagination import StandardPagination
+
+
+class EntrepriseInfoViewSet(viewsets.ModelViewSet):
+    queryset = EntrepriseInfo.objects.all().order_by('-date_creation')
+    serializer_class = EntrepriseInfoSerializer
+    permission_classes = [IsAdminOrReadOnly]
 
 
 # ============================================================

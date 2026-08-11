@@ -14,13 +14,57 @@ from catalogue.models import Parfum, Essence, Accessoire, Flacon, Ingredient, Di
 logger = logging.getLogger(__name__)
 
 
+def normaliser_reponse_composition(reponse_dict):
+    """Normalise la réponse IA pour respecter la logique métier du laboratoire."""
+    if not isinstance(reponse_dict, dict):
+        return reponse_dict
+
+    essences = []
+    for item in (reponse_dict.get('essences_pre_faites', []) or []):
+        if not isinstance(item, dict):
+            continue
+        item_norm = dict(item)
+        try:
+            item_norm['quantite_ml'] = round(float(item_norm.get('quantite_ml', 0) or 0), 2)
+        except (TypeError, ValueError):
+            item_norm['quantite_ml'] = 0.0
+        if item_norm.get('id') is None or item_norm['quantite_ml'] <= 0:
+            continue
+        essences.append(item_norm)
+
+    reponse_dict['essences_pre_faites'] = essences
+    reponse_dict['ingredients_sur_mesure'] = []
+
+    def _dedup_ids(valeur):
+        valeurs = []
+        vus = set()
+        for item in valeur or []:
+            if isinstance(item, dict):
+                identifiant = item.get('id')
+            else:
+                identifiant = item
+            if identifiant is None or identifiant in vus:
+                continue
+            vus.add(identifiant)
+            valeurs.append(item)
+        return valeurs
+
+    reponse_dict['accessoires'] = _dedup_ids(reponse_dict.get('accessoires', []))
+    reponse_dict['diffuseurs'] = _dedup_ids(reponse_dict.get('diffuseurs', []))
+    reponse_dict['parfums_existants_recommandes'] = _dedup_ids(reponse_dict.get('parfums_existants_recommandes', []))
+    return reponse_dict
+
+
 def ajuster_composition_45_percent(reponse_dict):
     """
     Ajuste de façon 100% déterministe en Python les quantités (en ml) d'une composition sur mesure
     pour que leur somme égale EXACTEMENT 45% de la contenance du flacon choisi.
+    Les compositions sur mesure doivent être composées uniquement d'essences.
     """
     if not isinstance(reponse_dict, dict):
         return reponse_dict
+
+    reponse_dict = normaliser_reponse_composition(reponse_dict)
 
     flacon_id = reponse_dict.get('flacon_id', 0)
     essences = reponse_dict.get('essences_pre_faites', []) or []
@@ -28,7 +72,7 @@ def ajuster_composition_45_percent(reponse_dict):
 
     print(f"\n[ENGINE 45%] Debut de l'ajustement. Flacon ID: {flacon_id}, Essences: {len(essences)}, Ingredients: {len(ingredients)}", flush=True)
 
-    if not flacon_id or (not essences and not ingredients):
+    if not flacon_id or not essences:
         print(f"[ENGINE 45%] Pas de creation sur mesure detectee (flacon_id=0 ou vide).", flush=True)
         reponse_dict['flacon_id'] = 0
         reponse_dict['essences_pre_faites'] = []
@@ -48,7 +92,7 @@ def ajuster_composition_45_percent(reponse_dict):
         reponse_dict['flacon_id'] = flacon.id
 
     volume_cible = round(float(flacon.contenance_ml) * 0.45, 2)
-    total_elements = len(essences) + len(ingredients)
+    total_elements = len(essences)
     print(f"[ENGINE 45%] Flacon trouve: {flacon.nom} ({flacon.contenance_ml}ml). Volume cible (45%): {volume_cible}ml", flush=True)
 
     if total_elements == 0:
@@ -59,9 +103,6 @@ def ajuster_composition_45_percent(reponse_dict):
     for e in essences:
         if isinstance(e, dict):
             somme_fournie += float(e.get('quantite_ml', 0) or 0)
-    for i in ingredients:
-        if isinstance(i, dict):
-            somme_fournie += float(i.get('quantite_ml', 0) or 0)
 
     print(f"[ENGINE 45%] Volume fourni par l'IA: {somme_fournie}ml", flush=True)
 
@@ -76,35 +117,20 @@ def ajuster_composition_45_percent(reponse_dict):
                 else:
                     e['quantite_ml'] = part_egale
                     total_attribue += part_egale
-
-        for idx, i in enumerate(ingredients):
-            if isinstance(i, dict):
-                if (len(essences) + idx) == total_elements - 1:
-                    i['quantite_ml'] = round(volume_cible - total_attribue, 2)
-                else:
-                    i['quantite_ml'] = part_egale
-                    total_attribue += part_egale
     else:
         total_ajuste = 0.0
-        tous_elements = []
-        for e in essences:
-            if isinstance(e, dict):
-                tous_elements.append(('essence', e))
-        for i in ingredients:
-            if isinstance(i, dict):
-                tous_elements.append(('ingredient', i))
-
-        count = len(tous_elements)
-        for idx, (item_type, item_dict) in enumerate(tous_elements):
-            if idx == count - 1:
+        for idx, e in enumerate(essences):
+            if not isinstance(e, dict):
+                continue
+            if idx == len(essences) - 1:
                 q_ajustee = round(volume_cible - total_ajuste, 2)
             else:
-                q_orig = float(item_dict.get('quantite_ml', 0) or 0)
+                q_orig = float(e.get('quantite_ml', 0) or 0)
                 q_ajustee = round((q_orig / somme_fournie) * volume_cible, 2)
                 total_ajuste += q_ajustee
-            item_dict['quantite_ml'] = q_ajustee
+            e['quantite_ml'] = q_ajustee
 
-    print(f"[ENGINE 45%] Ajustement termine avec succes. Essences: {essences}, Ingredients: {ingredients}", flush=True)
+    print(f"[ENGINE 45%] Ajustement termine avec succes. Essences: {essences}", flush=True)
     return reponse_dict
 
 
@@ -546,10 +572,12 @@ RÈGLES IMPÉRATIVES :
 - Si le client cherche une recommandation ou une création sur-mesure, utilise les outils pour interroger la base de données puis propose la meilleure sélection.
 
 2. COMPOSITION SUR-MESURE :
-- Un flacon ("flacon_id") ne doit être choisi que pour une création personnalisée sur-mesure. (Les quantités d'essences en ml seront automatiquement ajustées par notre système Python à exactement 45% de la contenance du flacon).
+- Un flacon ("flacon_id") ne doit être choisi que pour une création personnalisée sur-mesure. Les quantités d'essences en ml seront automatiquement ajustées par notre système Python à exactement 45% de la contenance du flacon.
+- Pour une création personnalisée, la base du parfum doit contenir uniquement des essences dans "essences_pre_faites". Le champ "ingredients_sur_mesure" doit rester vide.
+- Si le client demande une création personnalisée, n'inclus pas d'ingrédients dans la réponse finale.
 
 3. VENTE COMPLÉMENTAIRE (CROSS-SELLING) :
-- Propose systématiquement un accessoire ou un diffuseur assorti qui complète la commande et explique le choix dans le message.
+- Propose un accessoire ou un diffuseur assorti qui complète la commande, mais évite les doublons et adapte la suggestion au contexte du client. Ne propose pas toujours le même produit.
 
 4. FORMAT DE RÉPONSE FINAL :
 Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSON strict respectant la structure suivante (sans balise ```json) :
@@ -702,7 +730,10 @@ Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSO
             "raw_response": reponse_texte,
         }
 
-    # 1. Ajustement déterministe Python de la règle des 45%
+    # 1. Normalisation stricte selon la logique métier
+    parsed = normaliser_reponse_composition(parsed)
+
+    # 2. Ajustement déterministe Python de la règle des 45%
     parsed = ajuster_composition_45_percent(parsed)
 
     # 2. Validation du schéma JSON

@@ -5,6 +5,7 @@ from rest_framework.test import APITestCase
 
 from laboratoire.models import ParfumPersonnalise, ParfumPersonnaliseLigne
 from laboratoire.serializers import ParfumPersonnaliseSerializer
+from laboratoire.utils_ia import ajuster_composition_45_percent, normaliser_reponse_composition
 from catalogue.models import Essence, Flacon, LotEssence
 from utilisateur.models import Client
 
@@ -194,3 +195,58 @@ class ParfumPersonnaliseAPITest(APITestCase):
         self.assertEqual(resultat['id'], self.parfum.id)
         self.assertIn('prix_total', resultat)
         self.assertEqual(Decimal(resultat['prix_total']), Decimal('2200.00'))
+
+
+class IACompositionRulesTests(TestCase):
+    def test_normaliser_reponse_composition_keeps_only_essences_and_deduplicates_suggestions(self):
+        response = {
+            'message': 'Voici une proposition personnalisée',
+            'quantite_demandee_ml': 50,
+            'budget_max_fcfa': 150000,
+            'flacon_id': 42,
+            'essences_pre_faites': [
+                {'id': 1, 'quantite_ml': 20},
+                {'id': 2, 'quantite_ml': 20},
+            ],
+            'ingredients_sur_mesure': [
+                {'id': 9, 'quantite_ml': 10},
+            ],
+            'parfums_existants_recommandes': [1],
+            'accessoires': [5, 5, 6],
+            'diffuseurs': [3, 3],
+        }
+
+        normalized = normaliser_reponse_composition(response)
+
+        self.assertEqual(normalized['ingredients_sur_mesure'], [])
+        self.assertEqual(len(normalized['essences_pre_faites']), 2)
+        self.assertEqual(normalized['accessoires'], [5, 6])
+        self.assertEqual(normalized['diffuseurs'], [3])
+
+    def test_ajuster_composition_45_percent_uses_exact_target_with_essences_only(self):
+        flacon = Flacon.objects.create(
+            nom='Flacon test 45%',
+            reference_sku='FL-45',
+            contenance_ml=100,
+            prix_unitaire=Decimal('2000.00'),
+            stock_quantite=10,
+            actif=True,
+        )
+
+        response = {
+            'flacon_id': flacon.id,
+            'essences_pre_faites': [
+                {'id': 1, 'quantite_ml': 20},
+                {'id': 2, 'quantite_ml': 20},
+            ],
+            'ingredients_sur_mesure': [
+                {'id': 8, 'quantite_ml': 20},
+            ],
+        }
+
+        normalized = normaliser_reponse_composition(response)
+        adjusted = ajuster_composition_45_percent(normalized)
+        total = sum(float(item['quantite_ml']) for item in adjusted['essences_pre_faites'])
+
+        self.assertAlmostEqual(total, 45.0, places=2)
+        self.assertEqual(adjusted['ingredients_sur_mesure'], [])

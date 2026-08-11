@@ -48,6 +48,28 @@ def upload_to_type_accessoire(instance, filename):
 def upload_to_type_flacon(instance, filename):
     return f'types/flacons/{instance.pk}/{filename}'
 
+
+class EntrepriseInfo(models.Model):
+    nom = models.CharField(max_length=255)
+    jours_ouverture = models.JSONField(default=list, blank=True)
+    telephone_principal = models.CharField(max_length=30, blank=True)
+    telephone_secondaire = models.CharField(max_length=30, blank=True)
+    whatsapp = models.CharField(max_length=30, blank=True)
+    facebook_url = models.URLField(blank=True)
+    instagram_url = models.URLField(blank=True)
+    localisation = models.CharField(max_length=500, blank=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'entreprise_info'
+        verbose_name = 'Informations entreprise'
+        verbose_name_plural = 'Informations entreprise'
+
+    def __str__(self):
+        return self.nom or 'Informations entreprise'
+
+
 #Favoris 
 class Favori(models.Model):
     client = models.ForeignKey('utilisateur.Client', on_delete=models.CASCADE, related_name='favoris')
