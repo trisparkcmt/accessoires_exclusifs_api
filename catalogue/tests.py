@@ -4,6 +4,7 @@ from io import BytesIO
 from PIL import Image as PILImage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth import get_user_model
+from django.urls import reverse
 from rest_framework.test import APITestCase
 from django.test import TestCase, override_settings
 from django.conf import settings
@@ -224,6 +225,39 @@ class ProduitFiniEssenceVirtualStockTest(TestCase):
         self.lot_recent.refresh_from_db()
         # lot_recent avait 80 - 0 = 80 (prélèvement a vidé lot_ancien), puis +50
         self.assertEqual(self.lot_recent.stock_ml, Decimal('130.00'))
+
+
+class EssenceModifierEndpointTest(APITestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username='essence-modifier-admin',
+            email='essence-modifier-admin@example.com',
+            password='test1234',
+            is_staff=True,
+        )
+        self.client.force_authenticate(self.user)
+        self.essence = Essence.objects.create(
+            marque='Maison Test',
+            nom='Rose Éclatante',
+            categorie='premium',
+            code_reference='ESS-MOD-001',
+            prix_par_ml=Decimal('150.00'),
+            actif=True,
+        )
+
+    def test_modifier_endpoint_updates_essence(self):
+        url = reverse('essence-modifier', kwargs={'slug': self.essence.slug})
+        response = self.client.patch(
+            url,
+            {'nom': 'Rose Éclatante Update', 'prix_par_ml': '180.00', 'actif': False},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.essence.refresh_from_db()
+        self.assertEqual(self.essence.nom, 'Rose Éclatante Update')
+        self.assertEqual(self.essence.prix_par_ml, Decimal('180.00'))
+        self.assertFalse(self.essence.actif)
 
 
 class BeneficeEndpointTest(APITestCase):

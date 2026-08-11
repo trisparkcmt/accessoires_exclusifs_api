@@ -113,6 +113,25 @@ class AnonymousCheckoutTestCase(APITestCase):
         self.assertEqual(lignes[0]['quantite'], 2)
         self.assertEqual(Decimal(lignes[0]['sous_total']), Decimal("13600.00"))
 
+    def test_direct_composition_can_be_added_to_cart_without_registering_when_requested(self):
+        payload = {
+            "panier_id": None,
+            "quantite": 1,
+            "nom": "Création brouillon",
+            "flacon_id": self.flacon_30ml.id,
+            "enregistre": False,
+            "lignes": [
+                {"lot_essence_id": self.lot_rose.id, "quantite_ml": 8.0},
+            ],
+        }
+
+        response = self.client.post(self.composition_directe_url, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        parfum = ParfumPersonnalise.objects.latest('id')
+        self.assertFalse(parfum.enregistre)
+        self.assertIsNone(parfum.client)
+
     def test_direct_composition_validation_rules(self):
         # A. Flacon inexistant ou inactif
         payload = {
