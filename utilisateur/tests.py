@@ -827,7 +827,7 @@ class LivreurEndpointsTest(APITestCase):
         self.commande_momo.refresh_from_db()
         self.assertEqual(self.commande_momo.statut_livraison, 'livrée')
         self.assertEqual(self.commande_momo.statut, 'livrée')
-        self.assertEqual(self.commande_momo.statut_paiement, 'en_attente')  # Mobile money shouldn't auto-update to paid
+        self.assertEqual(self.commande_momo.statut_paiement, 'payé')
 
     def test_livreur_update_delivery_status_failed(self):
         # Setup assignment

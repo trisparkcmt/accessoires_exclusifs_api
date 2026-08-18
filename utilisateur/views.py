@@ -153,6 +153,7 @@ class MobileLoginView(LoginView):
 BaseRefreshView = get_refresh_view()
 
 class HybridTokenRefreshView(BaseRefreshView):
+    throttle_classes = [LoginIPThrottle]
     """
     Vue de rafraîchissement de jeton (refresh token) intelligente et adaptative :
     - Si la requête provient d'un Navigateur Web : les jetons sont transmis exclusivement
@@ -1666,7 +1667,7 @@ class ThrottledRegisterView(RegisterView):
 
 
 class ThrottledVerifyEmailView(VerifyEmailView):
-    pass
+    throttle_classes = [ResendEmailShortThrottle]
 
 
 class ThrottledResendEmailVerificationView(ResendEmailVerificationView):

@@ -160,3 +160,7 @@ class IARecommendationThrottle(ConfigurableRateThrottle):
             'scope': self.scope,
             'ident': ident,
         }
+
+
+# Alias français
+IARecommandationThrottle = IARecommendationThrottle

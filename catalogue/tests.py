@@ -111,7 +111,7 @@ class ParfumImageTest(APITestCase):
         self.parfum = Parfum.objects.create(
             nom="Rose Éternelle", slug="rose-eternelle",
             reference_sku="SKU001", contenance_ml=50,
-            prix_unitaire=Decimal('25000'),
+            prix_unitaire=Decimal('25000'), stock_quantite=10,
             categorie=self.categorie, actif=True
         )
 
@@ -199,6 +199,11 @@ class ProduitFiniEssenceFavoriTest(APITestCase):
             essence=self.essence,
             taille_ml=30,
             prix=Decimal('15000.00'),
+            actif=True,
+        )
+        self.lot = LotEssence.objects.create(
+            essence=self.essence,
+            stock_ml=Decimal('100.00'),
             actif=True,
         )
 
@@ -344,6 +349,13 @@ class BeneficeEndpointTest(APITestCase):
             quantite_initiale_ml=Decimal('100.00'),
             prix_achat_par_ml=Decimal('2.50'),
         )
+        self.admin = get_user_model().objects.create_user(
+            username='benefice-admin',
+            email='benefice-admin@example.com',
+            password='test1234',
+            is_staff=True,
+        )
+        self.client.force_authenticate(self.admin)
 
     def test_calcul_benefices_endpoint(self):
         response = self.client.get('/api/v1/lab/benefices/')
@@ -515,7 +527,7 @@ class ParfumPromotionAPITest(APITestCase):
         self.parfum = Parfum.objects.create(
             nom="Rose Éternelle", slug="rose-eternelle",
             reference_sku="SKU001", contenance_ml=50,
-            prix_unitaire=Decimal('25000'),
+            prix_unitaire=Decimal('25000'), stock_quantite=10,
             categorie=self.categorie, actif=True
         )
 

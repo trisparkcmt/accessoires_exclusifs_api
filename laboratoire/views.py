@@ -1,8 +1,9 @@
 from decimal import Decimal
 
 from rest_framework import viewsets, status
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from utilisateur.throttles import IARecommandationThrottle
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
@@ -143,6 +144,7 @@ def get_ia_conversation(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([IARecommandationThrottle])
 def ia_recommandation(request):
     """
     Reçoit un prompt de l'utilisateur, interroge l'IA et renvoie des produits.
@@ -345,6 +347,7 @@ def ia_recommandation(request):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+@throttle_classes([IARecommandationThrottle])
 def ia_conversations(request):
     """
     Retourne l'historique de chat sous forme de liste plate de messages.
@@ -390,6 +393,7 @@ def ia_conversations(request):
 
 @api_view(['DELETE'])
 @permission_classes([AllowAny])
+@throttle_classes([IARecommandationThrottle])
 def vider_resume(request):
     """
     Vide le résumé IA de la conversation en cours.

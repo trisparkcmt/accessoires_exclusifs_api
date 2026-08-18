@@ -239,11 +239,12 @@ class ParfumViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         from utilisateur.permissions import is_active_serveuse
-        if self.request.user.is_staff or is_active_serveuse(self.request.user):
+        from django.db.models import F
+        if self.request.user and (self.request.user.is_staff or is_active_serveuse(self.request.user)):
             return Parfum.objects.all().select_related('categorie').prefetch_related('tags')
         return Parfum.objects.filter(
             actif=True,
-            stock_quantite__gt=0,
+            stock_quantite__gt=F('seuil_alerte_stock'),
             prix_unitaire__gt=0
         ).select_related('categorie').prefetch_related('tags')
 
@@ -469,12 +470,23 @@ class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         from utilisateur.permissions import is_active_serveuse
+        from django.db.models import Sum, F, Q, DecimalField
+        from django.db.models.functions import Coalesce
 
-        if self.request.user.is_staff or is_active_serveuse(self.request.user):
+        if self.request.user and (self.request.user.is_staff or is_active_serveuse(self.request.user)):
             return ProduitFiniEssence.objects.all().select_related('essence')
         return ProduitFiniEssence.objects.filter(
             actif=True,
-            prix__gt=0
+            prix__gt=0,
+            essence__actif=True
+        ).annotate(
+            total_stock_ml=Coalesce(
+                Sum('essence__lots__stock_ml', filter=Q(essence__lots__actif=True)),
+                Decimal('0'),
+                output_field=DecimalField()
+            )
+        ).filter(
+            total_stock_ml__gt=Coalesce(F('essence__seuil_alerte_ml'), Decimal('0'))
         ).select_related('essence')
 
     def get_serializer_class(self):
@@ -891,6 +903,8 @@ def _build_sales_item(request, type_article, obj, sales_count):
 def get_unified_sales_items(request, debut_mois=None, limit=20):
     from orders.models import CommandeLigneParfum, CommandeLigneAccessoire, CommandeProduitFiniEssence
     from utilisateur.permissions import is_active_serveuse
+    from django.db.models import F, Sum, Q, DecimalField
+    from django.db.models.functions import Coalesce
 
     is_privileged = request.user.is_staff or is_active_serveuse(request.user)
 
@@ -952,21 +966,30 @@ def get_unified_sales_items(request, debut_mois=None, limit=20):
         parfums = Parfum.objects.filter(
             id__in=parfum_ids,
             actif=True,
-            stock_quantite__gt=0,
+            stock_quantite__gt=F('seuil_alerte_stock'),
             prix_unitaire__gt=0
         ).select_related('categorie')
 
         accessoires = Accessoire.objects.filter(
             id__in=accessoire_ids,
             actif=True,
-            stock_quantite__gt=0,
+            stock_quantite__gt=F('seuil_alerte_stock'),
             prix_unitaire__gt=0
         ).select_related('type_accessoire')
 
         produits = ProduitFiniEssence.objects.filter(
             id__in=produit_essence_ids,
             actif=True,
-            prix__gt=0
+            prix__gt=0,
+            essence__actif=True
+        ).annotate(
+            total_stock_ml=Coalesce(
+                Sum('essence__lots__stock_ml', filter=Q(essence__lots__actif=True)),
+                Decimal('0'),
+                output_field=DecimalField()
+            )
+        ).filter(
+            total_stock_ml__gt=Coalesce(F('essence__seuil_alerte_ml'), Decimal('0'))
         ).select_related('essence')
 
     items = []
@@ -1294,13 +1317,14 @@ class AccessoireViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         from utilisateur.permissions import is_active_serveuse
-        if self.request.user.is_staff or is_active_serveuse(self.request.user):
+        from django.db.models import F
+        if self.request.user and (self.request.user.is_staff or is_active_serveuse(self.request.user)):
             # Pour l'admin, afficher tous les accessoires, triés par date de création (du plus récent au plus ancien)
             return Accessoire.objects.all().select_related('type_accessoire').order_by('-date_creation')
-        # Pour les utilisateurs non-admin, afficher uniquement les accessoires actifs, en stock et avec prix > 0, triés aléatoirement
+        # Pour les utilisateurs non-admin, afficher uniquement les accessoires actifs, en stock (> seuil d'alerte) et avec prix > 0, triés aléatoirement
         return Accessoire.objects.filter(
             actif=True,
-            stock_quantite__gt=0,
+            stock_quantite__gt=F('seuil_alerte_stock'),
             prix_unitaire__gt=0
         ).select_related('type_accessoire').order_by('?')
 
@@ -1742,10 +1766,16 @@ class DiffuseurParfumViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         from .models import DiffuseurParfum
+        from utilisateur.permissions import is_active_serveuse
+        from django.db.models import F
         queryset = DiffuseurParfum.objects.all()
-        if self.request.user and (self.request.user.is_superuser or (hasattr(self.request.user, 'is_staff') and self.request.user.is_staff)):
+        if self.request.user and (self.request.user.is_staff or is_active_serveuse(self.request.user)):
             return queryset
-        return queryset.filter(actif=True)
+        return queryset.filter(
+            actif=True,
+            prix_unitaire__gt=0,
+            stock_quantite__gt=F('seuil_alerte_stock')
+        )
 
     def get_serializer_class(self):
         from .serializers import (

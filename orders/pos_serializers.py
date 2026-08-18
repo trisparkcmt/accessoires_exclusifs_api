@@ -509,15 +509,18 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                             client=client_obj,
                             flacon=flacon,
                             nom=nom_recette,
+                            prix_essences=Decimal('0'),
+                            prix_flacon_snapshot=flacon.prix_unitaire,
+                            prix_total=flacon.prix_unitaire,
+                            statut='brouillon',
                             enregistre=False
                         )
                         for lot, qty_ml in recette_data['lignes']:
-                            prix_ligne = qty_ml * (lot.prix_vente_par_ml or Decimal('0'))
-                            LigneParfumPersonnalise.objects.create(
+                            ParfumPersonnaliseLigne.objects.create(
                                 parfum_personnalise=prod,
                                 essence=lot,
                                 quantite_ml=qty_ml,
-                                prix_ligne=prix_ligne
+                                prix_par_ml_snapshot=lot.essence.prix_par_ml
                             )
                         prod.recalculer_prix()
                         prix_unitaire = prod.prix_total
