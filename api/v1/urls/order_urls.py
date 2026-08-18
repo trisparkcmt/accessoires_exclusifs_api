@@ -13,6 +13,7 @@ from orders.views import (
     CommandeListView,
     CommandeDetailView,
     PasserCommandeView,
+    PasserCommandeCompositionDirecteView,
     FactureDownloadView,
     AdminFactureListView,
     AdminFactureRenvoyerView,
@@ -42,6 +43,7 @@ urlpatterns = [
     # Commandes
     path('commandes/', CommandeListView.as_view(), name='commandes-list'),
     path('commandes/passer/', PasserCommandeView.as_view(), name='commande-passer'),
+    path('commandes/passer-composition-directe/', PasserCommandeCompositionDirecteView.as_view(), name='commande-passer-composition-directe'),
     path('commandes/<str:numero>/', CommandeDetailView.as_view(), name='commande-detail'),
 
     # Factures

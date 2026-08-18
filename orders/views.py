@@ -39,7 +39,8 @@ from orders.serializers import (
     FactureSerializer,
     AdminFactureSerializer,
     CodePromoAdminSerializer,
-    CommanderCompositionDirecteSerializer
+    CommanderCompositionDirecteSerializer,
+    PasserCommandeCompositionDirecteSerializer
 )
 from utilisateur.permissions import CommandePermission, is_active_serveuse
 from rest_framework import viewsets
@@ -658,6 +659,23 @@ class PasserCommandeView(APIView):
         
         commande = serializer.save()
         return Response(CommandeSerializer(commande, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+
+class PasserCommandeCompositionDirecteView(APIView):
+    """
+    Crée une composition personnalisée sur-mesure et passe la commande immédiatement
+    sans affecter ni utiliser le panier d'achat actif de l'utilisateur.
+    Tous les champs d'identification/livraison/nom sont facultatifs.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = PasserCommandeCompositionDirecteSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+
+        commande = serializer.save()
+        return Response(CommandeSerializer(commande, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
 
 
 class FactureDownloadView(APIView):

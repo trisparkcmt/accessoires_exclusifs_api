@@ -917,3 +917,222 @@ class AjouterDiffuseurParfumSerializer(serializers.Serializer):
 
         data['diffuseur_obj'] = diffuseur
         return data
+
+
+class PasserCommandeCompositionDirecteSerializer(serializers.Serializer):
+    flacon_id = serializers.IntegerField(required=True)
+    lignes = CompositionDirecteLigneSerializer(many=True, required=True)
+    quantite = serializers.IntegerField(required=False, default=1, min_value=1)
+    nom = serializers.CharField(required=False, allow_blank=True, max_length=200, default='')
+    note_client = serializers.CharField(required=False, allow_blank=True, default='')
+    livraison_nom_complet = serializers.CharField(required=False, allow_blank=True, default='')
+    livraison_quartier = serializers.CharField(required=False, allow_blank=True, default='')
+    livraison_ville = serializers.CharField(required=False, allow_blank=True, default='')
+    livraison_telephone = serializers.CharField(required=False, allow_blank=True, default='')
+    code_promo = serializers.CharField(required=False, allow_blank=True, default='')
+    client_telephone = serializers.CharField(required=False, allow_blank=True, default='')
+    enregistre = serializers.BooleanField(required=False, default=None, allow_null=True)
+
+    def validate(self, data):
+        flacon_id = data.get('flacon_id')
+        quantite = data.get('quantite', 1)
+        lignes_data = data.get('lignes')
+
+        # 1. Valider Flacon
+        from catalogue.models import Flacon
+        try:
+            flacon = Flacon.objects.get(id=flacon_id, actif=True)
+        except Flacon.DoesNotExist:
+            raise serializers.ValidationError({"flacon_id": "Le flacon sélectionné n'existe pas ou n'est pas actif."})
+
+        if flacon.stock_quantite < quantite:
+            raise serializers.ValidationError({"flacon_id": f"Stock de flacon insuffisant. Disponible : {flacon.stock_quantite}."})
+
+        # 2. Valider les lots d'essences et les stocks
+        from catalogue.models import LotEssence
+        lot_ids = [ligne['lot_essence_id'] for ligne in lignes_data]
+        lots = LotEssence.objects.filter(id__in=lot_ids, actif=True).select_related('essence')
+        lots_dict = {lot.id: lot for lot in lots}
+
+        errors = {}
+        total_volume_essences = Decimal('0')
+        validated_lignes = []
+
+        for idx, ligne in enumerate(lignes_data):
+            l_id = ligne['lot_essence_id']
+            qty = Decimal(str(ligne['quantite_ml']))
+
+            if l_id not in lots_dict:
+                errors[f'lignes[{idx}].lot_essence_id'] = "Ce lot d'essence n'existe pas ou n'est pas actif."
+                continue
+
+            lot = lots_dict[l_id]
+            if lot.stock_ml < qty * Decimal(str(quantite)):
+                errors[f'lignes[{idx}].quantite_ml'] = f"Stock d'essence insuffisant pour {lot.essence.nom}. Disponible : {lot.stock_ml}ml."
+                continue
+
+            total_volume_essences += qty
+            validated_lignes.append((lot, qty))
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        # 3. Règle des 45%
+        contenance_flacon = Decimal(str(flacon.contenance_ml))
+        volume_max_autorise = contenance_flacon * Decimal('0.45')
+        if total_volume_essences > volume_max_autorise:
+            raise serializers.ValidationError({
+                "lignes": f"Le volume total d'essences ({total_volume_essences} ml) dépasse la limite autorisée de 45% pour le flacon sélectionné ({volume_max_autorise} ml max)."
+            })
+
+        # 4. Valider le code promo si fourni
+        code_promo = data.get('code_promo', '').strip()
+        if code_promo:
+            try:
+                from utilisateur.models import Prestataire
+                prestataire = Prestataire.objects.get(code_promo=code_promo, statut='actif')
+                data['prestataire_obj'] = prestataire
+            except Prestataire.DoesNotExist:
+                try:
+                    promo_admin = CodePromoAdmin.objects.get(code__iexact=code_promo, est_actif=True)
+                    data['promo_admin_obj'] = promo_admin
+                except CodePromoAdmin.DoesNotExist:
+                    raise serializers.ValidationError({"code_promo": "Code promotionnel invalide ou inactif."})
+
+        request = self.context.get('request')
+        user = request.user if request else None
+        is_auth = user and user.is_authenticated
+
+        # Auto-remplissage des coordonnées depuis le profil si connecté
+        if not data.get('livraison_nom_complet', '').strip():
+            if is_auth:
+                full_name = f"{user.first_name} {user.last_name}".strip()
+                if full_name:
+                    data['livraison_nom_complet'] = full_name
+
+        if not data.get('livraison_telephone', '').strip():
+            if is_auth and getattr(user, 'telephone', None):
+                data['livraison_telephone'] = user.telephone
+
+        data['flacon_obj'] = flacon
+        data['validated_lignes'] = validated_lignes
+        return data
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        user = request.user if request else None
+        client = None
+
+        if user and user.is_authenticated:
+            try:
+                client = user.client
+            except AttributeError:
+                pass
+        else:
+            client_telephone = validated_data.get('client_telephone', '').strip()
+            if client_telephone:
+                from utilisateur.models import Client
+                client = Client.objects.filter(user__telephone=client_telephone).first()
+
+        flacon = validated_data['flacon_obj']
+        nom = validated_data.get('nom', '').strip() or "Création Sur Mesure Express"
+        note_client = validated_data.get('note_client', '')
+        quantite = validated_data.get('quantite', 1)
+
+        # Résoudre la valeur de 'enregistre':
+        # - Si explicitement fourni par l'appelant, on respecte ce choix
+        # - Sinon, on enregistre automatiquement si l'utilisateur est connecté
+        enregistre_input = validated_data.get('enregistre')  # None = non fourni
+        if enregistre_input is None:
+            enregistre = client is not None
+        else:
+            # Si l'utilisateur est anonyme, on ne peut pas enregistrer
+            enregistre = bool(enregistre_input) and client is not None
+
+        with transaction.atomic():
+            # 1. Créer le parfum personnalisé
+            parfum_perso = ParfumPersonnalise.objects.create(
+                client=client,
+                flacon=flacon,
+                nom=nom,
+                description=note_client,
+                prix_essences=Decimal('0'),
+                prix_flacon_snapshot=flacon.prix_unitaire,
+                prix_total=flacon.prix_unitaire,
+                statut='validé',
+                enregistre=enregistre
+            )
+
+            for lot, quantite_ml in validated_data['validated_lignes']:
+                ParfumPersonnaliseLigne.objects.create(
+                    parfum_personnalise=parfum_perso,
+                    essence=lot,
+                    quantite_ml=quantite_ml,
+                    prix_par_ml_snapshot=lot.essence.prix_par_ml,
+                    prix_ligne=lot.essence.prix_par_ml * quantite_ml
+                )
+
+            parfum_perso.recalculer_prix()
+
+            # 2. Créer un panier éphémère totalement isolé
+            code_promo = validated_data.get('code_promo', '').strip()
+            prestataire = validated_data.get('prestataire_obj')
+            promo_admin = validated_data.get('promo_admin_obj')
+
+            panier_ephemere = Panier.objects.create(
+                client=client,
+                code_promo_applique=code_promo,
+                prestataire=prestataire,
+                statut='converti'
+            )
+
+            if prestataire:
+                panier_ephemere.remise_pourcentage = prestataire.reduction_client_pourcentage
+            elif promo_admin:
+                panier_ephemere.remise_pourcentage = promo_admin.reduction_pourcentage
+
+            PanierLigneParfumPerso.objects.create(
+                panier=panier_ephemere,
+                parfum_personnalise=parfum_perso,
+                prix_calcule=parfum_perso.prix_total,
+                quantite=quantite,
+                sous_total=parfum_perso.prix_total * quantite,
+                note_client=note_client
+            )
+            panier_ephemere.recalculer_total()
+
+            # 3. Créer la commande ferme rattachée à ce panier éphémère
+            commande = Commande.objects.create(
+                client=client,
+                prestataire=panier_ephemere.prestataire,
+                panier=panier_ephemere,
+                code_promo_utilise=panier_ephemere.code_promo_applique,
+                frais_livraison=panier_ephemere.frais_livraison,
+                sous_total=panier_ephemere.sous_total,
+                remise_code_promo=panier_ephemere.remise_montant,
+                total_ttc=panier_ephemere.total,
+                livraison_nom_complet=validated_data.get('livraison_nom_complet', ''),
+                livraison_quartier=validated_data.get('livraison_quartier', ''),
+                livraison_ville=validated_data.get('livraison_ville', ''),
+                livraison_telephone=validated_data.get('livraison_telephone', ''),
+                note_client=note_client,
+                statut='en_attente',
+                statut_livraison='en_attente_affectation',
+                statut_paiement='en_attente',
+                commission_statut='non_versée'
+            )
+
+            CommandeLigneParfumPerso.objects.create(
+                commande=commande,
+                parfum_personnalise=parfum_perso,
+                quantite=quantite,
+                prix_snapshot=parfum_perso.prix_total,
+                sous_total=parfum_perso.prix_total * quantite,
+                statut_laboratoire='en_attente'
+            )
+
+            commande.recalculer_commande()
+            commande.save()
+
+            return commande
+
