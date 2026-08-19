@@ -140,6 +140,8 @@ class PanierLigneParfumPerso(models.Model):
     quantite = models.IntegerField(default=1, validators=[MinValueValidator(1)])
     prix_calcule = models.DecimalField(max_digits=10, decimal_places=2)
     sous_total = models.DecimalField(max_digits=10, decimal_places=2)
+    couleur = models.CharField(max_length=50, blank=True, null=True, help_text="Couleur choisie pour le parfum/flacon")
+    nom_sur_flacon = models.CharField(max_length=150, blank=True, null=True, help_text="Nom/Texte gravé sur le flacon")
     note_client = models.TextField(blank=True)
     
     class Meta:
@@ -795,6 +797,8 @@ class CommandeLigneParfumPerso(models.Model):
     quantite = models.IntegerField(validators=[MinValueValidator(1)])
     prix_snapshot = models.DecimalField(max_digits=10, decimal_places=2)
     sous_total = models.DecimalField(max_digits=10, decimal_places=2)
+    couleur = models.CharField(max_length=50, blank=True, null=True, help_text="Couleur choisie pour le parfum/flacon")
+    nom_sur_flacon = models.CharField(max_length=150, blank=True, null=True, help_text="Nom/Texte gravé sur le flacon")
     prix_achat_total_snapshot = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Coût d'achat total réel pour cette ligne (historisé)")
     statut_laboratoire = models.CharField(max_length=30, choices=STATUT_LABO_CHOICES, default='en_attente')
     proportions_mises_a_jour = models.BooleanField(default=False, help_text="True quand stock essence et flacon décrémentés")

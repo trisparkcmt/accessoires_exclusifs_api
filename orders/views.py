@@ -224,6 +224,8 @@ class CommanderCompositionDirecteView(APIView):
                     'prix_calcule': parfum_perso.prix_total,
                     'quantite': quantite,
                     'sous_total': parfum_perso.prix_total * quantite,
+                    'couleur': parfum_perso.couleur,
+                    'nom_sur_flacon': parfum_perso.nom_sur_flacon,
                     'note_client': note_client
                 }
             )
@@ -231,6 +233,10 @@ class CommanderCompositionDirecteView(APIView):
             if not created:
                 ligne.quantite += quantite
                 ligne.prix_calcule = parfum_perso.prix_total
+                if parfum_perso.couleur:
+                    ligne.couleur = parfum_perso.couleur
+                if parfum_perso.nom_sur_flacon:
+                    ligne.nom_sur_flacon = parfum_perso.nom_sur_flacon
                 if note_client:
                     ligne.note_client = note_client
                 ligne.save()
@@ -250,6 +256,8 @@ class AjouterParfumPersoLabView(APIView):
         parfum_personnalise_id  (int, requis)   - ID du ParfumPersonnalise
         quantite                (int, défaut 1) - Nombre d'exemplaires
         panier_id               (int, optionnel) - ID du panier cible
+        couleur                 (str, optionnel) - Couleur personnalisée
+        nom_sur_flacon          (str, optionnel) - Texte personnalisé sur le flacon
         note_client             (str, optionnel) - Note associée à la ligne
     """
     permission_classes = [IsAuthenticated]
@@ -262,6 +270,8 @@ class AjouterParfumPersoLabView(APIView):
         quantite = serializer.validated_data.get('quantite', 1)
         note_client = serializer.validated_data.get('note_client', '')
         panier_id = serializer.validated_data.get('panier_id')
+        couleur = serializer.validated_data.get('couleur') or parfum_perso.couleur
+        nom_sur_flacon = serializer.validated_data.get('nom_sur_flacon') or parfum_perso.nom_sur_flacon
 
         with transaction.atomic():
             panier = get_or_create_panier(request, panier_id)
@@ -273,6 +283,8 @@ class AjouterParfumPersoLabView(APIView):
                     'prix_calcule': parfum_perso.prix_total,
                     'quantite': quantite,
                     'sous_total': parfum_perso.prix_total * quantite,
+                    'couleur': couleur,
+                    'nom_sur_flacon': nom_sur_flacon,
                     'note_client': note_client
                 }
             )
@@ -281,6 +293,10 @@ class AjouterParfumPersoLabView(APIView):
                 ligne.quantite += quantite
                 ligne.prix_calcule = parfum_perso.prix_total
                 ligne.sous_total = ligne.prix_calcule * ligne.quantite
+                if couleur:
+                    ligne.couleur = couleur
+                if nom_sur_flacon:
+                    ligne.nom_sur_flacon = nom_sur_flacon
                 if note_client:
                     ligne.note_client = note_client
                 ligne.save()

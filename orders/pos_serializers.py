@@ -32,6 +32,8 @@ class POSCompositionLigneSerializer(serializers.Serializer):
 class POSCompositionRecetteSerializer(serializers.Serializer):
     flacon_id = serializers.IntegerField(required=True)
     nom = serializers.CharField(required=False, allow_blank=True, max_length=200, default='')
+    couleur = serializers.CharField(required=False, allow_blank=True, max_length=50, default='')
+    nom_sur_flacon = serializers.CharField(required=False, allow_blank=True, max_length=150, default='')
     lignes = POSCompositionLigneSerializer(many=True, required=True)
 
 
@@ -39,6 +41,8 @@ class POSCommandLineSerializer(serializers.Serializer):
     type = serializers.ChoiceField(choices=['parfum', 'accessoire', 'essence', 'diffuseur', 'parfum_perso', 'essence_perso'])
     id = serializers.IntegerField(required=False, allow_null=True)
     quantite = serializers.IntegerField(min_value=1, default=1)
+    couleur = serializers.CharField(required=False, allow_blank=True, max_length=50, default='')
+    nom_sur_flacon = serializers.CharField(required=False, allow_blank=True, max_length=150, default='')
     recette = POSCompositionRecetteSerializer(required=False, allow_null=True)
 
 
@@ -218,6 +222,9 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                     if total_volume > volume_max:
                         raise serializers.ValidationError({"lignes": f"Le volume total d'essences ({total_volume}ml) dépasse 45% de la contenance du flacon ({volume_max}ml max)."})
 
+                    couleur_val = line.get('couleur') or (recette.get('couleur') if recette else '')
+                    nom_flacon_val = line.get('nom_sur_flacon') or (recette.get('nom_sur_flacon') if recette else '')
+
                     validated_lines.append({
                         'type': 'parfum_perso',
                         'product_obj': None,
@@ -226,6 +233,8 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                             'nom': nom_perso,
                             'lignes': recette_lignes_valid,
                         },
+                        'couleur': couleur_val,
+                        'nom_sur_flacon': nom_flacon_val,
                         'quantite': qty,
                         'prix_unitaire': None
                     })
@@ -234,9 +243,15 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                         product = ParfumPersonnalise.objects.get(id=product_id)
                     except ParfumPersonnalise.DoesNotExist:
                         raise serializers.ValidationError({"lignes": f"Parfum personnalisé avec l'ID {product_id} introuvable."})
+                    
+                    couleur_val = line.get('couleur') or product.couleur or ''
+                    nom_flacon_val = line.get('nom_sur_flacon') or product.nom_sur_flacon or ''
+
                     validated_lines.append({
                         'type': 'parfum_perso',
                         'product_obj': product,
+                        'couleur': couleur_val,
+                        'nom_sur_flacon': nom_flacon_val,
                         'quantite': qty,
                         'prix_unitaire': product.prix_total
                     })
@@ -500,6 +515,8 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                         sous_total=prix_unitaire * qty
                     )
                 elif l_type == 'parfum_perso':
+                    couleur = line.get('couleur', '')
+                    nom_sur_flacon = line.get('nom_sur_flacon', '')
                     if not prod and recette_data:
                         from laboratoire.models import ParfumPersonnaliseLigne
                         flacon = recette_data['flacon']
@@ -509,6 +526,8 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                             client=client_obj,
                             flacon=flacon,
                             nom=nom_recette,
+                            couleur=couleur,
+                            nom_sur_flacon=nom_sur_flacon,
                             prix_essences=Decimal('0'),
                             prix_flacon_snapshot=flacon.prix_unitaire,
                             prix_total=flacon.prix_unitaire,
@@ -530,7 +549,9 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                         parfum_personnalise=prod,
                         quantite=qty,
                         prix_snapshot=prix_unitaire,
-                        sous_total=prix_unitaire * qty
+                        sous_total=prix_unitaire * qty,
+                        couleur=couleur or (prod.couleur if prod else ''),
+                        nom_sur_flacon=nom_sur_flacon or (prod.nom_sur_flacon if prod else '')
                     )
                 elif l_type == 'essence_perso':
                     CommandeLigneEssencePersonnalisee.objects.create(

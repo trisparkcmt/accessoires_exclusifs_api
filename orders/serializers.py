@@ -123,7 +123,7 @@ class ParfumPersoDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = ParfumPersonnalise
         fields = [
-            'id', 'nom', 'description', 'enregistre',
+            'id', 'nom', 'couleur', 'nom_sur_flacon', 'description', 'enregistre',
             'flacon', 'flacon_nom', 'flacon_contenance_ml',
             'prix_essences', 'prix_flacon_snapshot', 'prix_total',
             'statut', 'lignes'
@@ -136,7 +136,7 @@ class LigneParfumPersoReadSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PanierLigneParfumPerso
-        fields = ['id', 'parfum_personnalise', 'nom', 'composition', 'quantite', 'prix_calcule', 'sous_total', 'note_client']
+        fields = ['id', 'parfum_personnalise', 'nom', 'composition', 'couleur', 'nom_sur_flacon', 'quantite', 'prix_calcule', 'sous_total', 'note_client']
 
 
 class LigneEssencePersonnaliseeReadSerializer(serializers.ModelSerializer):
@@ -294,6 +294,8 @@ class AjouterParfumPersoLabSerializer(serializers.Serializer):
     parfum_personnalise_id = serializers.IntegerField()
     quantite = serializers.IntegerField(min_value=1, default=1)
     panier_id = serializers.IntegerField(required=False, allow_null=True)
+    couleur = serializers.CharField(required=False, allow_blank=True, max_length=50, default='')
+    nom_sur_flacon = serializers.CharField(required=False, allow_blank=True, max_length=150, default='')
     note_client = serializers.CharField(required=False, allow_blank=True, default='')
 
     def validate(self, data):
@@ -489,7 +491,7 @@ class CommandeLigneParfumPersoSerializer(serializers.ModelSerializer):
     class Meta:
         model = CommandeLigneParfumPerso
         fields = [
-            'id', 'parfum_personnalise', 'nom', 'composition',
+            'id', 'parfum_personnalise', 'nom', 'composition', 'couleur', 'nom_sur_flacon',
             'quantite', 'prix_snapshot', 'sous_total',
             'statut_laboratoire', 'note_laboratoire'
         ]
@@ -618,6 +620,8 @@ class CommanderCompositionDirecteSerializer(serializers.Serializer):
     panier_id = serializers.IntegerField(required=False, allow_null=True)
     quantite = serializers.IntegerField(required=False, default=1, min_value=1)
     nom = serializers.CharField(required=False, allow_blank=True, max_length=200, default='')
+    couleur = serializers.CharField(required=False, allow_blank=True, max_length=50, default='')
+    nom_sur_flacon = serializers.CharField(required=False, allow_blank=True, max_length=150, default='')
     note_client = serializers.CharField(required=False, allow_blank=True, default='')
     flacon_id = serializers.IntegerField(required=True)
     lignes = CompositionDirecteLigneSerializer(many=True, required=True)
@@ -684,6 +688,8 @@ class CommanderCompositionDirecteSerializer(serializers.Serializer):
         
         flacon = validated_data['flacon_obj']
         nom = validated_data.get('nom') or f"Composition LIA"
+        couleur = validated_data.get('couleur', '')
+        nom_sur_flacon = validated_data.get('nom_sur_flacon', '')
         note_client = validated_data.get('note_client', '')
         
         client = None
@@ -702,6 +708,8 @@ class CommanderCompositionDirecteSerializer(serializers.Serializer):
                 client=client,
                 flacon=flacon,
                 nom=nom,
+                couleur=couleur,
+                nom_sur_flacon=nom_sur_flacon,
                 description=note_client,
                 prix_essences=Decimal('0'),
                 prix_flacon_snapshot=flacon.prix_unitaire,
@@ -859,6 +867,8 @@ class PasserCommandeSerializer(serializers.Serializer):
                     quantite=ligne.quantite,
                     prix_snapshot=ligne.prix_calcule,
                     sous_total=ligne.sous_total,
+                    couleur=ligne.couleur or (ligne.parfum_personnalise.couleur if ligne.parfum_personnalise else ''),
+                    nom_sur_flacon=ligne.nom_sur_flacon or (ligne.parfum_personnalise.nom_sur_flacon if ligne.parfum_personnalise else ''),
                     statut_laboratoire='en_attente'
                 )
                 
@@ -924,6 +934,8 @@ class PasserCommandeCompositionDirecteSerializer(serializers.Serializer):
     lignes = CompositionDirecteLigneSerializer(many=True, required=True)
     quantite = serializers.IntegerField(required=False, default=1, min_value=1)
     nom = serializers.CharField(required=False, allow_blank=True, max_length=200, default='')
+    couleur = serializers.CharField(required=False, allow_blank=True, max_length=50, default='')
+    nom_sur_flacon = serializers.CharField(required=False, allow_blank=True, max_length=150, default='')
     note_client = serializers.CharField(required=False, allow_blank=True, default='')
     livraison_nom_complet = serializers.CharField(required=False, allow_blank=True, default='')
     livraison_quartier = serializers.CharField(required=False, allow_blank=True, default='')
@@ -1036,6 +1048,8 @@ class PasserCommandeCompositionDirecteSerializer(serializers.Serializer):
 
         flacon = validated_data['flacon_obj']
         nom = validated_data.get('nom', '').strip() or "Création Sur Mesure Express"
+        couleur = validated_data.get('couleur', '')
+        nom_sur_flacon = validated_data.get('nom_sur_flacon', '')
         note_client = validated_data.get('note_client', '')
         quantite = validated_data.get('quantite', 1)
 
@@ -1055,6 +1069,8 @@ class PasserCommandeCompositionDirecteSerializer(serializers.Serializer):
                 client=client,
                 flacon=flacon,
                 nom=nom,
+                couleur=couleur,
+                nom_sur_flacon=nom_sur_flacon,
                 description=note_client,
                 prix_essences=Decimal('0'),
                 prix_flacon_snapshot=flacon.prix_unitaire,
@@ -1097,6 +1113,8 @@ class PasserCommandeCompositionDirecteSerializer(serializers.Serializer):
                 prix_calcule=parfum_perso.prix_total,
                 quantite=quantite,
                 sous_total=parfum_perso.prix_total * quantite,
+                couleur=couleur,
+                nom_sur_flacon=nom_sur_flacon,
                 note_client=note_client
             )
             panier_ephemere.recalculer_total()
@@ -1128,6 +1146,8 @@ class PasserCommandeCompositionDirecteSerializer(serializers.Serializer):
                 quantite=quantite,
                 prix_snapshot=parfum_perso.prix_total,
                 sous_total=parfum_perso.prix_total * quantite,
+                couleur=couleur,
+                nom_sur_flacon=nom_sur_flacon,
                 statut_laboratoire='en_attente'
             )
 

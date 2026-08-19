@@ -59,6 +59,8 @@ class ParfumPersonnalise(models.Model):
     client = models.ForeignKey('utilisateur.Client', on_delete=models.SET_NULL, null=True, blank=True, related_name='parfums_personnalises')
     flacon = models.ForeignKey('catalogue.Flacon', on_delete=models.SET_NULL, null=True, related_name='parfums_personnalises')
     nom = models.CharField(max_length=200, blank=True, null=True)
+    couleur = models.CharField(max_length=50, blank=True, null=True, help_text="Couleur optionnelle du parfum/flacon")
+    nom_sur_flacon = models.CharField(max_length=150, blank=True, null=True, help_text="Nom/Texte optionnel gravé sur le flacon")
     description = models.TextField(blank=True)
     prix_essences = models.DecimalField(max_digits=10, decimal_places=2, help_text="Somme calculée des prix des essences")
     prix_flacon_snapshot = models.DecimalField(max_digits=10, decimal_places=2, help_text="Prix du flacon au moment de la création")

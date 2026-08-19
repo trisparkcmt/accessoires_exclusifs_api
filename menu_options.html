@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Menu Client Accessoires Exclusifs</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0c10;
+            --card-bg: rgba(22, 25, 35, 0.75);
+            --card-hover: rgba(197, 160, 89, 0.15);
+            --accent-gold: #c5a059;
+            --text-primary: #ffffff;
+            --text-secondary: #94a3b8;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg-color);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 480px;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(197, 160, 89, 0.2);
+            border-radius: 24px;
+            padding: 36px 28px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+        .logo {
+            width: 60px;
+            height: 60px;
+            background: rgba(197, 160, 89, 0.1);
+            border: 1px solid var(--accent-gold);
+            border-radius: 50%;
+            margin: 0 auto 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: var(--accent-gold);
+        }
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #ffffff;
+        }
+        p.sub {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 28px;
+        }
+        .options-list {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        .option-card {
+            display: block;
+            text-decoration: none;
+            padding: 18px 20px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            text-align: left;
+            transition: all 0.3s ease;
+        }
+        .option-card:hover {
+            background: var(--card-hover);
+            border-color: var(--accent-gold);
+            transform: translateY(-2px);
+        }
+        .option-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--accent-gold);
+            margin-bottom: 4px;
+        }
+        .desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">✨</div>
+        <h1>Menu Client Accessoires Exclusifs</h1>
+        <p class="sub">Veuillez sélectionner une option ci-dessous :</p>
+        <div class="options-list">
+            
+        <a href="https://accessoires-exclusifs.vercel.app/catalogue" class="option-card" target="_blank">
+            <div class="option-title">🛍️ Voir le Catalogue Parfums</div>
+            <span class='desc'>Découvrez notre collection exclusive de parfums et diffuseurs.</span>
+        </a>
+        
+        <a href="https://accessoires-exclusifs.vercel.app/sur-mesure" class="option-card" target="_blank">
+            <div class="option-title">🧪 Créer un Parfum Personnalisé (IA)</div>
+            <span class='desc'>Composez votre essence sur-mesure avec l'assistant IA.</span>
+        </a>
+        
+        <a href="tel:+237699001122" class="option-card" target="_blank">
+            <div class="option-title">📞 Contacter le Service Client</div>
+            <span class='desc'>Appelez directement notre équipe commerciale.</span>
+        </a>
+        
+        <a href="https://maps.google.com/?q=Douala+Akwa" class="option-card" target="_blank">
+            <div class="option-title">📍 Trouver notre boutique</div>
+            <span class='desc'>Localisez notre showroom à Akwa, Douala.</span>
+        </a>
+        
+        </div>
+    </div>
+</body>
+</html>

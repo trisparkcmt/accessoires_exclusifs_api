@@ -189,7 +189,7 @@ class ParfumPersonnaliseSerializer(serializers.ModelSerializer):
     class Meta:
         model = ParfumPersonnalise
         fields = [
-            'id', 'client', 'flacon', 'flacon_detail', 'nom', 'description', 
+            'id', 'client', 'flacon', 'flacon_detail', 'nom', 'couleur', 'nom_sur_flacon', 'description', 
             'prix_essences', 'prix_flacon_snapshot', 
             'prix_total', 'statut', 'note_laboratoire', 'lignes', 'enregistre', 'date_creation'
         ]
