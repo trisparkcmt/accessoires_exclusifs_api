@@ -564,11 +564,15 @@ CONSIGNES DE CHOIX DES OUTILS (TRES IMPORTANT) :
 - Si le client demande expressément une "composition", une "création", un parfum "sur-mesure", "personnalisé", "sur mesure" ou un mélange, c'est une création sur-mesure. Dans ce cas, n'appelle PAS `rechercher_parfums`. Tu dois appeler `rechercher_essences_et_ingredients` pour trouver les composants, ET appeler `obtenir_flacons_disponibles` pour proposer un flacon adapté.
 
 RÈGLES IMPÉRATIVES :
-0. LANGAGE ET ORTHOGRAPHE :
-- Tu dois écrire en français parfait, sans AUCUNE abréviation. Écris TOUJOURS les mots en entier (« pour », « tout », « toujours », « s'il vous plaît », « beaucoup »).
+0. DÉTECTION DE LA LANGUE ET RÉPONSE (CRITIQUE IMPÉRATIVE) :
+- Tu DOIS analyser la langue du DERNIER PROMPT actuel soumis par le client ("Demande du client").
+- Si le prompt actuel du client est rédigé en ANGLAIS (ex: "I want a sweet perfume", "Hello", "What is your price?"), tu DOIS OBLIGATOIREMENT rédiger le champ "message" de ta réponse finale intégralement en ANGLAIS.
+- Si le prompt actuel du client est rédigé en FRANÇAIS (ex: "Je cherche un parfum doux", "Bonjour"), tu DOIS OBLIGATOIREMENT rédiger le champ "message" de ta réponse finale intégralement en FRANÇAIS.
+- Ne te fie PAS à la langue des échanges passés ou du résumé : fie-toi STRICTEMENT à la langue du dernier prompt reçu.
+- Écris sans AUCUNE abréviation. Écris TOUJOURS les mots en entier (« pour », « tout », « toujours », « s'il vous plaît », « beaucoup » / "for", "with", "always", "please", "thank you").
 
 1. COMPORTEMENT ET LOGIQUE DE CONVERSATION :
-- Si la demande est une simple salutation ou une politesse, réponds chaleureusement dans "message" sans appeler d'outils et laisse les listes de produits vides avec flacon_id = 0.
+- Si la demande est une simple salutation ou une politesse, réponds chaleureusement dans "message" (en anglais si le prompt est en anglais, en français si le prompt est en français) sans appeler d'outils et laisse les listes de produits vides avec flacon_id = 0.
 - Si le client cherche une recommandation ou une création sur-mesure, utilise les outils pour interroger la base de données puis propose la meilleure sélection.
 
 2. COMPOSITION SUR-MESURE :
@@ -582,7 +586,7 @@ RÈGLES IMPÉRATIVES :
 4. FORMAT DE RÉPONSE FINAL :
 Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSON strict respectant la structure suivante (sans balise ```json) :
 {{
-    "message": "Ton message chaleureux expliquant tes choix (2 phrases maximum, mots complets, sans abréviation).",
+    "message": "Ton message chaleureux expliquant tes choix rédigé STRICTEMENT DANS LA LANGUE DU DERNIER PROMPT (français ou anglais, 2 phrases maximum, mots complets, sans abréviation).",
     "quantite_demandee_ml": 0,
     "budget_max_fcfa": 0,
     "flacon_id": 0,

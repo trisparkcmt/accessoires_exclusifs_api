@@ -43,6 +43,51 @@ def is_active_client(user):
     )
 
 
+def is_dashboard_request(request):
+    """
+    Vérifie si la requête contient un en-tête HTTP indiquant qu'elle provient du dashboard (admin/serveuse).
+    Ex: X-Dashboard-Context: true | X-Context: dashboard | X-Admin-Context: true
+    """
+    if not request:
+        return False
+
+    dash_ctx = None
+    ctx = None
+    admin_ctx = None
+
+    if hasattr(request, 'headers'):
+        dash_ctx = request.headers.get('X-Dashboard-Context')
+        ctx = request.headers.get('X-Context')
+        admin_ctx = request.headers.get('X-Admin-Context')
+
+    if not dash_ctx and hasattr(request, 'META'):
+        dash_ctx = request.META.get('HTTP_X_DASHBOARD_CONTEXT')
+    if not ctx and hasattr(request, 'META'):
+        ctx = request.META.get('HTTP_X_CONTEXT')
+    if not admin_ctx and hasattr(request, 'META'):
+        admin_ctx = request.META.get('HTTP_X_ADMIN_CONTEXT')
+
+    if dash_ctx and str(dash_ctx).strip().lower() in ('true', '1', 'yes'):
+        return True
+    if ctx and str(ctx).strip().lower() in ('dashboard', 'admin'):
+        return True
+    if admin_ctx and str(admin_ctx).strip().lower() in ('true', '1', 'yes'):
+        return True
+    return False
+
+
+def is_privileged_dashboard_user(request):
+    """
+    Retourne True si l'utilisateur est admin (is_staff) ou serveuse active
+    ET que la requête provient du dashboard (en-tête HTTP spécifique).
+    """
+    if not request or not hasattr(request, 'user') or not request.user or not request.user.is_authenticated:
+        return False
+    is_staff_or_serveuse = request.user.is_staff or is_active_serveuse(request.user)
+    return is_staff_or_serveuse and is_dashboard_request(request)
+
+
+
 class IsSuperadmin(permissions.BasePermission):
     """Accès STRICTEMENT réservé aux superadmins (is_superuser)."""
     def has_permission(self, request, view):

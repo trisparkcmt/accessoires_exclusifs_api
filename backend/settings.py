@@ -429,6 +429,9 @@ else:
 CORS_ALLOW_CREDENTIALS = True  # Crucial pour autoriser le partage des cookies HttpOnly
 CORS_ALLOW_HEADERS = list(default_headers) + [
     'x-client-type',
+    'x-dashboard-context',
+    'x-context',
+    'x-admin-context',
     'ngrok-skip-browser-warning',
 ]
 # CORS_ALLOWED_ORIGINS = [

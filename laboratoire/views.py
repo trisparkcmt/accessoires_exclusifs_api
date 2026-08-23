@@ -57,9 +57,9 @@ class ParfumPersonnaliseViewSet(viewsets.ModelViewSet):
             'lignes__essence_personnalisee__lignes__ingredient',
         ).distinct()
 
-        from utilisateur.permissions import is_active_serveuse
+        from utilisateur.permissions import is_privileged_dashboard_user
 
-        if self.request.user.is_staff or is_active_serveuse(self.request.user):
+        if is_privileged_dashboard_user(self.request):
             return queryset
 
         if hasattr(self.request.user, 'client'):
@@ -97,9 +97,9 @@ class EssencePersonnaliseeViewSet(viewsets.ModelViewSet):
             'client', 'client__user'
         ).prefetch_related('lignes__ingredient').distinct()
 
-        from utilisateur.permissions import is_active_serveuse
+        from utilisateur.permissions import is_privileged_dashboard_user
 
-        if self.request.user.is_staff or is_active_serveuse(self.request.user):
+        if is_privileged_dashboard_user(self.request):
             return queryset
 
         if hasattr(self.request.user, 'client'):

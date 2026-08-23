@@ -789,16 +789,26 @@ class IngredientVisibilityAPITest(APITestCase):
     def test_admin_voit_aussi_ingredients_sans_stock_ou_prix(self):
         self.client.force_authenticate(self.admin)
 
-        response = self.client.get('/api/v1/lab/ingredients/')
+        # Sans en-tête dashboard -> vue client (1 seul ingrédient disponible)
+        response_client_view = self.client.get('/api/v1/lab/ingredients/')
+        self.assertEqual(response_client_view.status_code, 200)
+        self.assertEqual(response_client_view.data['count'], 1)
 
+        # Avec en-tête dashboard -> vue admin (les 3 ingrédients)
+        response = self.client.get('/api/v1/lab/ingredients/', HTTP_X_DASHBOARD_CONTEXT='true')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['count'], 3)
 
     def test_serveuse_active_voit_aussi_ingredients_sans_stock_ou_prix(self):
         self.client.force_authenticate(self.serveuse_user)
 
-        response = self.client.get('/api/v1/lab/ingredients/')
+        # Sans en-tête dashboard -> vue client (1 seul ingrédient disponible)
+        response_client_view = self.client.get('/api/v1/lab/ingredients/')
+        self.assertEqual(response_client_view.status_code, 200)
+        self.assertEqual(response_client_view.data['count'], 1)
 
+        # Avec en-tête dashboard -> vue serveuse (les 3 ingrédients)
+        response = self.client.get('/api/v1/lab/ingredients/', HTTP_X_DASHBOARD_CONTEXT='true')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['count'], 3)
 
@@ -1138,3 +1148,67 @@ class EssenceAlertStockTest(TestCase):
         self.lot1.refresh_from_db()
         # Total = 80 ml < 100 ml → insuffisant
         self.assertTrue(self.lot1.stock_insuffisant)
+
+
+class DashboardContextFilterTest(APITestCase):
+    """
+    Tests pour vérifier le filtrage selon le contexte Dashboard / Client Store:
+    - Sans en-tête HTTP dashboard (X-Dashboard-Context), un utilisateur staff ne voit QUE les produits actifs (comportement client).
+    - Avec l'en-tête X-Dashboard-Context: true, un utilisateur staff voit TOUS les produits (actifs ET inactifs).
+    - Un client normal avec l'en-tête X-Dashboard-Context: true ne voit TOUJOURS QUE les produits actifs.
+    """
+
+    def setUp(self):
+        user_model = get_user_model()
+        self.admin = user_model.objects.create_user(
+            username='dash-admin',
+            email='dash-admin@example.com',
+            password='password123',
+            is_staff=True,
+        )
+        self.client_user = user_model.objects.create_user(
+            username='dash-client',
+            email='dash-client@example.com',
+            password='password123',
+        )
+
+        self.categorie = CategorieParfum.objects.create(nom="Test Category", slug="test-cat-dash")
+
+        self.parfum_actif = Parfum.objects.create(
+            nom="Parfum Actif", slug="parfum-actif",
+            reference_sku="SKU-ACT", contenance_ml=50,
+            prix_unitaire=20000, stock_quantite=10,
+            categorie=self.categorie, actif=True
+        )
+
+        self.parfum_inactif = Parfum.objects.create(
+            nom="Parfum Inactif", slug="parfum-inactif",
+            reference_sku="SKU-INACT", contenance_ml=50,
+            prix_unitaire=20000, stock_quantite=10,
+            categorie=self.categorie, actif=False
+        )
+
+    def test_admin_sans_en_tete_voit_uniquement_actifs(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.get('/api/v1/shop/parfums/')
+        self.assertEqual(response.status_code, 200)
+        slugs = [p['slug'] for p in response.data['resultats']]
+        self.assertIn('parfum-actif', slugs)
+        self.assertNotIn('parfum-inactif', slugs)
+
+    def test_admin_avec_en_tete_dashboard_voit_tout(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.get('/api/v1/shop/parfums/', HTTP_X_DASHBOARD_CONTEXT='true')
+        self.assertEqual(response.status_code, 200)
+        slugs = [p['slug'] for p in response.data['resultats']]
+        self.assertIn('parfum-actif', slugs)
+        self.assertIn('parfum-inactif', slugs)
+
+    def test_client_avec_en_tete_dashboard_voit_uniquement_actifs(self):
+        self.client.force_authenticate(self.client_user)
+        response = self.client.get('/api/v1/shop/parfums/', HTTP_X_DASHBOARD_CONTEXT='true')
+        self.assertEqual(response.status_code, 200)
+        slugs = [p['slug'] for p in response.data['resultats']]
+        self.assertIn('parfum-actif', slugs)
+        self.assertNotIn('parfum-inactif', slugs)
+

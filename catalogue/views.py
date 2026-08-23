@@ -238,9 +238,9 @@ class ParfumViewSet(viewsets.ModelViewSet):
     lookup_field       = 'slug'
 
     def get_queryset(self):
-        from utilisateur.permissions import is_active_serveuse
+        from utilisateur.permissions import is_privileged_dashboard_user
         from django.db.models import F
-        if self.request.user and (self.request.user.is_staff or is_active_serveuse(self.request.user)):
+        if is_privileged_dashboard_user(self.request):
             return Parfum.objects.all().select_related('categorie').prefetch_related('tags')
         return Parfum.objects.filter(
             actif=True,
@@ -260,7 +260,8 @@ class ParfumViewSet(viewsets.ModelViewSet):
         return obj
 
     def get_serializer_class(self):
-        is_admin = self.request.user.is_staff
+        from utilisateur.permissions import is_privileged_dashboard_user
+        is_admin = is_privileged_dashboard_user(self.request)
         if self.action == 'list':
             if is_admin:
                 return ParfumAdminListSerializer
@@ -435,8 +436,8 @@ class EssenceViewSet(viewsets.ModelViewSet):
     lookup_field = 'slug'
 
     def get_queryset(self):
-        from utilisateur.permissions import is_active_serveuse
-        if self.request.user.is_staff or is_active_serveuse(self.request.user):
+        from utilisateur.permissions import is_privileged_dashboard_user
+        if is_privileged_dashboard_user(self.request):
             return Essence.objects.all().prefetch_related('tags')
         # Public : uniquement les essences actives, en stock et avec un prix défini
         return Essence.objects.filter(
@@ -457,7 +458,8 @@ class LotEssenceViewSet(viewsets.ModelViewSet):
     ordering           = ['date_reception']
 
     def get_queryset(self):
-        if self.request.user.is_staff:
+        from utilisateur.permissions import is_privileged_dashboard_user
+        if is_privileged_dashboard_user(self.request):
             return LotEssence.objects.all().select_related('essence')
         return LotEssence.objects.filter(actif=True).select_related('essence')
     
@@ -469,11 +471,11 @@ class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
     search_fields = ['essence__marque', 'essence__nom']
 
     def get_queryset(self):
-        from utilisateur.permissions import is_active_serveuse
+        from utilisateur.permissions import is_privileged_dashboard_user
         from django.db.models import Sum, F, Q, DecimalField
         from django.db.models.functions import Coalesce
 
-        if self.request.user and (self.request.user.is_staff or is_active_serveuse(self.request.user)):
+        if is_privileged_dashboard_user(self.request):
             return ProduitFiniEssence.objects.all().select_related('essence')
         return ProduitFiniEssence.objects.filter(
             actif=True,
@@ -490,12 +492,12 @@ class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
         ).select_related('essence')
 
     def get_serializer_class(self):
-        from utilisateur.permissions import is_active_serveuse
+        from utilisateur.permissions import is_privileged_dashboard_user
 
         if self.action in ['create', 'update', 'partial_update']:
             return ProduitFiniEssenceSerializer   # sérialiseur d'écriture
 
-        if self.request.user.is_staff or is_active_serveuse(self.request.user):
+        if is_privileged_dashboard_user(self.request):
             return ProduitFiniEssenceSerializer
         return ProduitFiniEssencePublicSerializer
 
@@ -902,11 +904,11 @@ def _build_sales_item(request, type_article, obj, sales_count):
 
 def get_unified_sales_items(request, debut_mois=None, limit=20):
     from orders.models import CommandeLigneParfum, CommandeLigneAccessoire, CommandeProduitFiniEssence
-    from utilisateur.permissions import is_active_serveuse
+    from utilisateur.permissions import is_privileged_dashboard_user
     from django.db.models import F, Sum, Q, DecimalField
     from django.db.models.functions import Coalesce
 
-    is_privileged = request.user.is_staff or is_active_serveuse(request.user)
+    is_privileged = is_privileged_dashboard_user(request)
 
     parfum_filter = {}
     accessoire_filter = {}
@@ -1198,10 +1200,10 @@ class IngredientViewSet(viewsets.ModelViewSet):
     ordering           = ['-nom']
 
     def get_queryset(self):
+        from utilisateur.permissions import is_privileged_dashboard_user
         queryset = Ingredient.objects.filter(actif=True)
-        user = self.request.user
 
-        if user.is_staff or is_active_serveuse(user):
+        if is_privileged_dashboard_user(self.request):
             return queryset
 
         return queryset.filter(stock_ml__gt=0, prix_par_ml__gt=0)
@@ -1316,9 +1318,9 @@ class AccessoireViewSet(viewsets.ModelViewSet):
     lookup_field       = 'slug'
 
     def get_queryset(self):
-        from utilisateur.permissions import is_active_serveuse
+        from utilisateur.permissions import is_privileged_dashboard_user
         from django.db.models import F
-        if self.request.user and (self.request.user.is_staff or is_active_serveuse(self.request.user)):
+        if is_privileged_dashboard_user(self.request):
             # Pour l'admin, afficher tous les accessoires, triés par date de création (du plus récent au plus ancien)
             return Accessoire.objects.all().select_related('type_accessoire').order_by('-date_creation')
         # Pour les utilisateurs non-admin, afficher uniquement les accessoires actifs, en stock (> seuil d'alerte) et avec prix > 0, triés aléatoirement
@@ -1340,7 +1342,8 @@ class AccessoireViewSet(viewsets.ModelViewSet):
         return obj
 
     def get_serializer_class(self):
-        is_admin = self.request.user.is_staff
+        from utilisateur.permissions import is_privileged_dashboard_user
+        is_admin = is_privileged_dashboard_user(self.request)
         if self.action == 'list':
             if is_admin:
                 return AccessoireAdminListSerializer
@@ -1502,8 +1505,8 @@ class FlaconViewSet(viewsets.ModelViewSet):
     lookup_field       = 'slug'
 
     def get_queryset(self):
-        from utilisateur.permissions import is_active_serveuse
-        if self.request.user.is_staff or is_active_serveuse(self.request.user):
+        from utilisateur.permissions import is_privileged_dashboard_user
+        if is_privileged_dashboard_user(self.request):
             return Flacon.objects.all().select_related('type_flacon')
         return Flacon.objects.filter(
             actif=True
@@ -1766,10 +1769,10 @@ class DiffuseurParfumViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         from .models import DiffuseurParfum
-        from utilisateur.permissions import is_active_serveuse
+        from utilisateur.permissions import is_privileged_dashboard_user
         from django.db.models import F
         queryset = DiffuseurParfum.objects.all()
-        if self.request.user and (self.request.user.is_staff or is_active_serveuse(self.request.user)):
+        if is_privileged_dashboard_user(self.request):
             return queryset
         return queryset.filter(
             actif=True,
@@ -1782,7 +1785,8 @@ class DiffuseurParfumViewSet(viewsets.ModelViewSet):
             DiffuseurParfumAdminDetailSerializer, DiffuseurParfumAdminListSerializer,
             DiffuseurParfumPublicDetailSerializer, DiffuseurParfumPublicListSerializer,
         )
-        is_admin = self.request.user and (self.request.user.is_superuser or (hasattr(self.request.user, 'is_staff') and self.request.user.is_staff))
+        from utilisateur.permissions import is_privileged_dashboard_user
+        is_admin = is_privileged_dashboard_user(self.request)
         if is_admin:
             if self.action in ['retrieve', 'update', 'partial_update']:
                 return DiffuseurParfumAdminDetailSerializer

@@ -250,3 +250,37 @@ class IACompositionRulesTests(TestCase):
 
         self.assertAlmostEqual(total, 45.0, places=2)
         self.assertEqual(adjusted['ingredients_sur_mesure'], [])
+
+
+class IALanguageDetectionTests(TestCase):
+    from unittest.mock import patch
+
+    @patch('google.genai.Client')
+    def test_demander_recommandation_ia_includes_current_prompt_language_rules(self, mock_genai):
+        from laboratoire.utils_ia import demander_recommandation_ia
+        import json
+
+        # Mock de la réponse Gemini
+        mock_response = mock_genai.return_value.models.generate_content.return_value
+        mock_response.text = json.dumps({
+            "message": "Hello! I recommend our sweet vanilla fragrance.",
+            "quantite_demandee_ml": 0,
+            "budget_max_fcfa": 0,
+            "flacon_id": 0,
+            "essences_pre_faites": [],
+            "ingredients_sur_mesure": [],
+            "parfums_existants_recommandes": [1],
+            "accessoires": [],
+            "diffuseurs": []
+        })
+
+        result = demander_recommandation_ia("I want a sweet vanilla perfume", history=[])
+        self.assertNotIn("error", result)
+        self.assertEqual(result["message"], "Hello! I recommend our sweet vanilla fragrance.")
+
+        # Vérifier que l'appel Gemini inclut les règles de détection de langue
+        args, kwargs = mock_genai.return_value.models.generate_content.call_args
+        contents_sent = kwargs.get('contents', '')
+        self.assertIn("DÉTECTION DE LA LANGUE ET RÉPONSE", contents_sent)
+        self.assertIn("ANGLAIS", contents_sent)
+        self.assertIn("FRANÇAIS", contents_sent)
