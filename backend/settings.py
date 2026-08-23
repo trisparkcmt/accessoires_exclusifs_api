@@ -26,9 +26,9 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-# DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 'yes')
+DEBUG = os.getenv('DJANGO_DEBUG', 'False')
 
-DEBUG=True
+# DEBUG=True
 
 if not SECRET_KEY:
     if DEBUG:
