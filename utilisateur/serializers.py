@@ -793,9 +793,12 @@ class LivreurCommandeSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_client_nom(self, obj):
-        user = obj.client.user
-        full_name = f"{user.first_name} {user.last_name}".strip()
-        return full_name or user.email
+        try:
+            user = obj.client.user
+            full_name = f"{user.first_name} {user.last_name}".strip()
+            return full_name or user.email
+        except AttributeError:
+            return "Client inconnu"
 
 
 class ServeusesSerializer(serializers.ModelSerializer):
