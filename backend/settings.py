@@ -26,9 +26,10 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DJANGO_DEBUG', 'False')
+# os.getenv retourne toujours une STRING — 'False' est truthy en Python !
+# Il faut comparer explicitement pour obtenir un vrai booléen.
+DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 'yes')
 
-# DEBUG=True
 
 if not SECRET_KEY:
     if DEBUG:
