@@ -256,6 +256,9 @@ def tool_rechercher_accessoires_et_diffuseurs(recherche=None, budget_max=None, *
     if recherche:
         acc_qs = acc_qs.filter(models.Q(nom__icontains=recherche) | models.Q(description_courte__icontains=recherche))
         diff_qs = diff_qs.filter(models.Q(nom__icontains=recherche) | models.Q(description__icontains=recherche))
+    else:
+        acc_qs = acc_qs.order_by('?')
+        diff_qs = diff_qs.order_by('?')
 
     if budget_max:
         try:
@@ -581,7 +584,7 @@ RÈGLES IMPÉRATIVES :
 - Si le client demande une création personnalisée, n'inclus pas d'ingrédients dans la réponse finale.
 
 3. VENTE COMPLÉMENTAIRE (CROSS-SELLING) :
-- Propose un accessoire ou un diffuseur assorti qui complète la commande, mais évite les doublons et adapte la suggestion au contexte du client. Ne propose pas toujours le même produit.
+- N'inclus un accessoire (dans "accessoires") ou un diffuseur (dans "diffuseurs") QUE si un produit pertinent a été trouvé via les outils ou le catalogue. Ne mets PAS d'ID par défaut et laisse la liste vide `[]` si aucun accessoire n'est spécifiquement pertinent pour la demande.
 
 4. FORMAT DE RÉPONSE FINAL :
 Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSON strict respectant la structure suivante (sans balise ```json) :
@@ -590,12 +593,10 @@ Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSO
     "quantite_demandee_ml": 0,
     "budget_max_fcfa": 0,
     "flacon_id": 0,
-    "essences_pre_faites": [
-        {{"id": 1, "quantite_ml": 10}}
-    ],
+    "essences_pre_faites": [],
     "ingredients_sur_mesure": [],
-    "parfums_existants_recommandes": [1],
-    "accessoires": [1],
+    "parfums_existants_recommandes": [],
+    "accessoires": [],
     "diffuseurs": []
 }}
 """

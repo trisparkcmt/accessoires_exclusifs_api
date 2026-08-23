@@ -57,14 +57,20 @@ def formater_prix(valeur):
 def get_image_url(request, image_field):
     """
     Retourne l'URL absolue d'un ImageField.
-    Ex : http://localhost:8000/media/parfums/royal-oud/image.jpg
+    Ex : https://d3fr3l8gi93hp1.cloudfront.net/parfums/royal-oud/image.jpg
     Retourne None si pas d'image.
     """
     if not image_field:
         return None
+    try:
+        url = image_field.url
+    except Exception:
+        return None
+    if url.startswith('http://') or url.startswith('https://'):
+        return url
     if request:
-        return request.build_absolute_uri(image_field.url)
-    return image_field.url
+        return request.build_absolute_uri(url)
+    return url
 
 
 

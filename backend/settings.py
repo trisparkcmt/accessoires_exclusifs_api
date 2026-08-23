@@ -91,11 +91,12 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt',
     'corsheaders',
+    'storages',
    
     
     'allauth',
     'allauth.account',
-      'django.contrib.sites', 
+    'django.contrib.sites', 
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',  # Google OAuth
     'dj_rest_auth',
@@ -108,6 +109,9 @@ INSTALLED_APPS = [
     'catalogue',
     'laboratoire',
     'orders',
+
+    # Cleanup app (doit être en tout dernier pour intercepter la suppression des fichiers)
+    'django_cleanup.apps.CleanupConfig',
 ]
 
 MIDDLEWARE = [
@@ -232,17 +236,57 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
+# Static files (CSS, JavaScript, Images)
+# https://docs.djangoproject.com/en/6.0/howto/static-files/
+
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-STORAGES = {
-    "default": {
-        "BACKEND": "django.core.files.storage.FileSystemStorage",
-    },
-    "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
-    },
-}
+# ============================================================
+# CONFIGURATION AWS S3 & CLOUDFRONT / STOCKAGE DES MÉDIAS
+# ============================================================
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME')
+AWS_S3_REGION_NAME = os.getenv('AWS_S3_REGION_NAME', 'eu-west-3')
+CLOUDFRONT_DOMAIN = os.getenv('CLOUDFRONT_DOMAIN')
+
+# En mode DEBUG = True, on stocke les fichiers (images & factures PDF) dans le dossier local media/
+# En production (DEBUG = False), on utilise AWS S3 si les variables AWS sont définies.
+USE_S3 = (not DEBUG) and bool(AWS_STORAGE_BUCKET_NAME and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY)
+
+if USE_S3:
+    if CLOUDFRONT_DOMAIN:
+        AWS_S3_CUSTOM_DOMAIN = CLOUDFRONT_DOMAIN
+    else:
+        AWS_S3_CUSTOM_DOMAIN = f"{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com"
+
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_QUERYSTRING_AUTH = False
+    AWS_DEFAULT_ACL = None
+
+    MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        },
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
+else:
+    MEDIA_URL = '/media/'
+    MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+    STORAGES = {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
 
 
 
@@ -254,18 +298,25 @@ SITE_ID = 3
 # ============================================================
 # CONFIGURATION DJANGO-ALLAUTH
 # ============================================================
-# Authentification par email ou téléphone
-ACCOUNT_AUTHENTICATION_METHOD = 'email'  # Base sur email
-ACCOUNT_EMAIL_REQUIRED = True
-ACCOUNT_EMAIL_VERIFICATION = 'mandatory'  # L'utilisateur doit vérifier son email avant validation
-ACCOUNT_USERNAME_REQUIRED = False  # Le username n'est pas obligatoire pour l'utilisateur
-ACCOUNT_UNIQUE_EMAIL = True
-ACCOUNT_CHANGE_EMAIL = True  # Remplace user.email uniquement après confirmation allauth
+# Helper pour lire les booléens depuis .env avec fallback
+def _get_bool_env(var_name, default=True):
+    val = os.getenv(var_name)
+    if val is None:
+        return default
+    return val.strip().lower() in ('true', '1', 'yes')
 
-SOCIALACCOUNT_AUTO_SIGNUP = True  # Création automatique du compte sans formulaire
-SOCIALACCOUNT_LOGIN_ON_GET = True # Évite une étape de confirmation inutile
-SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
-SOCIALACCOUNT_EMAIL_AUTHENTICATION = True
+# Authentification par email ou téléphone
+ACCOUNT_AUTHENTICATION_METHOD = os.getenv('ACCOUNT_AUTHENTICATION_METHOD', 'email')
+ACCOUNT_EMAIL_REQUIRED = _get_bool_env('ACCOUNT_EMAIL_REQUIRED', True)
+ACCOUNT_EMAIL_VERIFICATION = os.getenv('ACCOUNT_EMAIL_VERIFICATION', 'mandatory')
+ACCOUNT_USERNAME_REQUIRED = _get_bool_env('ACCOUNT_USERNAME_REQUIRED', False)
+ACCOUNT_UNIQUE_EMAIL = _get_bool_env('ACCOUNT_UNIQUE_EMAIL', True)
+ACCOUNT_CHANGE_EMAIL = _get_bool_env('ACCOUNT_CHANGE_EMAIL', True)
+
+SOCIALACCOUNT_AUTO_SIGNUP = _get_bool_env('SOCIALACCOUNT_AUTO_SIGNUP', True)
+SOCIALACCOUNT_LOGIN_ON_GET = _get_bool_env('SOCIALACCOUNT_LOGIN_ON_GET', True)
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = _get_bool_env('SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT', True)
+SOCIALACCOUNT_EMAIL_AUTHENTICATION = _get_bool_env('SOCIALACCOUNT_EMAIL_AUTHENTICATION', True)
 
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
@@ -405,10 +456,6 @@ CAMPAY_WEBHOOK_SIGNATURE_HEADER = os.getenv('CAMPAY_WEBHOOK_SIGNATURE_HEADER', '
 # URL appelée par Campay quand une transaction est finalisée (envoyée DANS chaque requête /withdraw/)
 # Définir cette variable sur Render : CAMPAY_WEBHOOK_URL=https://accessoires-exclusifs-api.onrender.com/api/v1/auth/payout/webhook/
 CAMPAY_WEBHOOK_URL = os.getenv('CAMPAY_WEBHOOK_URL', '')
-
-#gerer les images 
-MEDIA_URL  = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # ============================================================
 # CONFIGURATION CORS (Sécurité d'accès cross-origin)
