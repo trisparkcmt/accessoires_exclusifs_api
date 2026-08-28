@@ -34,24 +34,11 @@ if env_file.exists():
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# Détection automatique de l'environnement (Production vs Dev local)
-IS_PRODUCTION = os.getenv('DJANGO_ENV', '').lower() in ('production', 'prod') or os.getenv('DJANGO_DEBUG', '').lower() in ('false', '0', 'no') or 'RENDER' in os.environ
-default_debug_str = 'False' if IS_PRODUCTION else 'True'
-DEBUG = os.getenv('DJANGO_DEBUG', default_debug_str).lower() in ('true', '1', 'yes')
+# Sur la branche master (déploiement production), DEBUG est False par défaut.
+DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 'yes')
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
-
-if not SECRET_KEY:
-    if DEBUG:
-        # Dev: utiliser clé temporaire
-        SECRET_KEY = 'dev-insecure-key-change-in-production-min-50-chars-!!!!!!!'
-        import warnings
-        warnings.warn('Using insecure SECRET_KEY in development!')
-    else:
-        raise ValueError(
-            "DJANGO_SECRET_KEY environment variable must be set in production!"
-        )
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-prod-key-change-in-env-file-accessoires-exclusifs!')
 
 
 allowed_hosts_env = os.getenv('ALLOWED_HOSTS')
@@ -59,33 +46,22 @@ if allowed_hosts_env:
     ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_env.split(',') if h.strip()]
 else:
     ALLOWED_HOSTS = [
-        "accessoires-exclusifs-api.onrender.com",
-        "accessoires-exclusifs.vercel.app",
+        "accessoiresexclusifs.com",
+        "www.accessoiresexclusifs.com",
         "localhost",
         "127.0.0.1",
-        "192.168.1.173",
-        "0.0.0.0",
-        "integral-logically-gator.ngrok-free.app",
     ]
-RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
-if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
-VERCEL_API_DOMAIN = os.getenv('VERCEL_API_DOMAIN')
-if VERCEL_API_DOMAIN and VERCEL_API_DOMAIN not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append(VERCEL_API_DOMAIN)
-
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://accessoires-exclusifs.vercel.app')
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://accessoiresexclusifs.com')
 
 csrf_trusted_env = os.getenv('CSRF_TRUSTED_ORIGINS')
 if csrf_trusted_env:
     CSRF_TRUSTED_ORIGINS = [o.strip() for o in csrf_trusted_env.split(',') if o.strip()]
 else:
-    CSRF_TRUSTED_ORIGINS = ["https://integral-logically-gator.ngrok-free.app","https://accessoires-exclusifs-api.onrender.com","https://accessoires-exclusifs.vercel.app"]
-    if RENDER_EXTERNAL_HOSTNAME:
-        CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
-    if VERCEL_API_DOMAIN:
-        CSRF_TRUSTED_ORIGINS.append(f"https://{VERCEL_API_DOMAIN}")
+    CSRF_TRUSTED_ORIGINS = [
+        "https://accessoiresexclusifs.com",
+        "https://www.accessoiresexclusifs.com",
+    ]
 
 # Informer Django que le tunnel ngrok/Render gère le HTTPS
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -148,26 +124,7 @@ MIDDLEWARE = [
 
 
 
-if DEBUG:
-    # Dev local: Autoriser localhost uniquement
-    CORS_ALLOWED_ORIGINS = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:8081",      # App mobile dev (Expo)
-        "http://192.168.1.173:3000",  # Dev machine local network
-    ]
-    CORS_ALLOW_ALL_ORIGINS = False
-else:
-    # Production: Whitelist explicite
-    CORS_ALLOW_ALL_ORIGINS = False
-    CORS_ALLOWED_ORIGINS = [
-        "https://accessoires-exclusifs.vercel.app",
-        "https://www.accessoires-exclusifs.vercel.app",
-    ]
-    
-    # Ajouter domaine personnalisé Render si utilisé
-    if os.getenv('RENDER_EXTERNAL_HOSTNAME'):
-        CORS_ALLOWED_ORIGINS.append(f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}")
+
 
 
 
@@ -415,15 +372,15 @@ SIMPLE_JWT = {
     'UPDATE_LAST_LOGIN': True,
 }
 
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'handougregoire@gmail.com' # ← Mets ton vrai mail ici
-EMAIL_HOST_PASSWORD = 'qvfs vdfn uyny xjqw'
-# Ton mot de passe d'application est parfait
-DEFAULT_FROM_EMAIL = 'Accessoire Exclusif <handougregoire@gmail.com>'
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes')
+EMAIL_SEND = os.getenv('EMAIL_SEND', 'accessoiresexclusifs@gmail.com')
+EMAIL_HOST_USER = EMAIL_SEND
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', 'qvfs vdfn uyny xjqw')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', f'ACCESSOIRES EXCLUSIF <{EMAIL_SEND}>')
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 # Configuration des cookies pour le Cross-Site (Frontend distant)
 # Conserve les hosts existants et autorise explicitement le partage des cookies
@@ -432,11 +389,6 @@ SESSION_COOKIE_SAMESITE = 'None'
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SAMESITE = 'None'
 CSRF_COOKIE_SECURE = True
-CSRF_TRUSTED_ORIGINS = [
-    "https://integral-logically-gator.ngrok-free.app",
-    "http://172.20.10.5:3000",
-    "https://accessoires-exclusifs.vercel.app",
-]
 
 
 
@@ -484,16 +436,13 @@ cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS')
 if cors_origins_env:
     CORS_ALLOW_ALL_ORIGINS = False
     CORS_ALLOWED_ORIGINS = [o.strip() for o in cors_origins_env.split(',') if o.strip()]
-elif DEBUG:
-    CORS_ALLOW_ALL_ORIGINS = True
 else:
     CORS_ALLOW_ALL_ORIGINS = False
     CORS_ALLOWED_ORIGINS = [ 
+        "https://accessoiresexclusifs.com",
+        "https://www.accessoiresexclusifs.com",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "http://172.20.10.5:3000",
-        "https://integral-logically-gator.ngrok-free.app",
-        "https://accessoires-exclusifs.vercel.app",
     ]
 CORS_ALLOW_CREDENTIALS = True  # Crucial pour autoriser le partage des cookies HttpOnly
 CORS_ALLOW_HEADERS = list(default_headers) + [
