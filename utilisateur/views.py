@@ -1912,6 +1912,19 @@ def admin_assign_delivery(request, pk):
     Assigne une commande à un livreur actif.
     """
     commande = get_object_or_404(Commande, pk=pk)
+    
+    # Vérification que la commande est au statut validé
+    if commande.statut == 'en_attente':
+        return Response(
+            {"detail": "Veuillez d'abord mettre la commande au statut 'validé' avant de pouvoir modifier son statut de livraison ou l'assigner à un livreur."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    elif commande.statut in ('annulée', 'remboursée'):
+        return Response(
+            {"detail": f"Cette commande est '{commande.statut}' et ne peut plus être assignée à un livreur."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
     livreur_id = request.data.get('livreur_id')
     if not livreur_id:
         return Response({"detail": "Le paramètre livreur_id est requis."}, status=status.HTTP_400_BAD_REQUEST)

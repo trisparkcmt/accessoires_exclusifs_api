@@ -2,6 +2,7 @@ from django.db import models, transaction
 from django.core.validators import MinValueValidator
 from django.utils import timezone
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 import random
 import string
 
@@ -190,6 +191,7 @@ class Commande(models.Model):
     STATUT_CHOICES = [
         ('en_attente', 'En attente'),
         ('validé', 'validé'),
+        ('livrée', 'Livrée'),
         ('annulée', 'Annulée'),
         ('remboursée', 'Remboursée'),
     ]
@@ -255,6 +257,53 @@ class Commande(models.Model):
     def __str__(self):
         email = self.client.user.email if self.client else "Invité"
         return f"{self.numero_commande} - {email} - {self.statut}"
+
+    def clean(self):
+        super().clean()
+        if self.pk:
+            try:
+                original = Commande.objects.get(pk=self.pk)
+            except Commande.DoesNotExist:
+                return
+
+            # 1. Commande annulée ou remboursée -> Figée
+            if original.statut == 'annulée':
+                if (
+                    self.statut != 'annulée' or
+                    self.statut_livraison != original.statut_livraison or
+                    self.statut_paiement != original.statut_paiement or
+                    self.commission_statut != original.commission_statut
+                ):
+                    raise ValidationError("Cette commande est annulée. Aucune modification de statut n'est possible sur une commande annulée.")
+
+            if original.statut == 'remboursée':
+                if (
+                    self.statut != 'remboursée' or
+                    self.statut_livraison != original.statut_livraison or
+                    self.statut_paiement != original.statut_paiement or
+                    self.commission_statut != original.commission_statut
+                ):
+                    raise ValidationError("Cette commande est remboursée. Elle est définitivement figée et ne peut plus être modifiée.")
+
+            # 2. Impossible de retourner au statut 'en_attente'
+            if original.statut != 'en_attente' and self.statut == 'en_attente':
+                raise ValidationError("Dès qu'une commande quitte le statut 'en attente', elle ne peut plus y revenir.")
+
+            # 3. Modification de livraison/paiement/commission exige que statut soit 'validé' ou 'livrée'
+            secondaires_modifies = (
+                self.statut_livraison != original.statut_livraison or
+                self.statut_paiement != original.statut_paiement or
+                self.commission_statut != original.commission_statut
+            )
+            if secondaires_modifies and self.statut not in ('validé', 'livrée'):
+                if original.statut == 'en_attente':
+                    raise ValidationError("Veuillez d'abord mettre la commande au statut 'validé' avant toute autre opération.")
+                else:
+                    raise ValidationError("Les statuts de livraison, paiement et commission ne peuvent être modifiés que lorsque la commande est au statut 'validé'.")
+
+            # 4. Statut 'remboursée' nécessite statut_paiement == 'payé'
+            if self.statut == 'remboursée' and self.statut_paiement != 'payé':
+                raise ValidationError("Une commande ne peut être mise au statut 'remboursée' que si son statut de paiement est 'payé'.")
 
     def recalculer_commande(self):
         total_parfums = sum(ligne.sous_total for ligne in self.lignes_parfums.all())

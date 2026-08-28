@@ -12,6 +12,7 @@ from orders.views import (
     RetirerCodePromoView,
     CommandeListView,
     CommandeDetailView,
+    CommandeAnnulerView,
     PasserCommandeView,
     PasserCommandeCompositionDirecteView,
     FactureDownloadView,
@@ -45,6 +46,7 @@ urlpatterns = [
     path('commandes/passer/', PasserCommandeView.as_view(), name='commande-passer'),
     path('commandes/passer-composition-directe/', PasserCommandeCompositionDirecteView.as_view(), name='commande-passer-composition-directe'),
     path('commandes/<str:numero>/', CommandeDetailView.as_view(), name='commande-detail'),
+    path('commandes/<str:numero>/annuler/', CommandeAnnulerView.as_view(), name='commande-annuler'),
 
     # Factures
     path('commandes/<str:numero>/facture/', FactureDownloadView.as_view(), name='commande-facture-download'),

@@ -761,6 +761,10 @@ class LivreurEndpointsTest(APITestCase):
 
     def test_admin_assign_delivery_to_livreur(self):
         self.client.force_authenticate(user=self.admin)
+        self.commande_cash.statut = 'validé'
+        self.commande_cash.save()
+        self.commande_momo.statut = 'validé'
+        self.commande_momo.save()
 
         # Assign to active livreur
         response = self.client.post(
@@ -785,6 +789,7 @@ class LivreurEndpointsTest(APITestCase):
 
     def test_livreur_update_delivery_status_success_cash(self):
         # Setup assignment
+        self.commande_cash.statut = 'validé'
         self.commande_cash.livreur = self.livreur
         self.commande_cash.statut_livraison = 'assignée'
         self.commande_cash.save()
@@ -810,6 +815,7 @@ class LivreurEndpointsTest(APITestCase):
 
     def test_livreur_update_delivery_status_success_mobile_money(self):
         # Setup assignment
+        self.commande_momo.statut = 'validé'
         self.commande_momo.livreur = self.livreur
         self.commande_momo.statut_livraison = 'assignée'
         self.commande_momo.save()

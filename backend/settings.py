@@ -17,19 +17,33 @@ import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Chargement automatique du fichier .env local s'il existe (sans dependance externe)
+env_file = BASE_DIR / '.env'
+if env_file.exists():
+    with open(env_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, val = line.split('=', 1)
+                key = key.strip()
+                val = val.strip().strip("'\"")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
+# Détection automatique de l'environnement (Render prod vs Dev local)
+IS_RENDER = 'RENDER' in os.environ or 'RENDER_SERVICE_ID' in os.environ or 'RENDER_EXTERNAL_HOSTNAME' in os.environ
+
+# En mode local (hors Render), DEBUG est True par defaut sauf si DJANGO_DEBUG est explicite.
+# En prod (sur Render), DEBUG est False par defaut.
+default_debug_str = 'False' if IS_RENDER else 'True'
+DEBUG = os.getenv('DJANGO_DEBUG', default_debug_str).lower() in ('true', '1', 'yes')
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
-
-
-# SECURITY WARNING: don't run with debug turned on in production!
-# os.getenv retourne toujours une STRING — 'False' est truthy en Python !
-# Il faut comparer explicitement pour obtenir un vrai booléen.
-DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 'yes')
-
 
 if not SECRET_KEY:
     if DEBUG:
@@ -43,32 +57,38 @@ if not SECRET_KEY:
         )
 
 
-ALLOWED_HOSTS = [
-    "accessoires-exclusifs-api.onrender.com",
-    "accessoires-exclusifs.vercel.app",
-    "127.0.0.1",
-    "192.168.1.173",
-    "0.0.0.0",
-    "integral-logically-gator.ngrok-free.app",
-]
+allowed_hosts_env = os.getenv('ALLOWED_HOSTS')
+if allowed_hosts_env:
+    ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_env.split(',') if h.strip()]
+else:
+    ALLOWED_HOSTS = [
+        "accessoires-exclusifs-api.onrender.com",
+        "accessoires-exclusifs.vercel.app",
+        "localhost",
+        "127.0.0.1",
+        "192.168.1.173",
+        "0.0.0.0",
+        "integral-logically-gator.ngrok-free.app",
+    ]
 RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME')
-if RENDER_EXTERNAL_HOSTNAME:
+if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
 
-# Sous-domaine personnalisé Vercel (ex: api.votre-site.com)
-# Définissez VERCEL_API_DOMAIN dans les variables d'environnement Render
-VERCEL_API_DOMAIN = os.getenv('VERCEL_API_DOMAIN')  # ex: "api.votre-site.com"
-if VERCEL_API_DOMAIN:
+VERCEL_API_DOMAIN = os.getenv('VERCEL_API_DOMAIN')
+if VERCEL_API_DOMAIN and VERCEL_API_DOMAIN not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(VERCEL_API_DOMAIN)
 
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://accessoires-exclusifs.vercel.app')
 
-# Autoriser les requêtes POST/PUT depuis ngrok et Render (indispensable pour l'auth)
-CSRF_TRUSTED_ORIGINS = ["https://integral-logically-gator.ngrok-free.app","https://accessoires-exclusifs-api.onrender.com","https://accessoires-exclusifs.vercel.app"]
-if RENDER_EXTERNAL_HOSTNAME:
-    CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
-if VERCEL_API_DOMAIN:
-    CSRF_TRUSTED_ORIGINS.append(f"https://{VERCEL_API_DOMAIN}")
+csrf_trusted_env = os.getenv('CSRF_TRUSTED_ORIGINS')
+if csrf_trusted_env:
+    CSRF_TRUSTED_ORIGINS = [o.strip() for o in csrf_trusted_env.split(',') if o.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = ["https://integral-logically-gator.ngrok-free.app","https://accessoires-exclusifs-api.onrender.com","https://accessoires-exclusifs.vercel.app"]
+    if RENDER_EXTERNAL_HOSTNAME:
+        CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
+    if VERCEL_API_DOMAIN:
+        CSRF_TRUSTED_ORIGINS.append(f"https://{VERCEL_API_DOMAIN}")
 
 # Informer Django que le tunnel ngrok/Render gère le HTTPS
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -463,7 +483,11 @@ CAMPAY_WEBHOOK_URL = os.getenv('CAMPAY_WEBHOOK_URL', '')
 # ============================================================
 from corsheaders.defaults import default_headers
 
-if DEBUG:
+cors_origins_env = os.getenv('CORS_ALLOWED_ORIGINS')
+if cors_origins_env:
+    CORS_ALLOW_ALL_ORIGINS = False
+    CORS_ALLOWED_ORIGINS = [o.strip() for o in cors_origins_env.split(',') if o.strip()]
+elif DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
 else:
     CORS_ALLOW_ALL_ORIGINS = False

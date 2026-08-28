@@ -567,22 +567,71 @@ class CommandeDetailView(APIView):
     def patch(self, request, numero, *args, **kwargs):
         commande = get_object_or_404(Commande, numero_commande=numero)
         self.check_object_permissions(request, commande)
-        
+
         user = request.user
         data = request.data
-        
+
         from utilisateur.permissions import is_active_serveuse, is_active_livreur
         is_admin_or_serv = user.is_superuser or is_active_serveuse(user)
         is_liv = is_active_livreur(user)
-        
+        is_client_owner = hasattr(user, 'client') and commande.client == user.client
+
         if is_admin_or_serv:
-            # Liste des champs modifiables par admin/serveuse
+            # 1. Commande annulée ou remboursée -> Figée
+            if commande.statut == 'annulée':
+                return Response(
+                    {"detail": "Cette commande est annulée. Aucune modification de statut n'est possible sur une commande annulée."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if commande.statut == 'remboursée':
+                return Response(
+                    {"detail": "Cette commande est remboursée. Elle est définitivement figée et ne peut plus être modifiée."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # 2. Rejet de la tentative de retour à 'en_attente'
+            nouveau_statut = data.get('statut')
+            if nouveau_statut == 'en_attente' and commande.statut != 'en_attente':
+                return Response(
+                    {"detail": "Dès qu'une commande quitte le statut 'en attente', elle ne peut plus y revenir."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # 3. Validation des champs de statut secondaires (livraison, paiement, commission)
+            CHAMPS_PROTEGES = {'statut_livraison', 'statut_paiement', 'commission_statut'}
+            champs_proteges_demandes = CHAMPS_PROTEGES.intersection(data.keys())
+
+            target_statut = nouveau_statut or commande.statut
+            if champs_proteges_demandes and target_statut != 'validé':
+                if commande.statut == 'en_attente':
+                    return Response(
+                        {"detail": "Veuillez d'abord mettre la commande au statut 'validé' avant tout autre opération."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                else:
+                    return Response(
+                        {"detail": "Les statuts de livraison, paiement et commission ne peuvent être modifiés que lorsque la commande est au statut 'validé'."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # 4. Passage au statut 'remboursée' : uniquement si statut_paiement == 'payé'
+            if nouveau_statut == 'remboursée':
+                statut_paiement_apres = data.get('statut_paiement', commande.statut_paiement)
+                if statut_paiement_apres != 'payé':
+                    return Response(
+                        {"detail": "Une commande ne peut être mise au statut 'remboursée' que si son statut de paiement est 'payé'."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Application des modifications autorisées
             allowed_fields = {
-                'statut', 'statut_livraison', 'livreur', 'date_livraison_estimee', 
-                'note_interne', 'motif_echec_livraison', 'frais_livraison', 'statut_paiement'
+                'statut', 'statut_livraison', 'livreur', 'date_livraison_estimee',
+                'note_interne', 'motif_echec_livraison', 'frais_livraison',
+                'statut_paiement', 'commission_statut'
             }
             update_data = {k: v for k, v in data.items() if k in allowed_fields}
-            
+
             if 'livreur' in update_data:
                 if update_data['livreur'] is not None:
                     from utilisateur.models import Livreur
@@ -593,20 +642,18 @@ class CommandeDetailView(APIView):
                         return Response({"livreur": "Livreur introuvable."}, status=status.HTTP_400_BAD_REQUEST)
                 else:
                     update_data['livreur'] = None
-            
+
             for k, v in update_data.items():
                 setattr(commande, k, v)
-                
+
             commande.save()
             return Response(CommandeSerializer(commande, context={'request': request}).data, status=status.HTTP_200_OK)
-            
+
         elif is_liv:
-            # Le livreur ne peut modifier que le statut_paiement, statut_livraison et motif d'échec
             statut_paiement = data.get('statut_paiement')
             statut_livraison = data.get('statut_livraison')
             motif_echec = data.get('motif_echec_livraison')
-            
-            # Support de payload action=livrer/echouer (cf section 4.4)
+
             action = data.get('action')
             motif = data.get('motif')
             if action == 'livrer':
@@ -616,36 +663,40 @@ class CommandeDetailView(APIView):
                 statut_paiement = 'échoué'
                 statut_livraison = 'échouée'
                 motif_echec = motif
-                
+
+            if commande.statut != 'validé':
+                return Response(
+                    {"detail": "Vous ne pouvez mettre à jour la livraison que sur une commande au statut 'validé'."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             updated = False
             if statut_paiement is not None:
                 if statut_paiement not in ['payé', 'échoué']:
                     return Response({"statut_paiement": "Le livreur peut uniquement définir le paiement sur 'payé' ou 'échoué'."}, status=status.HTTP_400_BAD_REQUEST)
                 commande.statut_paiement = statut_paiement
                 updated = True
-                
+
             if statut_livraison is not None:
                 if statut_livraison not in ['livrée', 'échouée']:
                     return Response({"statut_livraison": "Le livreur peut uniquement définir la livraison sur 'livrée' ou 'échouée'."}, status=status.HTTP_400_BAD_REQUEST)
                 commande.statut_livraison = statut_livraison
                 updated = True
 
-                # ✅ Automatisme : livraison confirmée → paiement et commande validés immédiatement
                 if statut_livraison == 'livrée':
                     commande.statut_paiement = 'payé'
                     commande.statut = 'validé'
                     commande.date_livraison_reelle = timezone.now()
                 elif statut_livraison == 'échouée':
                     commande.statut_paiement = 'échoué'
-                    
+
             if motif_echec is not None:
                 commande.motif_echec_livraison = motif_echec
                 updated = True
-                
+
             if not updated:
                 return Response({"detail": "Aucune modification autorisée pour votre rôle n'a été transmise."}, status=status.HTTP_400_BAD_REQUEST)
-                
-            # Mettre à jour l'affectation correspondante
+
             from orders.models import AffectationLivraison
             aff = AffectationLivraison.objects.filter(commande=commande, livreur=user.client.livreur).last()
             if aff:
@@ -657,13 +708,126 @@ class CommandeDetailView(APIView):
                     if motif_echec:
                         aff.motif_echec = motif_echec
                 aff.save()
-                
+
             commande.save()
             return Response(CommandeSerializer(commande, context={'request': request}).data, status=status.HTTP_200_OK)
 
-            
+        elif is_client_owner:
+            # Annulation par le client propriétaire
+            action = data.get('action')
+            nouveau_statut = data.get('statut')
+            if nouveau_statut == 'annulée' or action == 'annuler':
+                if commande.statut != 'en_attente':
+                    return Response(
+                        {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée, annulée ou remboursée, vous ne pouvez plus l'annuler."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                commande.statut = 'annulée'
+                commande.save()
+                return Response(CommandeSerializer(commande, context={'request': request}).data, status=status.HTTP_200_OK)
+            else:
+                return Response(
+                    {"detail": "En tant que client, la seule modification autorisée est l'annulation de votre commande en attente."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         else:
             return Response({"detail": "Vous n'avez pas la permission de modifier cette commande."}, status=status.HTTP_403_FORBIDDEN)
+
+    def delete(self, request, numero, *args, **kwargs):
+        """
+        Permet d'annuler une commande (met son statut à 'annulée' au lieu de supprimer le record).
+        Client : autorisé uniquement si la commande est au statut 'en_attente'.
+        Admin/Serveuse : autorisé si la commande n'est pas déjà 'annulée' ou 'remboursée'.
+        """
+        commande = get_object_or_404(Commande, numero_commande=numero)
+        self.check_object_permissions(request, commande)
+
+        user = request.user
+        from utilisateur.permissions import is_active_serveuse
+        is_admin_or_serv = user.is_superuser or is_active_serveuse(user)
+
+        if is_admin_or_serv:
+            if commande.statut in ('annulée', 'remboursée'):
+                return Response(
+                    {"detail": f"Cette commande est déjà au statut '{commande.statut}' et ne peut plus être annulée."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            commande.statut = 'annulée'
+            commande.save()
+            return Response(
+                {"detail": f"Commande {numero} annulée avec succès.", "statut": commande.statut},
+                status=status.HTTP_200_OK
+            )
+
+        client = getattr(user, 'client', None)
+        if not client or commande.client != client:
+            return Response(
+                {"detail": "Vous n'êtes pas autorisé à annuler cette commande."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if commande.statut != 'en_attente':
+            return Response(
+                {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée, annulée ou remboursée, vous ne pouvez plus l'annuler."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        commande.statut = 'annulée'
+        commande.save()
+        return Response(
+            {"detail": f"Votre commande {numero} a été annulée avec succès.", "statut": commande.statut},
+            status=status.HTTP_200_OK
+        )
+
+
+class CommandeAnnulerView(APIView):
+    """
+    Endpoint POST /api/v1/orders/commandes/<numero>/annuler/
+    Permet à un client d'annuler sa propre commande (si elle est 'en_attente').
+    Permet aussi à l'admin/serveuse d'annuler une commande.
+    """
+    permission_classes = [IsAuthenticated, CommandePermission]
+
+    def post(self, request, numero, *args, **kwargs):
+        commande = get_object_or_404(Commande, numero_commande=numero)
+        self.check_object_permissions(request, commande)
+
+        user = request.user
+        from utilisateur.permissions import is_active_serveuse
+        is_admin_or_serv = user.is_superuser or is_active_serveuse(user)
+
+        if is_admin_or_serv:
+            if commande.statut in ('annulée', 'remboursée'):
+                return Response(
+                    {"detail": f"Cette commande est déjà au statut '{commande.statut}' et ne peut plus être annulée."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            commande.statut = 'annulée'
+            commande.save()
+            return Response(
+                {"detail": f"Commande {numero} annulée avec succès.", "statut": commande.statut},
+                status=status.HTTP_200_OK
+            )
+
+        client = getattr(user, 'client', None)
+        if not client or commande.client != client:
+            return Response(
+                {"detail": "Vous n'êtes pas autorisé à annuler cette commande."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if commande.statut != 'en_attente':
+            return Response(
+                {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée, annulée ou remboursée, vous ne pouvez plus l'annuler."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        commande.statut = 'annulée'
+        commande.save()
+        return Response(
+            {"detail": f"Votre commande {numero} a été annulée avec succès.", "statut": commande.statut},
+            status=status.HTTP_200_OK
+        )
 
 
 class PasserCommandeView(APIView):
