@@ -1078,7 +1078,7 @@ def validate_prestataire(request, pk):
         # EMAIL HTML : Félicitations et envoi des conditions
         user = prestataire.client.user
         subject = "Bienvenue parmi nos partenaires exclusifs !"
-        from_email = "Accessoire Exclusif <noreply@accessoire-exclusif.com>"
+        from_email = settings.DEFAULT_FROM_EMAIL
         to = [user.email]
         
         context = {
