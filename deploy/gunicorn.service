@@ -1,0 +1,38 @@
+[Unit]
+Description=Gunicorn — Serveur WSGI pour Accessoires Exclusifs
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/accessoiresexclusifs/backend
+EnvironmentFile=/var/www/accessoiresexclusifs/backend/.env
+
+ExecStart=/var/www/accessoiresexclusifs/venv/bin/gunicorn \
+          --workers 9 \
+          --worker-class sync \
+          --worker-connections 1000 \
+          --timeout 120 \
+          --keep-alive 5 \
+          --max-requests 1000 \
+          --max-requests-jitter 50 \
+          --bind unix:/run/gunicorn/gunicorn.sock \
+          --access-logfile /var/log/gunicorn/access.log \
+          --error-logfile /var/log/gunicorn/error.log \
+          --log-level warning \
+          backend.wsgi:application
+
+# Créer le dossier du socket au démarrage
+RuntimeDirectory=gunicorn
+RuntimeDirectoryMode=0755
+
+# Redémarrage automatique si le service plante
+Restart=on-failure
+RestartSec=5s
+
+# Limites de sécurité
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
