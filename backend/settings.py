@@ -34,12 +34,9 @@ if env_file.exists():
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# Détection automatique de l'environnement (Render prod vs Dev local)
-IS_RENDER = 'RENDER' in os.environ or 'RENDER_SERVICE_ID' in os.environ or 'RENDER_EXTERNAL_HOSTNAME' in os.environ
-
-# En mode local (hors Render), DEBUG est True par defaut sauf si DJANGO_DEBUG est explicite.
-# En prod (sur Render), DEBUG est False par defaut.
-default_debug_str = 'False' if IS_RENDER else 'True'
+# Détection automatique de l'environnement (Production vs Dev local)
+IS_PRODUCTION = os.getenv('DJANGO_ENV', '').lower() in ('production', 'prod') or os.getenv('DJANGO_DEBUG', '').lower() in ('false', '0', 'no') or 'RENDER' in os.environ
+default_debug_str = 'False' if IS_PRODUCTION else 'True'
 DEBUG = os.getenv('DJANGO_DEBUG', default_debug_str).lower() in ('true', '1', 'yes')
 
 # SECURITY WARNING: keep the secret key used in production secret!
@@ -475,7 +472,7 @@ CAMPAY_PASSWORD = os.getenv('CAMPAY_PASSWORD', '')
 CAMPAY_WEBHOOK_SECRET = os.getenv('CAMPAY_WEBHOOK_SECRET', '')
 CAMPAY_WEBHOOK_SIGNATURE_HEADER = os.getenv('CAMPAY_WEBHOOK_SIGNATURE_HEADER', 'X-Campay-Signature')
 # URL appelée par Campay quand une transaction est finalisée (envoyée DANS chaque requête /withdraw/)
-# Définir cette variable sur Render : CAMPAY_WEBHOOK_URL=https://accessoires-exclusifs-api.onrender.com/api/v1/auth/payout/webhook/
+# Définir cette variable sur votre VPS / serveur : CAMPAY_WEBHOOK_URL=https://votre-domaine.com/api/v1/auth/payout/webhook/
 CAMPAY_WEBHOOK_URL = os.getenv('CAMPAY_WEBHOOK_URL', '')
 
 # ============================================================
@@ -515,12 +512,12 @@ CORS_ALLOW_HEADERS = list(default_headers) + [
 # ============================================================
 # FIREBASE ADMIN SDK — Notifications Push (FCM)
 # ============================================================
-# Pour configurer Firebase en production (Render) :
+# Pour configurer Firebase en production (VPS / Serveur) :
 #
 # OPTION A — Recommandée (JSON en base64 dans une variable d'env) :
 #   1. Téléchargez la clé de compte de service sur Firebase Console.
 #   2. Encodez-la : base64 -w 0 serviceAccountKey.json
-#   3. Copiez la valeur et ajoutez-la dans Render comme variable d'environnement :
+#   3. Copiez la valeur et ajoutez-la comme variable d'environnement :
 #      FIREBASE_CREDENTIALS_BASE64=<valeur base64>
 #
 # OPTION B — Chemin vers un fichier (moins sécurisé) :
