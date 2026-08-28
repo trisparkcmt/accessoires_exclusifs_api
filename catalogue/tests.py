@@ -748,6 +748,27 @@ class EssenceAPITest(APITestCase):
         response_vide = self.client.get('/api/v1/lab/essences/?prix_max=100')
         self.assertEqual(response_vide.data['count'], 0)
 
+    def test_produits_finis_inclus_dans_boutique_et_exclus_dans_dashboard(self):
+        from catalogue.models import ProduitFiniEssence
+        ProduitFiniEssence.objects.create(
+            essence=self.essence_active, taille_ml=50, prix=Decimal('15000.00'), actif=True
+        )
+
+        # 1. Vue Boutique (sans en-tête dashboard) -> produits_finis est présent
+        resp_shop = self.client.get('/api/v1/lab/essences/')
+        self.assertEqual(resp_shop.status_code, 200)
+        self.assertIn('produits_finis', resp_shop.data['resultats'][0])
+        self.assertEqual(len(resp_shop.data['resultats'][0]['produits_finis']), 1)
+        self.assertEqual(resp_shop.data['resultats'][0]['produits_finis'][0]['taille_ml'], 50)
+
+        # 2. Vue Dashboard (avec en-tête dashboard) -> produits_finis n'est pas présent
+        user_model = get_user_model()
+        admin = user_model.objects.create_user(email='admin-ess@example.com', password='password123', is_staff=True)
+        self.client.force_authenticate(admin)
+        resp_dash = self.client.get('/api/v1/lab/essences/', HTTP_X_DASHBOARD_CONTEXT='true')
+        self.assertEqual(resp_dash.status_code, 200)
+        self.assertNotIn('produits_finis', resp_dash.data['resultats'][0])
+
 
 class IngredientVisibilityAPITest(APITestCase):
     def setUp(self):

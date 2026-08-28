@@ -367,14 +367,33 @@ class EssenceLaboDetailSerializer(EssenceSerializer):
 # CATALOGUE : produits finis (essences vendues en flacon)
 # ============================================================
 
+class ProduitFiniEssenceInlineSerializer(serializers.ModelSerializer):
+    """Présentation simplifiée des formats/tailles disponibles d'une essence dans la boutique."""
+    stock_disponible = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProduitFiniEssence
+        fields = [
+            'id', 'taille_ml', 'prix', 'prix_promotionnel', 'prix_actuel',
+            'stock_disponible', 'actif'
+        ]
+
+    @extend_schema_field(OpenApiTypes.INT)
+    def get_stock_disponible(self, obj):
+        if obj.taille_ml > 0:
+            return int(obj.essence.stock_total_ml() // obj.taille_ml)
+        return 0
+
+
 class EssencePublicSerializer(serializers.ModelSerializer):
-    """Informations publiques d'une essence parente (pour les produits finis)."""
+    """Informations publiques d'une essence parente pour la boutique (incluant ses formats de produits finis)."""
     famille_olfactive = serializers.ListField(child=serializers.CharField(), read_only=True)
     humeurs_compatibles = serializers.ListField(child=serializers.CharField(), read_only=True)
     occasions = serializers.ListField(child=serializers.CharField(), read_only=True)
     saisons_compatibles = serializers.ListField(child=serializers.CharField(), read_only=True)
     moments_journee = serializers.ListField(child=serializers.CharField(), read_only=True)
     stock_total_ml = serializers.SerializerMethodField()
+    produits_finis = serializers.SerializerMethodField()
 
     class Meta:
         model = Essence
@@ -385,11 +404,15 @@ class EssencePublicSerializer(serializers.ModelSerializer):
             'notes_tete', 'notes_coeur', 'notes_fond',
             'famille_olfactive', 'humeurs_compatibles',
             'occasions', 'saisons_compatibles', 'moments_journee',
-            'prix_par_ml', 'actif', 'stock_total_ml',
+            'prix_par_ml', 'actif', 'stock_total_ml', 'produits_finis',
         ]
 
     def get_stock_total_ml(self, obj):
         return obj.stock_total_ml()
+
+    def get_produits_finis(self, obj):
+        prods = obj.produits_finis.filter(actif=True).order_by('taille_ml')
+        return ProduitFiniEssenceInlineSerializer(prods, many=True, context=self.context).data
 
 
 class ProduitFiniEssencePublicSerializer(serializers.ModelSerializer):

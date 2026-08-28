@@ -27,7 +27,7 @@ from utilisateur.permissions import is_active_serveuse
 
 from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Flacon, Favori, Ingredient, ProduitFiniEssence, Tag, TypeAccessoire, TypeFlacon, NotificationCatalogue, MouvementStock, EntrepriseInfo
 from .serializers import (
-    AccessoireAdminDetailSerializer, AccessoireAdminListSerializer, AccessoirePublicDetailSerializer, AccessoirePublicListSerializer, AccessoireSimilaireSerializer, CategorieParfumSerializer, EssenceLaboDetailSerializer, EssenceLaboListSerializer, LotEssenceSerializer, ParfumAdminDetailSerializer, ParfumAdminListSerializer, ParfumPublicDetailSerializer, ParfumPublicListSerializer, ParfumSerializer, EssenceSerializer,
+    AccessoireAdminDetailSerializer, AccessoireAdminListSerializer, AccessoirePublicDetailSerializer, AccessoirePublicListSerializer, AccessoireSimilaireSerializer, CategorieParfumSerializer, EssenceLaboDetailSerializer, EssenceLaboListSerializer, LotEssenceSerializer, ParfumAdminDetailSerializer, ParfumAdminListSerializer, ParfumPublicDetailSerializer, ParfumPublicListSerializer, ParfumSerializer, EssenceSerializer, EssencePublicSerializer,
     AccessoireSerializer, FlaconSerializer, FlaconPublicSerializer, ParfumSimilaireSerializer, EssenceCreateFullSerializer,
     IngredientSerializer, FavoriSerializer, ProduitFiniEssencePublicSerializer, ProduitFiniEssenceSerializer, PromotionSerializer, TagSelectSerializer, TagSerializer, TypeAccessoireSerializer, TypeFlaconSerializer, NotificationCatalogueSerializer, NotificationCatalogueUpdateSerializer, EntrepriseInfoSerializer,
     get_image_url, UnifiedBestsellerHotsellerSerializer,
@@ -439,16 +439,19 @@ class EssenceViewSet(viewsets.ModelViewSet):
         from utilisateur.permissions import is_privileged_dashboard_user
         if is_privileged_dashboard_user(self.request):
             return Essence.objects.all().prefetch_related('tags')
-        # Public : uniquement les essences actives, en stock et avec un prix défini
+        # Public (Boutique) : uniquement les essences actives, en stock et avec un prix défini
         return Essence.objects.filter(
             actif=True,
             prix_par_ml__gt=0
-        ).prefetch_related('tags')
+        ).prefetch_related('tags', 'produits_finis')
     
     def get_serializer_class(self):
+        from utilisateur.permissions import is_privileged_dashboard_user
         if self.action == 'create':
             return EssenceCreateFullSerializer
-        return EssenceSerializer
+        if is_privileged_dashboard_user(self.request):
+            return EssenceSerializer
+        return EssencePublicSerializer
 
 class LotEssenceViewSet(viewsets.ModelViewSet):
     serializer_class = LotEssenceSerializer
