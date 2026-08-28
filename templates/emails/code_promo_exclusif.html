@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Code Promo Exclusif - Accessoires Exclusifs</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            color: #333333;
+        }
+        .email-wrapper {
+            width: 100%;
+            background-color: #f4f4f4;
+            padding: 40px 0;
+        }
+        .email-content {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+        }
+        .header {
+            background-color: #1a1a1a;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            color: #D4AF37; /* Or/Doré premium */
+            margin: 0;
+            font-size: 24px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+        .body-content {
+            padding: 40px 30px;
+        }
+        .body-content h2 {
+            font-size: 20px;
+            color: #1a1a1a;
+            margin-top: 0;
+        }
+        .body-content p {
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+            color: #444444;
+        }
+        .promo-card {
+            background: linear-gradient(135deg, #1a1a1a 0%, #2c2c2c 100%);
+            border: 2px dashed #D4AF37;
+            border-radius: 12px;
+            padding: 30px 20px;
+            margin: 30px 0;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+        }
+        .promo-card .badge {
+            display: inline-block;
+            background-color: rgba(212, 175, 55, 0.15);
+            color: #D4AF37;
+            font-size: 12px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            padding: 6px 16px;
+            border-radius: 20px;
+            margin-bottom: 15px;
+            border: 1px solid rgba(212, 175, 55, 0.4);
+        }
+        .promo-card .code-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #D4AF37;
+            letter-spacing: 4px;
+            margin: 10px 0;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        .promo-card .discount-text {
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: 500;
+            margin-top: 5px;
+        }
+        .cta-container {
+            text-align: center;
+            margin: 35px 0 15px 0;
+        }
+        .cta-button {
+            display: inline-block;
+            background-color: #D4AF37;
+            color: #1a1a1a !important;
+            text-decoration: none;
+            padding: 15px 35px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 12px rgba(212, 175, 55, 0.3);
+        }
+        .footer {
+            background-color: #f9f9f9;
+            padding: 25px;
+            text-align: center;
+            font-size: 14px;
+            color: #888888;
+            border-top: 1px solid #eeeeee;
+        }
+        .footer p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-wrapper">
+        <div class="email-content">
+            <div class="header">
+                <h1>Accessoires Exclusifs</h1>
+            </div>
+            
+            <div class="body-content">
+                <h2>Bonjour {{ prenom }},</h2>
+                <p>Vous faites partie de nos membres privilégiés. Pour vous remercier de votre fidélité et vous offrir une expérience d'exception, la <strong>Maison Accessoires Exclusifs</strong> a le plaisir de vous attribuer un avantage promotionnel exclusif !</p>
+                
+                <div class="promo-card">
+                    <span class="badge">Privilège Client</span>
+                    <div class="code-value">{{ code_promo }}</div>
+                    <div class="discount-text">Profitez de <strong>{{ reduction_pourcentage }}% de réduction</strong> sur votre prochaine commande.</div>
+                </div>
+                
+                <p>Ce code promo personnel vous est réservé. Il vous suffit d'indiquer le code <strong>{{ code_promo }}</strong> dans votre panier lors de la validation de votre achat pour appliquer immédiatement votre remise.</p>
+                
+                <div class="cta-container">
+                    <a href="{{ frontend_url }}" class="cta-button">Découvrir nos collections</a>
+                </div>
+                
+                <p>Nous vous remercions pour la confiance que vous témoignez à notre maison.</p>
+                <p>Cordialement,</p>
+            </div>
+            
+            <div class="footer">
+                <p><strong>L'équipe Maison Accessoires Exclusifs</strong></p>
+                <p><em>Redefine your style</em></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

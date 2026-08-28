@@ -1017,19 +1017,14 @@ class AdminCodePromoViewSet(viewsets.ModelViewSet):
         
         # Envoi de la notification et de l'e-mail uniquement lors de la création
         from utilisateur.models import Notification
-        from django.core.mail import send_mail
+        from django.core.mail import EmailMultiAlternatives
+        from django.template.loader import render_to_string
+        from django.utils.html import strip_tags
         from django.conf import settings
         
         for client in instance.clients_autorises.all():
             user = client.user
             subject = "Nouveau code promo exclusif pour vous !"
-            message = (
-                f"Bonjour {user.get_full_name() or user.username},\n\n"
-                f"Vous avez été sélectionné pour bénéficier d'un code promo exclusif !\n"
-                f"Utilisez le code suivant lors de votre prochaine commande : {instance.code}\n"
-                f"Ce code vous donne droit à une réduction de {instance.reduction_pourcentage}%.\n\n"
-                f"À bientôt chez Accessoires Exclusifs !"
-            )
             
             # Notification FCM via base
             Notification.objects.create(
@@ -1044,14 +1039,20 @@ class AdminCodePromoViewSet(viewsets.ModelViewSet):
                 }
             )
             
-            # Envoi d'email
-            send_mail(
-                subject,
-                message,
-                settings.DEFAULT_FROM_EMAIL,
-                [user.email],
-                fail_silently=True,
-            )
+            # Envoi d'email HTML embellit
+            context = {
+                'prenom': user.first_name or user.username,
+                'user': user,
+                'code_promo': instance.code,
+                'reduction_pourcentage': instance.reduction_pourcentage,
+                'frontend_url': settings.FRONTEND_URL,
+            }
+            html_content = render_to_string('emails/code_promo_exclusif.html', context)
+            text_content = strip_tags(html_content)
+            
+            msg = EmailMultiAlternatives(subject, text_content, settings.DEFAULT_FROM_EMAIL, [user.email])
+            msg.attach_alternative(html_content, "text/html")
+            msg.send(fail_silently=True)
 
 
 # ============================================================
