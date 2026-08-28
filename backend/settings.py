@@ -355,7 +355,7 @@ REST_AUTH = {
     'JWT_AUTH_REFRESH_COOKIE': 'refresh-token',
     'JWT_AUTH_HTTPONLY': True,
     'JWT_AUTH_SECURE': True,
-    'JWT_AUTH_SAMESITE': 'None',
+    'JWT_AUTH_SAMESITE': os.getenv('JWT_AUTH_SAMESITE', 'Lax'),
     'LOGIN_SERIALIZER': 'utilisateur.serializers.EmailOrTelephoneLoginSerializer',
     'REGISTER_SERIALIZER': 'utilisateur.serializers.CustomRegisterSerializer',
     'PASSWORD_CHANGE_SERIALIZER': 'utilisateur.serializers.CustomPasswordChangeSerializer',
@@ -382,13 +382,15 @@ EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', 'qvfs vdfn uyny xjqw')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', f'ACCESSOIRES EXCLUSIF <{EMAIL_SEND}>')
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
-# Configuration des cookies pour le Cross-Site (Frontend distant)
-# Conserve les hosts existants et autorise explicitement le partage des cookies
-# avec le frontend Vercel via SameSite=None.
-SESSION_COOKIE_SAMESITE = 'None'
+# Configuration des cookies pour le domaine et ses sous-domaines (Production VPS)
+SESSION_COOKIE_SAMESITE = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
 SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SAMESITE = 'None'
+CSRF_COOKIE_SAMESITE = os.getenv('CSRF_COOKIE_SAMESITE', 'Lax')
 CSRF_COOKIE_SECURE = True
+
+# Partage optionnel des cookies entre sous-domaines (.accessoiresexclusifs.com)
+SESSION_COOKIE_DOMAIN = os.getenv('SESSION_COOKIE_DOMAIN', None)
+CSRF_COOKIE_DOMAIN = os.getenv('CSRF_COOKIE_DOMAIN', None)
 
 
 

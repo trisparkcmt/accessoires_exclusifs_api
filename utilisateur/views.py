@@ -1683,7 +1683,11 @@ class GoogleLogin(SocialLoginView):
     def get_response(self):
         response = super().get_response()
         if response.status_code == 200:
-            # Si on veut le refresh token dans le corps du JSON (utile pour le mobile)
+            # Positionnement strict des cookies JWT HttpOnly (access-token et refresh-token)
+            from dj_rest_auth.jwt_auth import set_jwt_cookies
+            if hasattr(self, 'access_token') and hasattr(self, 'refresh_token'):
+                set_jwt_cookies(response, self.access_token, self.refresh_token)
+
             if dj_rest_auth_settings.USE_JWT and hasattr(self, 'refresh_token') and self.refresh_token:
                 response.data['refresh'] = str(self.refresh_token)
             if hasattr(self, 'user') and self.user:
