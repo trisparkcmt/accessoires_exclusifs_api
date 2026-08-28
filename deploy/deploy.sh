@@ -10,7 +10,7 @@
 set -euo pipefail
 
 # ─── Variables ────────────────────────────────────────────────────────────────
-DOMAIN="accessoiresexclusifs.com"
+DOMAIN="api.accessoiresexclusifs.com"
 APP_DIR="/var/www/accessoiresexclusifs"
 REPO_URL="git@github.com:VOTRE_USER/VOTRE_REPO.git"   # ← à adapter
 BRANCH="master"
@@ -100,7 +100,6 @@ echo "[9/9] Installation du certificat SSL (Let's Encrypt)..."
 if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     certbot --nginx \
         -d "$DOMAIN" \
-        -d "www.$DOMAIN" \
         --non-interactive \
         --agree-tos \
         -m "accessoiresexclusifs@gmail.com" \

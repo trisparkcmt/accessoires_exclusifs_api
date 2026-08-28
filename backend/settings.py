@@ -46,6 +46,7 @@ if allowed_hosts_env:
     ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_env.split(',') if h.strip()]
 else:
     ALLOWED_HOSTS = [
+        "api.accessoiresexclusifs.com",
         "accessoiresexclusifs.com",
         "www.accessoiresexclusifs.com",
         "localhost",
@@ -59,6 +60,7 @@ if csrf_trusted_env:
     CSRF_TRUSTED_ORIGINS = [o.strip() for o in csrf_trusted_env.split(',') if o.strip()]
 else:
     CSRF_TRUSTED_ORIGINS = [
+        "https://api.accessoiresexclusifs.com",
         "https://accessoiresexclusifs.com",
         "https://www.accessoiresexclusifs.com",
     ]
@@ -388,9 +390,9 @@ SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SAMESITE = os.getenv('CSRF_COOKIE_SAMESITE', 'Lax')
 CSRF_COOKIE_SECURE = True
 
-# Partage optionnel des cookies entre sous-domaines (.accessoiresexclusifs.com)
-SESSION_COOKIE_DOMAIN = os.getenv('SESSION_COOKIE_DOMAIN', None)
-CSRF_COOKIE_DOMAIN = os.getenv('CSRF_COOKIE_DOMAIN', None)
+# Partage des cookies entre le sous-domaine API (api.accessoiresexclusifs.com) et le frontend (accessoiresexclusifs.com)
+SESSION_COOKIE_DOMAIN = os.getenv('SESSION_COOKIE_DOMAIN', None if DEBUG else '.accessoiresexclusifs.com')
+CSRF_COOKIE_DOMAIN = os.getenv('CSRF_COOKIE_DOMAIN', None if DEBUG else '.accessoiresexclusifs.com')
 
 
 
