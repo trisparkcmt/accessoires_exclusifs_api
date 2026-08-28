@@ -91,11 +91,6 @@ cp "$APP_DIR/backend/deploy/nginx.conf" "/etc/nginx/sites-available/$DOMAIN"
 ln -sf "/etc/nginx/sites-available/$DOMAIN" "/etc/nginx/sites-enabled/$DOMAIN"
 rm -f /etc/nginx/sites-enabled/default
 
-# Ajout du rate limiting dans nginx.conf si absent
-if ! grep -q "limit_req_zone" /etc/nginx/nginx.conf; then
-    sed -i '/http {/a\\tlimit_req_zone $binary_remote_addr zone=login:10m rate=5r\/m;' /etc/nginx/nginx.conf
-fi
-
 nginx -t
 systemctl reload nginx
 echo "   → Nginx configuré et rechargé."
