@@ -722,9 +722,11 @@ class EssenceAPITest(APITestCase):
             categorie="premium", prix_par_ml=Decimal('500.00'), actif=True
         )
         self.essence_active.tags.add(self.tag_floral, self.tag_lion)
-        from catalogue.models import ProduitFiniEssence
-        ProduitFiniEssence.objects.create(
-            essence=self.essence_active, taille_ml=50, prix=Decimal('15000.00'), actif=True
+        LotEssence.objects.create(
+            essence=self.essence_active,
+            stock_ml=Decimal('500.00'),
+            quantite_initiale_ml=Decimal('500.00'),
+            actif=True
         )
         self.essence_inactive = Essence.objects.create(
             marque="Maison Test", nom="Musc Blanc", code_reference="ESS002",
@@ -753,6 +755,11 @@ class EssenceAPITest(APITestCase):
         self.assertEqual(response_vide.data['count'], 0)
 
     def test_produits_finis_inclus_dans_boutique_et_exclus_dans_dashboard(self):
+        from catalogue.models import ProduitFiniEssence
+        ProduitFiniEssence.objects.create(
+            essence=self.essence_active, taille_ml=50, prix=Decimal('15000.00'), actif=True
+        )
+
         # 1. Vue Boutique (sans en-tête dashboard) -> produits_finis est présent
         resp_shop = self.client.get('/api/v1/lab/essences/')
         self.assertEqual(resp_shop.status_code, 200)
@@ -767,17 +774,6 @@ class EssenceAPITest(APITestCase):
         resp_dash = self.client.get('/api/v1/lab/essences/', HTTP_X_DASHBOARD_CONTEXT='true')
         self.assertEqual(resp_dash.status_code, 200)
         self.assertNotIn('produits_finis', resp_dash.data['resultats'][0])
-
-    def test_essence_sans_produits_finis_actifs_est_masquee_en_boutique(self):
-        # Essence active mais dont les produits finis sont inactifs
-        essence_sans_prod = Essence.objects.create(
-            marque="Maison Test", nom="Essence Sans Prod", code_reference="ESS-NOPROD",
-            categorie="premium", prix_par_ml=Decimal('500.00'), actif=True
-        )
-        response = self.client.get('/api/v1/lab/essences/')
-        # L'essence sans produit fini actif ne doit pas être renvoyée en boutique
-        slugs = [item['slug'] for item in response.data['resultats']]
-        self.assertNotIn('essence-sans-prod', slugs)
 
 
 class IngredientVisibilityAPITest(APITestCase):

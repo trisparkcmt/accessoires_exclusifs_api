@@ -419,6 +419,8 @@ class EssencePublicSerializer(serializers.ModelSerializer):
         )
         if stock_total > 0:
             prods = prods.filter(taille_ml__lte=stock_total)
+        else:
+            prods = prods.none()
         return ProduitFiniEssenceInlineSerializer(prods.order_by('taille_ml'), many=True, context=self.context).data
 
 
