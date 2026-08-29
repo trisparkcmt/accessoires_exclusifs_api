@@ -5,11 +5,11 @@ After=network.target
 [Service]
 User=www-data
 Group=www-data
-WorkingDirectory=/var/www/accessoiresexclusifs/backend
-EnvironmentFile=/var/www/accessoiresexclusifs/backend/.env
+WorkingDirectory=/var/www/accessoiresexclusifs
+EnvironmentFile=/var/www/accessoiresexclusifs/.env
 
 ExecStart=/var/www/accessoiresexclusifs/venv/bin/gunicorn \
-          --workers 9 \
+          --workers 3 \
           --worker-class sync \
           --worker-connections 1000 \
           --timeout 120 \
