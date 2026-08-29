@@ -411,8 +411,15 @@ class EssencePublicSerializer(serializers.ModelSerializer):
         return obj.stock_total_ml()
 
     def get_produits_finis(self, obj):
-        prods = obj.produits_finis.filter(actif=True).order_by('taille_ml')
-        return ProduitFiniEssenceInlineSerializer(prods, many=True, context=self.context).data
+        stock_total = obj.stock_total_ml()
+        prods = obj.produits_finis.filter(
+            actif=True,
+            prix__gt=0,
+            taille_ml__gt=0
+        )
+        if stock_total > 0:
+            prods = prods.filter(taille_ml__lte=stock_total)
+        return ProduitFiniEssenceInlineSerializer(prods.order_by('taille_ml'), many=True, context=self.context).data
 
 
 class ProduitFiniEssencePublicSerializer(serializers.ModelSerializer):

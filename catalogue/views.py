@@ -439,7 +439,7 @@ class EssenceViewSet(viewsets.ModelViewSet):
         from utilisateur.permissions import is_privileged_dashboard_user
         if is_privileged_dashboard_user(self.request):
             return Essence.objects.all().prefetch_related('tags')
-        # Public (Boutique) : uniquement les essences actives, en stock et avec un prix défini
+        # Public (Boutique) : uniquement les essences actives et avec un prix défini
         return Essence.objects.filter(
             actif=True,
             prix_par_ml__gt=0
