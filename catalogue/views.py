@@ -439,11 +439,13 @@ class EssenceViewSet(viewsets.ModelViewSet):
         from utilisateur.permissions import is_privileged_dashboard_user
         if is_privileged_dashboard_user(self.request):
             return Essence.objects.all().prefetch_related('tags')
-        # Public (Boutique) : uniquement les essences actives et avec un prix défini
+        # Public (Boutique) : uniquement les essences actives, avec prix, et possédant des produits finis actifs avec un prix
         return Essence.objects.filter(
             actif=True,
-            prix_par_ml__gt=0
-        ).prefetch_related('tags', 'produits_finis')
+            prix_par_ml__gt=0,
+            produits_finis__actif=True,
+            produits_finis__prix__gt=0
+        ).distinct().prefetch_related('tags', 'produits_finis')
     
     def get_serializer_class(self):
         from utilisateur.permissions import is_privileged_dashboard_user
