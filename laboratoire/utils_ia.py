@@ -19,20 +19,39 @@ def normaliser_reponse_composition(reponse_dict):
     if not isinstance(reponse_dict, dict):
         return reponse_dict
 
+    # Normalisation de flacon_id (en entier)
+    if 'flacon_id' in reponse_dict:
+        try:
+            reponse_dict['flacon_id'] = int(reponse_dict['flacon_id']) if reponse_dict['flacon_id'] is not None else 0
+        except (ValueError, TypeError):
+            reponse_dict['flacon_id'] = 0
+
     essences = []
     for item in (reponse_dict.get('essences_pre_faites', []) or []):
-        # Fallback : si l'IA retourne un simple entier (ex: [11, 12]) au lieu d'un dict
-        if isinstance(item, (int, float)) and not isinstance(item, bool):
-            item = {'id': int(item), 'quantite_ml': 1.0}
-            print(f"[NORMALISE] Essence plain ID détectée ({item['id']}), convertie en dict.", flush=True)
+        # Fallback : si l'IA retourne un simple entier ou une chaîne numérique (ex: [11, 12] ou ["11", "12"])
+        if isinstance(item, (int, float, str)) and not isinstance(item, bool):
+            try:
+                item_id = int(item)
+                item = {'id': item_id, 'quantite_ml': 1.0}
+                print(f"[NORMALISE] Essence plain ID/string détectée ({item_id}), convertie en dict.", flush=True)
+            except (ValueError, TypeError):
+                pass
+
         if not isinstance(item, dict):
             continue
+
         item_norm = dict(item)
+        raw_id = item_norm.get('id')
+        try:
+            item_norm['id'] = int(raw_id) if raw_id is not None else None
+        except (ValueError, TypeError):
+            continue
+
         try:
             item_norm['quantite_ml'] = round(float(item_norm.get('quantite_ml', 0) or 0), 2)
         except (TypeError, ValueError):
             item_norm['quantite_ml'] = 0.0
-        # Si quantite_ml est 0 ou absent, on met 1.0 pour que le moteur 45% prenne le relais
+
         if item_norm.get('id') is None:
             continue
         if item_norm['quantite_ml'] <= 0:
@@ -46,14 +65,16 @@ def normaliser_reponse_composition(reponse_dict):
         valeurs = []
         vus = set()
         for item in valeur or []:
-            if isinstance(item, dict):
-                identifiant = item.get('id')
-            else:
-                identifiant = item
+            identifiant = item.get('id') if isinstance(item, dict) else item
+            try:
+                identifiant = int(identifiant) if identifiant is not None else None
+            except (ValueError, TypeError):
+                continue
+
             if identifiant is None or identifiant in vus:
                 continue
             vus.add(identifiant)
-            valeurs.append(item)
+            valeurs.append(identifiant)
         return valeurs
 
     reponse_dict['accessoires'] = _dedup_ids(reponse_dict.get('accessoires', []))
@@ -589,7 +610,8 @@ RÈGLES IMPÉRATIVES :
 - Un flacon ("flacon_id") ne doit être choisi que pour une création personnalisée sur-mesure. Les quantités d'essences en ml seront automatiquement ajustées par notre système Python à exactement 45% de la contenance du flacon.
 - Pour une création personnalisée, la base du parfum doit contenir uniquement des essences dans "essences_pre_faites". Le champ "ingredients_sur_mesure" doit rester vide.
 - Si le client demande une création personnalisée, n'inclus pas d'ingrédients dans la réponse finale.
-- IMPORTANT : le champ "essences_pre_faites" doit être une liste d'OBJETS avec "id" et "quantite_ml". Exemple : [{{"id": 11, "quantite_ml": 10}}, {{"id": 12, "quantite_ml": 12}}]. NE JAMAIS mettre de simples entiers comme [11, 12].
+- IMPORTANT : pour "essences_pre_faites", fournis une liste d'objets avec "id" et "quantite_ml".
+- Pour "parfums_existants_recommandes", "accessoires", et "diffuseurs", il suffit de fournir la liste de leurs identifiants numériques [id1, id2]. Le serveur Python récupèrera automatiquement toutes les caractéristiques des produits depuis la base de données.
 
 3. VENTE COMPLÉMENTAIRE (CROSS-SELLING) :
 - N'inclus un accessoire (dans "accessoires") ou un diffuseur (dans "diffuseurs") QUE si un produit pertinent a été trouvé via les outils ou le catalogue. Ne mets PAS d'ID par défaut et laisse la liste vide `[]` si aucun accessoire n'est spécifiquement pertinent pour la demande.
@@ -601,9 +623,12 @@ Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSO
     "quantite_demandee_ml": 0,
     "budget_max_fcfa": 0,
     "flacon_id": 0,
-    "essences_pre_faites": [{{"id": 0, "quantite_ml": 0}}],
+    "essences_pre_faites": [
+        {{"id": 11, "quantite_ml": 11.25}},
+        {{"id": 12, "quantite_ml": 11.25}}
+    ],
     "ingredients_sur_mesure": [],
-    "parfums_existants_recommandes": [],
+    "parfums_existants_recommandes": [1],
     "accessoires": [],
     "diffuseurs": []
 }}

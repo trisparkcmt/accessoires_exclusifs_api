@@ -234,6 +234,25 @@ class IACompositionRulesTests(TestCase):
         self.assertEqual(normalized['essences_pre_faites'][0], {'id': 11, 'quantite_ml': 1.0})
         self.assertEqual(normalized['essences_pre_faites'][1], {'id': 12, 'quantite_ml': 1.0})
 
+    def test_normaliser_reponse_composition_handles_string_ids_and_numbers(self):
+        response = {
+            'message': 'Proposition avec chaînes',
+            'flacon_id': '5',
+            'essences_pre_faites': ['11', {'id': '12', 'quantite_ml': '11.25'}],
+            'parfums_existants_recommandes': ['1', '2'],
+            'accessoires': [{'id': '10'}, '20'],
+            'diffuseurs': ['30'],
+        }
+        normalized = normaliser_reponse_composition(response)
+        self.assertEqual(normalized['flacon_id'], 5)
+        self.assertEqual(normalized['essences_pre_faites'], [
+            {'id': 11, 'quantite_ml': 1.0},
+            {'id': 12, 'quantite_ml': 11.25}
+        ])
+        self.assertEqual(normalized['parfums_existants_recommandes'], [1, 2])
+        self.assertEqual(normalized['accessoires'], [10, 20])
+        self.assertEqual(normalized['diffuseurs'], [30])
+
     def test_ajuster_composition_45_percent_uses_exact_target_with_essences_only(self):
         flacon = Flacon.objects.create(
             nom='Flacon test 45%',
