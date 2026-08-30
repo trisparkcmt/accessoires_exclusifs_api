@@ -617,7 +617,8 @@ RÈGLES IMPÉRATIVES :
 - N'inclus un accessoire (dans "accessoires") ou un diffuseur (dans "diffuseurs") QUE si un produit pertinent a été trouvé via les outils ou le catalogue. Ne mets PAS d'ID par défaut et laisse la liste vide `[]` si aucun accessoire n'est spécifiquement pertinent pour la demande.
 
 4. FORMAT DE RÉPONSE FINAL :
-Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSON strict respectant la structure suivante (sans balise ```json) :
+Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSON strict respectant la structure suivante (sans balise ```json).
+ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que des EXEMPLES D'ILLUSTRATION de la structure. Tu DOIS les remplacer par les vrais IDs et les vraies valeurs issus de la recherche de produits :
 {{
     "message": "Ton message chaleureux expliquant tes choix rédigé STRICTEMENT DANS LA LANGUE DU DERNIER PROMPT (français ou anglais, 2 phrases maximum, mots complets, sans abréviation).",
     "quantite_demandee_ml": 0,
