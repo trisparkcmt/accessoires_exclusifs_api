@@ -3,8 +3,7 @@ name: Continuous Deployment (CD)
 on:
   push:
     branches:
-      - master
-      - main
+      - master  # VPS Hostinger uniquement (Render gère main automatiquement)
 
 jobs:
   deploy:
