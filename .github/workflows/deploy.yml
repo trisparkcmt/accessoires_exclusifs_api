@@ -1,0 +1,36 @@
+name: Continuous Deployment (CD)
+
+on:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to Hostinger VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Execute deployment commands on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+          script: |
+            cd /var/www/accessoiresexclusifs
+            git config --global --add safe.directory /var/www/accessoiresexclusifs
+            git fetch origin
+            git checkout ${{ github.ref_name }}
+            git reset --hard origin/${{ github.ref_name }}
+            source venv/bin/activate
+            pip install -r requirements.txt -q
+            python manage.py collectstatic --noinput -v 0
+            python manage.py migrate --noinput
+            systemctl restart gunicorn
+            systemctl reload nginx

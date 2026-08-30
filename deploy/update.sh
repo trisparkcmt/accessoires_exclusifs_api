@@ -1,31 +1,26 @@
 #!/usr/bin/env bash
 # ============================================================
-# update.sh — Script de mise à jour rapide (après chaque push)
-#
-# Usage sur le VPS :
-#   cd /var/www/accessoiresexclusifs/backend
-#   sudo ./deploy/update.sh
+# update.sh — Script de mise à jour rapide du VPS
 # ============================================================
-
-set -euo pipefail
+set -e
 
 APP_DIR="/var/www/accessoiresexclusifs"
-BRANCH="master"
+BRANCH="${1:-master}"
 
-echo "🔄 Mise à jour du code..."
-cd "$APP_DIR/backend"
+echo "🔄 Mise à jour d'Accessoires Exclusifs API ($BRANCH)..."
+cd "$APP_DIR"
+
+git config --global --add safe.directory "$APP_DIR"
 git fetch origin
+git checkout "$BRANCH"
 git reset --hard "origin/$BRANCH"
 
-echo "📦 Mise à jour des dépendances..."
 source "$APP_DIR/venv/bin/activate"
 pip install -r requirements.txt -q
-
-echo "⚙️  Migrations & static files..."
-python manage.py migrate --noinput
 python manage.py collectstatic --noinput -v 0
+python manage.py migrate --noinput
 
-echo "♻️  Redémarrage de Gunicorn..."
 systemctl restart gunicorn
+systemctl reload nginx
 
-echo "✅ Mise à jour terminée !"
+echo "✅ Mise à jour réussie !"
