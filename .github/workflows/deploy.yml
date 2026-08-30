@@ -31,5 +31,7 @@ jobs:
             pip install -r requirements.txt -q
             python manage.py collectstatic --noinput -v 0
             python manage.py migrate --noinput
+            cp deploy/gunicorn.service /etc/systemd/system/gunicorn.service
+            systemctl daemon-reload
             systemctl restart gunicorn
             systemctl reload nginx

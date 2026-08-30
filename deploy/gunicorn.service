@@ -17,9 +17,10 @@ ExecStart=/var/www/accessoiresexclusifs/venv/bin/gunicorn \
           --max-requests 1000 \
           --max-requests-jitter 50 \
           --bind unix:/run/gunicorn/gunicorn.sock \
-          --access-logfile /var/log/gunicorn/access.log \
-          --error-logfile /var/log/gunicorn/error.log \
-          --log-level warning \
+          --access-logfile - \
+          --error-logfile - \
+          --access-logformat '%(h)s "%(r)s" %(s)s %(b)s %(L)ss' \
+          --log-level info \
           backend.wsgi:application
 
 # Créer le dossier du socket au démarrage
