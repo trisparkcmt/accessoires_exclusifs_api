@@ -223,6 +223,17 @@ class IACompositionRulesTests(TestCase):
         self.assertEqual(normalized['accessoires'], [5, 6])
         self.assertEqual(normalized['diffuseurs'], [3])
 
+    def test_normaliser_reponse_composition_converts_plain_integer_ids(self):
+        response = {
+            'message': 'Proposition avec IDs simples',
+            'essences_pre_faites': [11, 12],
+            'flacon_id': 5,
+        }
+        normalized = normaliser_reponse_composition(response)
+        self.assertEqual(len(normalized['essences_pre_faites']), 2)
+        self.assertEqual(normalized['essences_pre_faites'][0], {'id': 11, 'quantite_ml': 1.0})
+        self.assertEqual(normalized['essences_pre_faites'][1], {'id': 12, 'quantite_ml': 1.0})
+
     def test_ajuster_composition_45_percent_uses_exact_target_with_essences_only(self):
         flacon = Flacon.objects.create(
             nom='Flacon test 45%',
@@ -255,6 +266,7 @@ class IACompositionRulesTests(TestCase):
 class IALanguageDetectionTests(TestCase):
     from unittest.mock import patch
 
+    @patch.dict('os.environ', {'LLM_PROVIDER': 'gemini'})
     @patch('google.genai.Client')
     def test_demander_recommandation_ia_includes_current_prompt_language_rules(self, mock_genai):
         from laboratoire.utils_ia import demander_recommandation_ia

@@ -21,6 +21,10 @@ def normaliser_reponse_composition(reponse_dict):
 
     essences = []
     for item in (reponse_dict.get('essences_pre_faites', []) or []):
+        # Fallback : si l'IA retourne un simple entier (ex: [11, 12]) au lieu d'un dict
+        if isinstance(item, (int, float)) and not isinstance(item, bool):
+            item = {'id': int(item), 'quantite_ml': 1.0}
+            print(f"[NORMALISE] Essence plain ID détectée ({item['id']}), convertie en dict.", flush=True)
         if not isinstance(item, dict):
             continue
         item_norm = dict(item)
@@ -28,8 +32,11 @@ def normaliser_reponse_composition(reponse_dict):
             item_norm['quantite_ml'] = round(float(item_norm.get('quantite_ml', 0) or 0), 2)
         except (TypeError, ValueError):
             item_norm['quantite_ml'] = 0.0
-        if item_norm.get('id') is None or item_norm['quantite_ml'] <= 0:
+        # Si quantite_ml est 0 ou absent, on met 1.0 pour que le moteur 45% prenne le relais
+        if item_norm.get('id') is None:
             continue
+        if item_norm['quantite_ml'] <= 0:
+            item_norm['quantite_ml'] = 1.0
         essences.append(item_norm)
 
     reponse_dict['essences_pre_faites'] = essences
@@ -582,6 +589,7 @@ RÈGLES IMPÉRATIVES :
 - Un flacon ("flacon_id") ne doit être choisi que pour une création personnalisée sur-mesure. Les quantités d'essences en ml seront automatiquement ajustées par notre système Python à exactement 45% de la contenance du flacon.
 - Pour une création personnalisée, la base du parfum doit contenir uniquement des essences dans "essences_pre_faites". Le champ "ingredients_sur_mesure" doit rester vide.
 - Si le client demande une création personnalisée, n'inclus pas d'ingrédients dans la réponse finale.
+- IMPORTANT : le champ "essences_pre_faites" doit être une liste d'OBJETS avec "id" et "quantite_ml". Exemple : [{{"id": 11, "quantite_ml": 10}}, {{"id": 12, "quantite_ml": 12}}]. NE JAMAIS mettre de simples entiers comme [11, 12].
 
 3. VENTE COMPLÉMENTAIRE (CROSS-SELLING) :
 - N'inclus un accessoire (dans "accessoires") ou un diffuseur (dans "diffuseurs") QUE si un produit pertinent a été trouvé via les outils ou le catalogue. Ne mets PAS d'ID par défaut et laisse la liste vide `[]` si aucun accessoire n'est spécifiquement pertinent pour la demande.
@@ -593,7 +601,7 @@ Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSO
     "quantite_demandee_ml": 0,
     "budget_max_fcfa": 0,
     "flacon_id": 0,
-    "essences_pre_faites": [],
+    "essences_pre_faites": [{{"id": 0, "quantite_ml": 0}}],
     "ingredients_sur_mesure": [],
     "parfums_existants_recommandes": [],
     "accessoires": [],
