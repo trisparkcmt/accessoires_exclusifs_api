@@ -19,7 +19,7 @@ ExecStart=/var/www/accessoiresexclusifs/venv/bin/gunicorn \
           --bind unix:/run/gunicorn/gunicorn.sock \
           --access-logfile - \
           --error-logfile - \
-          --access-logformat '%(h)s "%(r)s" %(s)s %(b)s %(L)ss' \
+          --access-logformat 'IP: %({X-Forwarded-For}i)s | "%(r)s" | Status: %(s)s | Durée: %(L)ss | Origine: "%(f)s" | Client: "%(a)s"' \
           --log-level info \
           backend.wsgi:application
 
