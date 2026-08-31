@@ -381,7 +381,7 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes
 EMAIL_SEND = os.getenv('EMAIL_SEND', 'accessoiresexclusifs@gmail.com')
 EMAIL_HOST_USER = EMAIL_SEND
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', 'qvfs vdfn uyny xjqw')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', f'ACCESSOIRES EXCLUSIF <{EMAIL_SEND}>')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', f'ACCESSOIRES EXCLUSIFS <{EMAIL_SEND}>')
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 # Configuration des cookies pour le domaine et ses sous-domaines (Production VPS)
@@ -448,6 +448,10 @@ else:
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
+]
+
 CORS_ALLOW_CREDENTIALS = True  # Crucial pour autoriser le partage des cookies HttpOnly
 CORS_ALLOW_HEADERS = list(default_headers) + [
     'x-client-type',
