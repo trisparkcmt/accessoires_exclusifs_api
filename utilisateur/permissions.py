@@ -78,12 +78,12 @@ def is_dashboard_request(request):
 
 def is_privileged_dashboard_user(request):
     """
-    Retourne True si l'utilisateur est admin (is_staff) ou serveuse active
-    ET que la requête provient du dashboard (en-tête HTTP spécifique).
+    Retourne True si l'utilisateur est admin (is_staff/is_superuser) ou serveuse active
+    ET que la requête provient du dashboard (en-tête HTTP X-Dashboard-Context / X-Context / X-Admin-Context).
     """
     if not request or not hasattr(request, 'user') or not request.user or not request.user.is_authenticated:
         return False
-    is_staff_or_serveuse = request.user.is_staff or is_active_serveuse(request.user)
+    is_staff_or_serveuse = request.user.is_staff or request.user.is_superuser or is_active_serveuse(request.user)
     return is_staff_or_serveuse and is_dashboard_request(request)
 
 

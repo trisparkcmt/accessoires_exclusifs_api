@@ -439,19 +439,10 @@ class EssenceViewSet(viewsets.ModelViewSet):
         from utilisateur.permissions import is_privileged_dashboard_user
         if is_privileged_dashboard_user(self.request):
             return Essence.objects.all().prefetch_related('tags', 'lots', 'produits_finis')
-        # Public (Boutique) : uniquement les essences actives, avec stock total > 0 et avec un prix défini
-        from django.db.models import Sum, Q, DecimalField
-        from django.db.models.functions import Coalesce
-        return Essence.objects.annotate(
-            total_stock=Coalesce(
-                Sum('lots__stock_ml', filter=Q(lots__actif=True)),
-                Decimal('0'),
-                output_field=DecimalField()
-            )
-        ).filter(
+        # Public (Boutique) : uniquement les essences actives avec un prix par ml défini
+        return Essence.objects.filter(
             actif=True,
-            prix_par_ml__gt=0,
-            total_stock__gt=0
+            prix_par_ml__gt=0
         ).prefetch_related('tags', 'produits_finis')
     
     def get_serializer_class(self):
