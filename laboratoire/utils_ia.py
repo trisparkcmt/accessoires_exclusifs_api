@@ -738,8 +738,30 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
                         reponse_texte = second_data['choices'][0].get('message', {}).get('content')
                         print(f"[IA-RECOMMANDATION] Reponse finale recue d'Ollama: '{reponse_texte[:120]}...'", flush=True)
                 else:
-                    reponse_texte = message_obj.get('content')
-                    print(f"[IA-RECOMMANDATION] Reponse directe recue d'Ollama: '{reponse_texte[:120]}...'", flush=True)
+                    # Ollama a répondu directement sans outils (ex: salutation, question générale)
+                    # On force un 2ème appel avec response_format json_object pour garantir le JSON
+                    direct_content = message_obj.get('content', '')
+                    print(f"[IA-RECOMMANDATION] Ollama a repondu directement (sans outils): '{str(direct_content)[:80]}...'", flush=True)
+                    messages.append(message_obj)
+                    second_payload = {
+                        'model': model_name,
+                        'messages': messages,
+                        'response_format': {'type': 'json_object'},
+                        'temperature': 0.2,
+                        'stream': False,
+                    }
+                    second_resp = requests.post(
+                        f"{ollama_url}/v1/chat/completions",
+                        json=second_payload,
+                        timeout=(20, 120),
+                    )
+                    if second_resp.status_code == 200:
+                        second_data = second_resp.json()
+                        if 'choices' in second_data and second_data['choices']:
+                            reponse_texte = second_data['choices'][0].get('message', {}).get('content')
+                            print(f"[IA-RECOMMANDATION] Reponse directe formatee en JSON: '{str(reponse_texte)[:120]}...'", flush=True)
+                    if not reponse_texte:
+                        reponse_texte = direct_content
             else:
                 reponse_texte = response.text
                 print(f"[IA-RECOMMANDATION] Reponse inattendue d'Ollama: {reponse_texte}", flush=True)
