@@ -738,30 +738,33 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
                         reponse_texte = second_data['choices'][0].get('message', {}).get('content')
                         print(f"[IA-RECOMMANDATION] Reponse finale recue d'Ollama: '{reponse_texte[:120]}...'", flush=True)
                 else:
-                    # Ollama a répondu directement sans outils (ex: salutation, question générale)
-                    # On force un 2ème appel avec response_format json_object pour garantir le JSON
+                    # Ollama a répondu directement sans appeler d'outils (ex: salutation, question générale)
+                    # Python construit directement le JSON complet avec le message d'Ollama + schéma par défaut
+                    # Pas besoin d'un 2ème appel API — plus rapide et garanti schéma-conforme
                     direct_content = message_obj.get('content', '')
                     print(f"[IA-RECOMMANDATION] Ollama a repondu directement (sans outils): '{str(direct_content)[:80]}...'", flush=True)
-                    messages.append(message_obj)
-                    second_payload = {
-                        'model': model_name,
-                        'messages': messages,
-                        'response_format': {'type': 'json_object'},
-                        'temperature': 0.2,
-                        'stream': False,
-                    }
-                    second_resp = requests.post(
-                        f"{ollama_url}/v1/chat/completions",
-                        json=second_payload,
-                        timeout=(20, 120),
-                    )
-                    if second_resp.status_code == 200:
-                        second_data = second_resp.json()
-                        if 'choices' in second_data and second_data['choices']:
-                            reponse_texte = second_data['choices'][0].get('message', {}).get('content')
-                            print(f"[IA-RECOMMANDATION] Reponse directe formatee en JSON: '{str(reponse_texte)[:120]}...'", flush=True)
-                    if not reponse_texte:
-                        reponse_texte = direct_content
+
+                    # Tenter de parser si Ollama a déjà renvoyé du JSON complet
+                    parsed_direct = _extract_json_from_text(direct_content) if direct_content else None
+                    if parsed_direct and isinstance(parsed_direct, dict) and 'message' in parsed_direct:
+                        # Ollama a déjà fourni un JSON valide avec le champ message → on l'utilise tel quel
+                        reponse_texte = json.dumps(parsed_direct, ensure_ascii=False)
+                        print(f"[IA-RECOMMANDATION] Reponse directe deja en JSON valide, utilisee telle quelle.", flush=True)
+                    else:
+                        # Ollama a répondu en texte libre → on encapsule son message dans le schéma complet
+                        schema_response = {
+                            "message": direct_content.strip() if direct_content else "",
+                            "quantite_demandee_ml": 0,
+                            "budget_max_fcfa": 0,
+                            "flacon_id": 0,
+                            "essences_pre_faites": [],
+                            "ingredients_sur_mesure": [],
+                            "parfums_existants_recommandes": [],
+                            "accessoires": [],
+                            "diffuseurs": []
+                        }
+                        reponse_texte = json.dumps(schema_response, ensure_ascii=False)
+                        print(f"[IA-RECOMMANDATION] Reponse directe encapsulee dans le schema JSON complet.", flush=True)
             else:
                 reponse_texte = response.text
                 print(f"[IA-RECOMMANDATION] Reponse inattendue d'Ollama: {reponse_texte}", flush=True)
