@@ -447,7 +447,7 @@ class EssenceViewSet(viewsets.ModelViewSet):
     
     def get_serializer_class(self):
         from utilisateur.permissions import is_privileged_dashboard_user
-        if self.action == 'create':
+        if self.action in ['create', 'update', 'partial_update']:
             return EssenceCreateFullSerializer
         if is_privileged_dashboard_user(self.request):
             return EssenceSerializer

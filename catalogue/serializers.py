@@ -1,5 +1,6 @@
 # serializers.py
 from decimal import Decimal
+import json
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
@@ -529,12 +530,25 @@ class ProduitFiniEssenceSerializer(serializers.ModelSerializer):
 class _LotEssenceInputSerializer(serializers.ModelSerializer):
     class Meta:
         model = LotEssence
-        fields = ['stock_ml', 'reference_fournisseur']
+        fields = ['stock_ml', 'quantite_initiale_ml', 'prix_achat_par_ml', 'reference_fournisseur', 'actif']
+        extra_kwargs = {
+            'stock_ml': {'required': False},
+            'quantite_initiale_ml': {'required': False},
+            'prix_achat_par_ml': {'required': False},
+            'reference_fournisseur': {'required': False, 'allow_blank': True},
+            'actif': {'required': False},
+        }
 
 class _ProduitFiniInputSerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(required=False)
+
     class Meta:
         model = ProduitFiniEssence
-        fields = ['taille_ml', 'prix', 'prix_promotionnel']
+        fields = ['id', 'taille_ml', 'prix', 'prix_promotionnel', 'actif']
+        extra_kwargs = {
+            'prix_promotionnel': {'required': False, 'allow_null': True},
+            'actif': {'required': False},
+        }
 
 class EssenceCreateFullSerializer(EssenceSerializer):
     initial_lot = _LotEssenceInputSerializer(write_only=True, required=False)
@@ -542,6 +556,29 @@ class EssenceCreateFullSerializer(EssenceSerializer):
 
     class Meta(EssenceSerializer.Meta):
         fields = EssenceSerializer.Meta.fields + ['initial_lot', 'produits_finis']
+
+    def to_internal_value(self, data):
+        # Support stringified JSON objects/lists for multipart/form-data requests
+        if hasattr(data, 'dict'):
+            data = data.dict()
+        elif isinstance(data, dict):
+            data = dict(data)
+
+        initial_lot = data.get('initial_lot')
+        if isinstance(initial_lot, str):
+            try:
+                data['initial_lot'] = json.loads(initial_lot)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        produits_finis = data.get('produits_finis')
+        if isinstance(produits_finis, str):
+            try:
+                data['produits_finis'] = json.loads(produits_finis)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        return super().to_internal_value(data)
 
     def create(self, validated_data):
         lot_data = validated_data.pop('initial_lot', None)
@@ -560,6 +597,48 @@ class EssenceCreateFullSerializer(EssenceSerializer):
         except DjangoValidationError as exc:
             raise serializers.ValidationError(exc.message_dict if hasattr(exc, 'message_dict') else exc.messages)
         return essence
+
+    def update(self, instance, validated_data):
+        lot_data = validated_data.pop('initial_lot', None)
+        prods_data = validated_data.pop('produits_finis', None)
+        tags = validated_data.pop('tags', None)
+
+        try:
+            with transaction.atomic():
+                essence = super().update(instance, validated_data)
+                if tags is not None:
+                    essence.tags.set(tags)
+                if lot_data:
+                    LotEssence.objects.create(
+                        essence=essence,
+                        stock_precedent_ml=essence.stock_total_ml(),
+                        **lot_data
+                    )
+                if prods_data is not None:
+                    for prod in prods_data:
+                        prod_id = prod.get('id')
+                        taille = prod.get('taille_ml')
+                        if prod_id:
+                            ProduitFiniEssence.objects.filter(id=prod_id, essence=essence).update(**prod)
+                        elif taille:
+                            ProduitFiniEssence.objects.update_or_create(
+                                essence=essence,
+                                taille_ml=taille,
+                                defaults=prod
+                            )
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.message_dict if hasattr(exc, 'message_dict') else exc.messages)
+        return essence
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        ret['stock_total_ml'] = instance.stock_total_ml()
+        ret['produits_finis'] = ProduitFiniEssenceInlineSerializer(
+            instance.produits_finis.all(),
+            many=True,
+            context=self.context
+        ).data
+        return ret
         
 class EssenceLaboSerializer(serializers.Serializer):
     id = serializers.IntegerField()

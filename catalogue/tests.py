@@ -1239,3 +1239,65 @@ class DashboardContextFilterTest(APITestCase):
         self.assertIn('parfum-actif', slugs)
         self.assertNotIn('parfum-inactif', slugs)
 
+
+class EssenceCreateFullSerializerTest(APITestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_user(
+            username='admin-ess-create',
+            email='admin-ess-create@example.com',
+            password='password123',
+            is_staff=True
+        )
+        self.client.force_authenticate(self.admin)
+
+    def test_creation_essence_avec_initial_lot_et_produits_finis(self):
+        payload = {
+            "marque": "Guerlain",
+            "nom": "Essence Oud Impérial",
+            "slug": "essence-oud-imperial-test",
+            "categorie": "premium",
+            "code_reference": "ESS-OUD-001",
+            "prix_par_ml": "150.00",
+            "actif": True,
+            "initial_lot": {
+                "stock_ml": "1000.00",
+                "prix_achat_par_ml": "50.00",
+                "reference_fournisseur": "LOT-SUPPLIER-01"
+            },
+            "produits_finis": [
+                {"taille_ml": 30, "prix": "15000.00"},
+                {"taille_ml": 50, "prix": "22000.00"}
+            ]
+        }
+        response = self.client.post('/api/v1/lab/essences/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        
+        essence = Essence.objects.get(slug="essence-oud-imperial-test")
+        self.assertEqual(essence.stock_total_ml(), Decimal('1000.00'))
+        self.assertEqual(essence.produits_finis.count(), 2)
+        
+        # Vérifier que les détails sont présents dans la réponse JSON
+        self.assertEqual(Decimal(str(response.data['stock_total_ml'])), Decimal('1000.00'))
+        self.assertEqual(len(response.data['produits_finis']), 2)
+
+    def test_creation_essence_avec_stringified_json_multipart(self):
+        import json
+        payload = {
+            "marque": "Dior",
+            "nom": "Essence Rose Royale",
+            "slug": "essence-rose-royale-test",
+            "categorie": "super_premium",
+            "code_reference": "ESS-ROS-002",
+            "prix_par_ml": "200.00",
+            "actif": "true",
+            "initial_lot": json.dumps({"stock_ml": "500.00", "reference_fournisseur": "LOT-ROSE"}),
+            "produits_finis": json.dumps([{"taille_ml": 50, "prix": "30000.00"}])
+        }
+        response = self.client.post('/api/v1/lab/essences/', payload, format='multipart')
+        self.assertEqual(response.status_code, 201)
+        
+        essence = Essence.objects.get(slug="essence-rose-royale-test")
+        self.assertEqual(essence.stock_total_ml(), Decimal('500.00'))
+        self.assertEqual(essence.produits_finis.count(), 1)
+
+
