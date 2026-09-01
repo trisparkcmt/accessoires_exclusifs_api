@@ -253,6 +253,14 @@ class IACompositionRulesTests(TestCase):
         self.assertEqual(normalized['accessoires'], [10, 20])
         self.assertEqual(normalized['diffuseurs'], [30])
 
+    def test_est_simple_salutation_identifies_greetings_vs_product_searches(self):
+        from laboratoire.utils_ia import est_simple_salutation
+        self.assertTrue(est_simple_salutation("Bonjour"))
+        self.assertTrue(est_simple_salutation("Hello, comment vas-tu ?"))
+        self.assertTrue(est_simple_salutation("Hi! Thank you"))
+        self.assertFalse(est_simple_salutation("Bonjour je cherche un parfum vanillé"))
+        self.assertFalse(est_simple_salutation("Hello, I want a custom perfume"))
+
     def test_ajuster_composition_45_percent_uses_exact_target_with_essences_only(self):
         flacon = Flacon.objects.create(
             nom='Flacon test 45%',

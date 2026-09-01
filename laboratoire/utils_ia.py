@@ -586,6 +586,45 @@ def generer_resume_conversation(messages_recents, resume_existant=''):
 
 
 
+def est_simple_salutation(prompt):
+    """
+    Détecte si la demande utilisateur est une simple salutation ou politesse
+    sans intention de recherche produit, afin de sauter le Function Calling / requêtes BD
+    et répondre instantanément.
+    """
+    if not prompt or not isinstance(prompt, str):
+        return True
+
+    p = prompt.strip().lower()
+    if not p:
+        return True
+
+    mots_cles_produit = {
+        'parfum', 'essence', 'flacon', 'prix', 'budget', 'note', 'odeur',
+        'composition', 'sur-mesure', 'sur mesure', 'boisé', 'floral', 'vanille',
+        'oud', 'recommande', 'cherche', 'combien', 'catalogue', 'accessoire',
+        'diffuseur', 'acheter', 'commande', 'fcfa', 'ml', 'taille', 'produit',
+        'perfume', 'fragrance', 'scent', 'bottle', 'price', 'custom', 'recommend',
+        'buy', 'shop', 'order', 'show', 'list', 'cost', 'pay', 'payer', 'catalogo'
+    }
+
+    mots = set(re.findall(r'\b\w+\b', p))
+    if mots.intersection(mots_cles_produit):
+        return False
+
+    salutations = {
+        'bonjour', 'hello', 'hi', 'salut', 'coucou', 'bonsoir', 'merci',
+        'thanks', 'thank you', 'ça va', 'ca va', 'comment vas tu', 'comment allez vous',
+        'qui es tu', 'who are you', 'hola', 'buenas', 'good morning', 'good evening',
+        'bye', 'aurevoir', 'au revoir', 'bonne journée', 'good day', 'hey'
+    }
+
+    if len(p) <= 45 or any(s in p for s in salutations):
+        return True
+
+    return False
+
+
 def demander_recommandation_ia(prompt_utilisateur, history=None, client_info=None, resume=None):
     """
     Envoie le prompt à l'IA avec Function Calling (Tools API) et ajuste automatiquement
@@ -596,8 +635,9 @@ def demander_recommandation_ia(prompt_utilisateur, history=None, client_info=Non
     """
     provider = os.environ.get('LLM_PROVIDER', getattr(settings, 'LLM_PROVIDER', 'gemini')).lower()
     contexte_client_et_historique = meubler_contexte_historique(history=history, client_info=client_info, resume=resume)
+    is_salutation = est_simple_salutation(prompt_utilisateur)
 
-    print(f"\n[IA-RECOMMANDATION] Nouveau prompt recu: '{prompt_utilisateur}' (Provider: {provider})", flush=True)
+    print(f"\n[IA-RECOMMANDATION] Nouveau prompt recu: '{prompt_utilisateur}' (Provider: {provider}, Salutation simple: {is_salutation})", flush=True)
     if resume:
         print(f"[IA-RECOMMANDATION] Contexte: résumé existant ({len(resume)} chars)", flush=True)
     else:
@@ -668,10 +708,14 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
         llm_payload = {
             'model': model_name,
             'messages': messages,
-            'tools': OLLAMA_TOOLS_DEFINITIONS,
             'temperature': 0.2,
             'stream': False,
         }
+
+        if not is_salutation:
+            llm_payload['tools'] = OLLAMA_TOOLS_DEFINITIONS
+        else:
+            llm_payload['response_format'] = {'type': 'json_object'}
 
         print(f"[IA-RECOMMANDATION] Ollama: Envoi du premier appel (URL: {ollama_url}/v1/chat/completions)...", flush=True)
         logger.info('[LLM_CALL] Ollama request Function Calling', extra={'model': model_name, 'url': f"{ollama_url}/v1/chat/completions"})
