@@ -339,6 +339,16 @@ class EssenceSerializer(serializers.ModelSerializer):
         if tags is not None:
             essence.tags.set(tags)
         return essence
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        ret['stock_total_ml'] = instance.stock_total_ml()
+        ret['produits_finis'] = ProduitFiniEssenceInlineSerializer(
+            instance.produits_finis.all(),
+            many=True,
+            context=self.context
+        ).data
+        return ret
 # ============================================================
 # ESSENCES : pour le labo et le catalogue
 # ============================================================
@@ -412,16 +422,11 @@ class EssencePublicSerializer(serializers.ModelSerializer):
         return obj.stock_total_ml()
 
     def get_produits_finis(self, obj):
-        stock_total = obj.stock_total_ml()
         prods = obj.produits_finis.filter(
             actif=True,
             prix__gt=0,
             taille_ml__gt=0
         )
-        if stock_total > 0:
-            prods = prods.filter(taille_ml__lte=stock_total)
-        else:
-            prods = prods.none()
         return ProduitFiniEssenceInlineSerializer(prods.order_by('taille_ml'), many=True, context=self.context).data
 
 
