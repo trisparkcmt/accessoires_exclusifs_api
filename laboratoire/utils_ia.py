@@ -613,15 +613,16 @@ CONSIGNES DE CHOIX DES OUTILS (TRES IMPORTANT) :
 - Si le client demande expressément une "composition", une "création", un parfum "sur-mesure", "personnalisé", "sur mesure" ou un mélange, c'est une création sur-mesure. Dans ce cas, n'appelle PAS `rechercher_parfums`. Tu dois appeler `rechercher_essences_et_ingredients` pour trouver les composants, ET appeler `obtenir_flacons_disponibles` pour proposer un flacon adapté.
 
 RÈGLES IMPÉRATIVES :
-0. DÉTECTION DE LA LANGUE ET RÉPONSE (CRITIQUE IMPÉRATIVE) :
-- Tu DOIS analyser la langue du DERNIER PROMPT actuel soumis par le client ("Demande du client").
-- Si le prompt actuel du client est rédigé en ANGLAIS (ex: "I want a sweet perfume", "Hello", "What is your price?"), tu DOIS OBLIGATOIREMENT rédiger le champ "message" de ta réponse finale intégralement en ANGLAIS.
-- Si le prompt actuel du client est rédigé en FRANÇAIS (ex: "Je cherche un parfum doux", "Bonjour"), tu DOIS OBLIGATOIREMENT rédiger le champ "message" de ta réponse finale intégralement en FRANÇAIS.
-- Ne te fie PAS à la langue des échanges passés ou du résumé : fie-toi STRICTEMENT à la langue du dernier prompt reçu.
+0. DÉTECTION DE LA LANGUE ET RÉPONSE (EXIGENCE ABSOLUE ET IMPÉRATIVE) :
+- Tu DOIS IMPÉRATIVEMENT détecter et utiliser la LANGUE DU DERNIER PROMPT fourni par le client.
+- Si la demande du client est en ANGLAIS (ex: "I want a sweet perfume", "Hello", "Show me your prices"), le champ "message" de ta réponse DOIT ÊTRE 100% EN ANGLAIS.
+- Si la demande du client est en FRANÇAIS (ex: "Je cherche un parfum doux", "Bonjour"), le champ "message" de ta réponse DOIT ÊTRE 100% EN FRANÇAIS.
+- Si la demande du client est dans une AUTRE LANGUE (ex: espagnol, allemand, arabe), le champ "message" DOIT ÊTRE DANS CETTE MÊME LANGUE.
+- Ne bascule JAMAIS en français par défaut si le client s'est adressé à toi en anglais ou dans une autre langue.
 - Écris sans AUCUNE abréviation. Écris TOUJOURS les mots en entier (« pour », « tout », « toujours », « s'il vous plaît », « beaucoup » / "for", "with", "always", "please", "thank you").
 
 1. COMPORTEMENT ET LOGIQUE DE CONVERSATION :
-- Si la demande est une simple salutation ou une politesse, réponds chaleureusement dans "message" (en anglais si le prompt est en anglais, en français si le prompt est en français) sans appeler d'outils et laisse les listes de produits vides avec flacon_id = 0.
+- Si la demande est une simple salutation ou une politesse, réponds chaleureusement dans "message" (DANS LA LANGUE DU CLIENT) sans appeler d'outils et laisse les listes de produits vides avec flacon_id = 0.
 - Si le client cherche une recommandation ou une création sur-mesure, utilise les outils pour interroger la base de données puis propose la meilleure sélection.
 
 2. COMPOSITION SUR-MESURE :
@@ -661,7 +662,7 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
 
         messages = [
             {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': f"Demande du client : {prompt_utilisateur}"}
+            {'role': 'user', 'content': f"Demande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"}
         ]
 
         llm_payload = {
@@ -760,7 +761,7 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
 
             # Execution simple avec catalogue fallback pour Gemini
             catalogue_fallback = get_catalogue_context()
-            contents = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fallback}\n\nDemande du client : {prompt_utilisateur}"
+            contents = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fallback}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
 
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
@@ -787,7 +788,7 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
         print(f"[IA-RECOMMANDATION] Tentative de reparation JSON avec Ollama...", flush=True)
         try:
             repair_messages = [
-                {'role': 'system', 'content': 'Tu es un convertisseur JSON strict. Convertis le texte fourni en un objet JSON respectant le format exact sans aucun texte explicatif.'},
+                {'role': 'system', 'content': 'Tu es un convertisseur JSON strict. Convertis le texte fourni en un objet JSON respectant le format exact sans aucun texte explicatif. CONSERVE STRICTEMENT LA LANGUE D\'ORIGINE DU TEXTE (Français, Anglais, etc.) dans le champ "message".'},
                 {'role': 'user', 'content': f"Convertis ce texte en un objet JSON strict respectant exactement cette structure :\n{{\"message\": \"...\", \"quantite_demandee_ml\": 0, \"budget_max_fcfa\": 0, \"flacon_id\": 0, \"essences_pre_faites\": [], \"ingredients_sur_mesure\": [], \"parfums_existants_recommandes\": [], \"accessoires\": [], \"diffuseurs\": []}}\n\nTexte :\n{reponse_texte}"}
             ]
             repair_resp = requests.post(
