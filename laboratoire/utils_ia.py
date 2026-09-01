@@ -446,15 +446,33 @@ def validate_ia_response_schema(reponse):
 
 
 def _extract_json_from_text(text):
+    if not text or not isinstance(text, str):
+        return None
+
+    cleaned = text.strip()
+
+    # Nettoyage des balises markdown ```json ... ```
+    if '```' in cleaned:
+        cleaned = re.sub(r'```(?:json)?\s*', '', cleaned)
+        cleaned = cleaned.replace('```', '').strip()
+
     try:
-        return json.loads(text)
+        return json.loads(cleaned)
     except json.JSONDecodeError:
-        first = text.find('{')
-        last = text.rfind('}')
-        if first != -1 and last != -1 and last > first:
-            candidate = text[first:last + 1]
+        pass
+
+    # Extraction de la première accolade { à la dernière }
+    first = cleaned.find('{')
+    last = cleaned.rfind('}')
+    if first != -1 and last != -1 and last > first:
+        candidate = cleaned[first:last + 1]
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            # Nettoyage des virgules traînantes (trailing commas: ,} et ,])
+            candidate_fixed = re.sub(r',\s*([\}\]])', r'\1', candidate)
             try:
-                return json.loads(candidate)
+                return json.loads(candidate_fixed)
             except json.JSONDecodeError:
                 pass
     return None
@@ -699,10 +717,11 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
                             'content': json.dumps(tool_result, ensure_ascii=False)
                         })
 
-                    # Second appel à Ollama avec les résultats des outils
+                    # Second appel à Ollama avec les résultats des outils + format JSON explicite
                     second_payload = {
                         'model': model_name,
                         'messages': messages,
+                        'response_format': {'type': 'json_object'},
                         'temperature': 0.2,
                         'stream': False,
                     }
@@ -762,6 +781,31 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
         return {"error": "Aucune réponse texte reçue de l'IA."}
 
     parsed = _extract_json_from_text(reponse_texte)
+
+    # Fallback de réparation si la réponse Ollama n'était pas un JSON valide au premier essai
+    if parsed is None and provider == 'ollama':
+        print(f"[IA-RECOMMANDATION] Tentative de reparation JSON avec Ollama...", flush=True)
+        try:
+            repair_messages = [
+                {'role': 'system', 'content': 'Tu es un convertisseur JSON strict. Convertis le texte fourni en un objet JSON respectant le format exact sans aucun texte explicatif.'},
+                {'role': 'user', 'content': f"Convertis ce texte en un objet JSON strict respectant exactement cette structure :\n{{\"message\": \"...\", \"quantite_demandee_ml\": 0, \"budget_max_fcfa\": 0, \"flacon_id\": 0, \"essences_pre_faites\": [], \"ingredients_sur_mesure\": [], \"parfums_existants_recommandes\": [], \"accessoires\": [], \"diffuseurs\": []}}\n\nTexte :\n{reponse_texte}"}
+            ]
+            repair_resp = requests.post(
+                f"{ollama_url}/v1/chat/completions",
+                json={
+                    'model': model_name,
+                    'messages': repair_messages,
+                    'response_format': {'type': 'json_object'},
+                    'temperature': 0.1,
+                    'stream': False,
+                },
+                timeout=(10, 60),
+            )
+            if repair_resp.status_code == 200:
+                repair_text = repair_resp.json().get('choices', [{}])[0].get('message', {}).get('content', '')
+                parsed = _extract_json_from_text(repair_text)
+        except Exception as e:
+            print(f"[IA-RECOMMANDATION] Échec de la réparation JSON: {e}", flush=True)
     if parsed is None:
         print(f"[IA-RECOMMANDATION] ERREUR: Impossible d'extraire le JSON de la reponse: {reponse_texte}", flush=True)
         return {
