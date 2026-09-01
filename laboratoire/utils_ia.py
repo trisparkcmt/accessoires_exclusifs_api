@@ -19,12 +19,27 @@ def normaliser_reponse_composition(reponse_dict):
     if not isinstance(reponse_dict, dict):
         return reponse_dict
 
+    # ── Champs scalaires obligatoires : valeurs par défaut si absents ──────────
+    # Garantit que la validation de schéma ne plante jamais sur des clés manquantes
+    if 'message' not in reponse_dict or not reponse_dict.get('message'):
+        reponse_dict['message'] = ""
+        print("[NORMALISE] Champ 'message' absent ou vide, défini à chaîne vide.", flush=True)
+
+    try:
+        reponse_dict['quantite_demandee_ml'] = float(reponse_dict.get('quantite_demandee_ml') or 0)
+    except (TypeError, ValueError):
+        reponse_dict['quantite_demandee_ml'] = 0.0
+
+    try:
+        reponse_dict['budget_max_fcfa'] = float(reponse_dict.get('budget_max_fcfa') or 0)
+    except (TypeError, ValueError):
+        reponse_dict['budget_max_fcfa'] = 0.0
+
     # Normalisation de flacon_id (en entier)
-    if 'flacon_id' in reponse_dict:
-        try:
-            reponse_dict['flacon_id'] = int(reponse_dict['flacon_id']) if reponse_dict['flacon_id'] is not None else 0
-        except (ValueError, TypeError):
-            reponse_dict['flacon_id'] = 0
+    try:
+        reponse_dict['flacon_id'] = int(reponse_dict['flacon_id']) if reponse_dict.get('flacon_id') is not None else 0
+    except (ValueError, TypeError):
+        reponse_dict['flacon_id'] = 0
 
     essences = []
     for item in (reponse_dict.get('essences_pre_faites', []) or []):
