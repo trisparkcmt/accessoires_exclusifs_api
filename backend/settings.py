@@ -63,7 +63,13 @@ else:
         "https://api.accessoiresexclusifs.com",
         "https://accessoiresexclusifs.com",
         "https://www.accessoiresexclusifs.com",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
     ]
+
+for local_origin in ["http://localhost:3000", "http://127.0.0.1:3000"]:
+    if local_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(local_origin)
 
 # Informer Django que le tunnel ngrok/Render gère le HTTPS
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
@@ -356,7 +362,7 @@ REST_AUTH = {
     'JWT_AUTH_COOKIE': 'access-token',
     'JWT_AUTH_REFRESH_COOKIE': 'refresh-token',
     'JWT_AUTH_HTTPONLY': True,
-    'JWT_AUTH_SECURE': True,
+    'JWT_AUTH_SECURE': os.getenv('JWT_AUTH_SECURE', str(not DEBUG)).lower() in ('true', '1', 'yes'),
     'JWT_AUTH_SAMESITE': os.getenv('JWT_AUTH_SAMESITE', 'Lax'),
     'LOGIN_SERIALIZER': 'utilisateur.serializers.EmailOrTelephoneLoginSerializer',
     'REGISTER_SERIALIZER': 'utilisateur.serializers.CustomRegisterSerializer',
@@ -386,9 +392,9 @@ SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 # Configuration des cookies pour le domaine et ses sous-domaines (Production VPS)
 SESSION_COOKIE_SAMESITE = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
-SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', str(not DEBUG)).lower() in ('true', '1', 'yes')
 CSRF_COOKIE_SAMESITE = os.getenv('CSRF_COOKIE_SAMESITE', 'Lax')
-CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', str(not DEBUG)).lower() in ('true', '1', 'yes')
 
 # Partage des cookies entre le sous-domaine API (api.accessoiresexclusifs.com) et le frontend (accessoiresexclusifs.com)
 SESSION_COOKIE_DOMAIN = os.getenv('SESSION_COOKIE_DOMAIN', None if DEBUG else '.accessoiresexclusifs.com')
@@ -448,6 +454,10 @@ else:
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+
+for local_origin in ["http://localhost:3000", "http://127.0.0.1:3000"]:
+    if local_origin not in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS.append(local_origin)
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^http://(localhost|127\.0\.0\.1)(:\d+)?$",
 ]

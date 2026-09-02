@@ -259,7 +259,7 @@ def ia_recommandation(request):
     ids_diffuseurs = reponse_ia.get('diffuseurs', [])
     ids_diffuseurs = [d.get('id') if isinstance(d, dict) else d for d in ids_diffuseurs if d is not None]
     flacon_id = reponse_ia.get('flacon_id')
-    quantite_demandee_ml = reponse_ia.get('quantite_demandee_ml', 50)
+    quantite_demandee_ml = reponse_ia.get('quantite_demandee_ml', 0)
 
     parfums = Parfum.objects.filter(id__in=ids_parfums, actif=True, stock_quantite__gt=0)
     accessoires = Accessoire.objects.filter(id__in=ids_accessoires, actif=True, stock_quantite__gt=0)

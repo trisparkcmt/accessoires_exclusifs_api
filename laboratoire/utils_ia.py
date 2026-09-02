@@ -168,7 +168,10 @@ def tool_rechercher_parfums(notes=None, budget_max=None, contenance_ml=None, **k
     """Recherche des parfums dans la base de données."""
     print(f"\n[TOOL CALL] tool_rechercher_parfums - Parametres: notes={notes}, budget_max={budget_max}, contenance_ml={contenance_ml}", flush=True)
     queryset = Parfum.objects.filter(actif=True, stock_quantite__gt=0)
+    has_filter = False
+
     if notes:
+        has_filter = True
         query = (
             models.Q(nom__icontains=notes) |
             models.Q(notes_tete__icontains=notes) |
@@ -181,24 +184,30 @@ def tool_rechercher_parfums(notes=None, budget_max=None, contenance_ml=None, **k
         )
         queryset = queryset.filter(query)
     if budget_max is not None:
+        has_filter = True
         try:
             queryset = queryset.filter(prix_unitaire__lte=float(budget_max))
         except (ValueError, TypeError):
             pass
     if contenance_ml is not None:
+        has_filter = True
         try:
             queryset = queryset.filter(contenance_ml=int(contenance_ml))
         except (ValueError, TypeError):
             pass
 
+    # Sans filtre : ordre aléatoire pour varier les résultats
+    if not has_filter:
+        queryset = queryset.order_by('?')
+
     results = []
-    for p in queryset[:6]:
+    for p in queryset[:8]:
         results.append({
             'id': p.id,
             'nom': p.nom,
             'contenance_ml': p.contenance_ml,
             'prix_unitaire': float(p.prix_unitaire),
-            'description': (p.description_ia or p.description_courte or '')[:120],
+            'description': (p.description_ia or p.description_courte or '')[:150],
         })
     print(f"[TOOL RESULT] tool_rechercher_parfums a retourne {len(results)} parfums: {[r['nom'] for r in results]}\n", flush=True)
     return results
@@ -213,8 +222,10 @@ def tool_rechercher_essences_et_ingredients(recherche=None, categorie=None, **kw
 
     essences_qs = Essence.objects.filter(actif=True, prix_par_ml__gt=0, id__in=essence_ids_en_stock)
     ingredients_qs = Ingredient.objects.filter(actif=True)
+    has_filter = False
 
     if recherche:
+        has_filter = True
         e_query = (
             models.Q(nom__icontains=recherche) |
             models.Q(notes_tete__icontains=recherche) |
@@ -227,10 +238,16 @@ def tool_rechercher_essences_et_ingredients(recherche=None, categorie=None, **kw
         ingredients_qs = ingredients_qs.filter(models.Q(nom__icontains=recherche) | models.Q(description__icontains=recherche))
 
     if categorie:
+        has_filter = True
         essences_qs = essences_qs.filter(categorie=categorie)
 
+    # Sans filtre : ordre aléatoire pour varier les résultats
+    if not has_filter:
+        essences_qs = essences_qs.order_by('?')
+        ingredients_qs = ingredients_qs.order_by('?')
+
     essences_res = []
-    for e in essences_qs[:6]:
+    for e in essences_qs[:8]:
         essences_res.append({
             'id': e.id,
             'nom': e.nom,
@@ -562,7 +579,38 @@ def generer_resume_conversation(messages_recents, resume_existant=''):
             resp.raise_for_status()
             data = resp.json()
             nouveau_resume = data.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
-            print(f"[RESUME IA] Nouveau résumé généré: '{nouveau_resume[:100]}...'", flush=True)
+            print(f"[RESUME IA] Nouveau résumé généré (Ollama): '{nouveau_resume[:100]}...'", flush=True)
+            return nouveau_resume if nouveau_resume else resume_existant
+
+        elif provider == 'groq':
+            groq_api_key = os.environ.get('GROQ_API_KEY') or getattr(settings, 'GROQ_API_KEY', None)
+            groq_model = os.environ.get('GROQ_MODEL', getattr(settings, 'GROQ_MODEL', 'qwen/qwen3.8-27b'))
+            if not groq_api_key:
+                print(f"[RESUME IA] Clé GROQ_API_KEY manquante.", flush=True)
+                return resume_existant
+            payload = {
+                'model': groq_model,
+                'messages': [
+                    {'role': 'system', 'content': 'Tu es un assistant qui génère des résumés courts et factuels de conversations.'},
+                    {'role': 'user', 'content': prompt_resume},
+                ],
+                'temperature': 0.1,
+            }
+            session = requests.Session()
+            resp = session.post(
+                'https://api.groq.com/openai/v1/chat/completions',
+                headers={
+                    'Authorization': f'Bearer {groq_api_key}',
+                    'Content-Type': 'application/json',
+                    'Connection': 'close',
+                },
+                json=payload,
+                timeout=(10, 30),
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            nouveau_resume = data.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+            print(f"[RESUME IA] Nouveau résumé généré (Groq/{groq_model}): '{nouveau_resume[:100]}...'", flush=True)
             return nouveau_resume if nouveau_resume else resume_existant
 
         else:
@@ -576,7 +624,7 @@ def generer_resume_conversation(messages_recents, resume_existant=''):
                 config=types.GenerateContentConfig(temperature=0.1),
             )
             nouveau_resume = response.text.strip()
-            print(f"[RESUME IA] Nouveau résumé généré: '{nouveau_resume[:100]}...'", flush=True)
+            print(f"[RESUME IA] Nouveau résumé généré (Gemini): '{nouveau_resume[:100]}...'", flush=True)
             return nouveau_resume if nouveau_resume else resume_existant
 
     except Exception as e:
@@ -611,6 +659,7 @@ Analyse la demande du client et utilise les OUTILS (Function Calling) mis à ta 
 CONSIGNES DE CHOIX DES OUTILS (TRES IMPORTANT) :
 - Si le client s'intéresse à un parfum existant prêt à l'emploi (deja tout fait), utilise `rechercher_parfums`.
 - Si le client demande expressément une "composition", une "création", un parfum "sur-mesure", "personnalisé", "sur mesure" ou un mélange, c'est une création sur-mesure. Dans ce cas, n'appelle PAS `rechercher_parfums`. Tu dois appeler `rechercher_essences_et_ingredients` pour trouver les composants, ET appeler `obtenir_flacons_disponibles` pour proposer un flacon adapté.
+- Si la demande du client est VAGUE, GÉNÉRALE ou NON PRÉCISE (ex: "propose-moi quelque chose de bien", "recommande-moi des produits", "découverte", "idées cadeaux"), tu DOIS appeler simultanément `rechercher_parfums` ET `rechercher_accessoires_et_diffuseurs` pour lui présenter une sélection variée incluant différents types de produits (parfums prêts à l'emploi, accessoires, diffuseurs).
 
 RÈGLES IMPÉRATIVES :
 0. DÉTECTION DE LA LANGUE ET RÉPONSE (EXIGENCE ABSOLUE ET IMPÉRATIVE) :
@@ -622,8 +671,9 @@ RÈGLES IMPÉRATIVES :
 - Écris sans AUCUNE abréviation. Écris TOUJOURS les mots en entier (« pour », « tout », « toujours », « s'il vous plaît », « beaucoup » / "for", "with", "always", "please", "thank you").
 
 1. COMPORTEMENT ET LOGIQUE DE CONVERSATION :
-- Si la demande est une simple salutation ou une politesse, réponds chaleureusement dans "message" (DANS LA LANGUE DU CLIENT) sans appeler d'outils et laisse les listes de produits vides avec flacon_id = 0.
+- Si la demande est une simple salutation ou une politesse ("bonjour", "hello"), réponds chaleureusement dans "message" (DANS LA LANGUE DU CLIENT) sans appeler d'outils et laisse les listes de produits vides avec flacon_id = 0.
 - Si le client cherche une recommandation ou une création sur-mesure, utilise les outils pour interroger la base de données puis propose la meilleure sélection.
+- Si la demande n'est pas très précise, propose une offre diversifiée combinant parfums existants, accessoires et diffuseurs d'ambiance.
 
 2. COMPOSITION SUR-MESURE :
 - Un flacon ("flacon_id") ne doit être choisi que pour une création personnalisée sur-mesure. Les quantités d'essences en ml seront automatiquement ajustées par notre système Python à exactement 45% de la contenance du flacon.
@@ -632,8 +682,8 @@ RÈGLES IMPÉRATIVES :
 - IMPORTANT : pour "essences_pre_faites", fournis une liste d'objets avec "id" et "quantite_ml".
 - Pour "parfums_existants_recommandes", "accessoires", et "diffuseurs", il suffit de fournir la liste de leurs identifiants numériques [id1, id2]. Le serveur Python récupèrera automatiquement toutes les caractéristiques des produits depuis la base de données.
 
-3. VENTE COMPLÉMENTAIRE (CROSS-SELLING) :
-- N'inclus un accessoire (dans "accessoires") ou un diffuseur (dans "diffuseurs") QUE si un produit pertinent a été trouvé via les outils ou le catalogue. Ne mets PAS d'ID par défaut et laisse la liste vide `[]` si aucun accessoire n'est spécifiquement pertinent pour la demande.
+3. VENTE COMPLÉMENTAIRE ET VARIÉTÉ DE PRODUITS :
+- Quand la demande est générale ou pour du cross-selling, n'hésite pas à remplir à la fois "parfums_existants_recommandes", "accessoires" et "diffuseurs" avec les identifiants issus des outils.
 
 4. FORMAT DE RÉPONSE FINAL :
 Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSON strict respectant la structure suivante (sans balise ```json).
@@ -677,7 +727,6 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
         logger.info('[LLM_CALL] Ollama request Function Calling', extra={'model': model_name, 'url': f"{ollama_url}/v1/chat/completions"})
 
         try:
-            # Augmentation du timeout (connection = 20s, lecture = 180s)
             response = requests.post(
                 f"{ollama_url}/v1/chat/completions",
                 json=llm_payload,
@@ -691,7 +740,6 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
                 message_obj = choice.get('message', {})
                 tool_calls = message_obj.get('tool_calls')
 
-                # Si le modèle demande à exécuter un ou plusieurs outils
                 if tool_calls:
                     print(f"[IA-RECOMMANDATION] Ollama a demande des outils: {[t.get('function', {}).get('name') for t in tool_calls]}", flush=True)
                     logger.info('[LLM_TOOL_CALL] Ollama a demandé des outils', extra={'tool_calls': tool_calls})
@@ -718,7 +766,6 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
                             'content': json.dumps(tool_result, ensure_ascii=False)
                         })
 
-                    # Second appel à Ollama avec les résultats des outils + format JSON explicite
                     second_payload = {
                         'model': model_name,
                         'messages': messages,
@@ -749,8 +796,123 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
             logger.exception('Erreur Ollama Function Calling')
             return {"error": f"Erreur de l'API Ollama : {str(e)}"}
 
+    elif provider == 'groq':
+        groq_api_key = os.environ.get('GROQ_API_KEY') or getattr(settings, 'GROQ_API_KEY', None)
+        groq_model = os.environ.get('GROQ_MODEL', getattr(settings, 'GROQ_MODEL', 'qwen/qwen3.8-27b'))
+
+        if not groq_api_key:
+            return {"error": "Clé API Groq manquante (GROQ_API_KEY)."}
+
+        groq_headers = {
+            'Authorization': f'Bearer {groq_api_key}',
+            'Content-Type': 'application/json',
+            'Connection': 'close',
+        }
+
+        def _post_groq(payload, retries=3):
+            for attempt in range(1, retries + 1):
+                try:
+                    session = requests.Session()
+                    session.headers.update(groq_headers)
+                    return session.post(
+                        'https://api.groq.com/openai/v1/chat/completions',
+                        json=payload,
+                        timeout=(15, 60),
+                    )
+                except (requests.exceptions.RequestException, Exception) as err:
+                    print(f"[IA-RECOMMANDATION] Tentative Groq {attempt}/{retries} échouée (déconnexion/erreur): {err}", flush=True)
+                    if attempt == retries:
+                        raise
+                    import time
+                    time.sleep(0.5 * attempt)
+
+        messages = [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': f"Demande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"}
+        ]
+
+        llm_payload = {
+            'model': groq_model,
+            'messages': messages,
+            'tools': OLLAMA_TOOLS_DEFINITIONS,
+            'tool_choice': 'auto',
+            'parallel_tool_calls': True,
+            'temperature': 0.2,
+        }
+
+        print(f"[IA-RECOMMANDATION] Groq: Envoi du premier appel (modele: {groq_model})...", flush=True)
+        logger.info('[LLM_CALL] Groq request Function Calling', extra={'model': groq_model})
+
+        try:
+            response = _post_groq(llm_payload)
+            response.raise_for_status()
+            data = response.json()
+
+            if isinstance(data, dict) and 'choices' in data and data['choices']:
+                choice = data['choices'][0]
+                message_obj = choice.get('message', {})
+                tool_calls = message_obj.get('tool_calls')
+
+                if tool_calls:
+                    print(f"[IA-RECOMMANDATION] Groq a demande des outils: {[t.get('function', {}).get('name') for t in tool_calls]}", flush=True)
+                    logger.info('[LLM_TOOL_CALL] Groq a demandé des outils', extra={'tool_calls': tool_calls})
+                    
+                    messages.append({
+                        'role': 'assistant',
+                        'content': message_obj.get('content') or None,
+                        'tool_calls': tool_calls,
+                    })
+
+                    for tool_call in tool_calls:
+                        fn_name = tool_call.get('function', {}).get('name')
+                        raw_args = tool_call.get('function', {}).get('arguments', '{}')
+                        try:
+                            fn_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                        except json.JSONDecodeError:
+                            fn_args = {}
+
+                        print(f"[IA-RECOMMANDATION] Execution de l'outil local (Groq): {fn_name}(**{fn_args})...", flush=True)
+                        if fn_name in TOOLS_REGISTRY:
+                            tool_result = TOOLS_REGISTRY[fn_name](**fn_args)
+                        else:
+                            tool_result = {"error": f"Outil inconnu : {fn_name}"}
+                        print(f"[IA-RECOMMANDATION] Resultat de l'outil {fn_name}: {tool_result}", flush=True)
+
+                        messages.append({
+                            'role': 'tool',
+                            'tool_call_id': tool_call.get('id', 'call_1'),
+                            'content': json.dumps(tool_result, ensure_ascii=False)
+                        })
+
+                    second_payload = {
+                        'model': groq_model,
+                        'messages': messages,
+                        'response_format': {'type': 'json_object'},
+                        'temperature': 0.2,
+                    }
+                    print(f"[IA-RECOMMANDATION] Groq: Envoi du deuxieme appel avec les resultats des outils...", flush=True)
+                    second_resp = _post_groq(second_payload)
+                    if second_resp.status_code != 200:
+                        print(f"[IA-RECOMMANDATION] ERREUR Groq 2eme appel ({second_resp.status_code}): {second_resp.text}", flush=True)
+                    second_resp.raise_for_status()
+                    second_data = second_resp.json()
+                    if 'choices' in second_data and second_data['choices']:
+                        reponse_texte = second_data['choices'][0].get('message', {}).get('content')
+                        print(f"[IA-RECOMMANDATION] Reponse finale recue de Groq: '{reponse_texte[:120]}...'", flush=True)
+                else:
+                    reponse_texte = message_obj.get('content')
+                    print(f"[IA-RECOMMANDATION] Reponse directe recue de Groq: '{reponse_texte[:120]}...'", flush=True)
+            else:
+                reponse_texte = response.text
+                print(f"[IA-RECOMMANDATION] Reponse inattendue de Groq: {reponse_texte}", flush=True)
+
+        except Exception as e:
+            print(f"[IA-RECOMMANDATION] ERREUR critique lors de l'appel a Groq: {str(e)}", flush=True)
+            logger.exception('Erreur Groq Function Calling')
+            return {"error": f"Erreur de l'API Groq : {str(e)}"}
+
     else:
-        # Provider Gemini
+        # Provider Gemini (defaut)
         api_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
         if not api_key:
             return {"error": "Clé API Gemini manquante."}
@@ -759,7 +921,6 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
         try:
             client = genai.Client(api_key=api_key)
 
-            # Execution simple avec catalogue fallback pour Gemini
             catalogue_fallback = get_catalogue_context()
             contents = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fallback}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
 
@@ -814,11 +975,17 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
             "raw_response": reponse_texte,
         }
 
-    # 1. Normalisation stricte selon la logique métier
-    parsed = normaliser_reponse_composition(parsed)
+    # 1. Ajustement déterministe Python de la règle des 45% — UNIQUEMENT pour les créations sur mesure
+    flacon_id_raw = parsed.get('flacon_id', 0)
+    essences_raw = parsed.get('essences_pre_faites', [])
+    is_custom_creation = bool(flacon_id_raw) and bool(essences_raw)
 
-    # 2. Ajustement déterministe Python de la règle des 45%
-    parsed = ajuster_composition_45_percent(parsed)
+    if is_custom_creation:
+        parsed = normaliser_reponse_composition(parsed)
+        parsed = ajuster_composition_45_percent(parsed)
+    else:
+        # Réponse directe (salutation, parfums existants, accessoires) — on ne touche à rien
+        print(f"[IA-RECOMMANDATION] Pas de création sur mesure détectée — la réponse IA est transmise telle quelle.", flush=True)
 
     # 2. Validation du schéma JSON
     valid, validation_error = validate_ia_response_schema(parsed)
