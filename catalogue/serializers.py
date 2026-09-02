@@ -372,7 +372,13 @@ class EssenceLaboDetailSerializer(EssenceSerializer):
         fields = EssenceSerializer.Meta.fields + ['stock_total_ml']
 
     def get_stock_total_ml(self, obj):
-        return obj.stock_total_ml()
+        return getattr(obj, 'total_stock_ml', obj.stock_total_ml())
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        # Pour le laboratoire, les produits finis pré-conditionnés ne sont pas nécessaires
+        ret.pop('produits_finis', None)
+        return ret
 
 # ============================================================
 # CATALOGUE : produits finis (essences vendues en flacon)

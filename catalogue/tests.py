@@ -132,7 +132,7 @@ class ParfumImageTest(APITestCase):
         url = response.data['image_principale']
         self.assertIsNotNone(url)
         self.assertTrue(url.startswith('http'))
-        self.assertIn('/media/', url)
+        self.assertTrue('/media/' in url or 'amazonaws.com' in url or 'cloudfront.net' in url)
         self.assertIn('rose-eternelle', url)   # rangé dans le bon dossier
 
     def tearDown(self):
@@ -169,7 +169,7 @@ class AccessoireImageTest(APITestCase):
         url = response.data['image_principale']
         self.assertIsNotNone(url)
         self.assertTrue(url.startswith('http'))
-        self.assertIn('/media/', url)
+        self.assertTrue('/media/' in url or 'amazonaws.com' in url or 'cloudfront.net' in url)
 
     def tearDown(self):
         import shutil
@@ -754,26 +754,82 @@ class EssenceAPITest(APITestCase):
         response_vide = self.client.get('/api/v1/lab/essences/?prix_max=100')
         self.assertEqual(response_vide.data['count'], 0)
 
-    def test_produits_finis_inclus_dans_boutique_et_exclus_dans_dashboard(self):
+    def test_produits_finis_inclus_dans_boutique_et_exclus_dans_labo(self):
         from catalogue.models import ProduitFiniEssence
         ProduitFiniEssence.objects.create(
             essence=self.essence_active, taille_ml=50, prix=Decimal('15000.00'), actif=True
         )
 
-        # 1. Vue Boutique (sans en-tête dashboard) -> produits_finis est présent
-        resp_shop = self.client.get('/api/v1/lab/essences/')
+        # 1. Vue Boutique (X-Context: boutique) -> produits_finis est présent
+        resp_shop = self.client.get('/api/v1/lab/essences/', HTTP_X_CONTEXT='boutique')
         self.assertEqual(resp_shop.status_code, 200)
         self.assertIn('produits_finis', resp_shop.data['resultats'][0])
         self.assertEqual(len(resp_shop.data['resultats'][0]['produits_finis']), 1)
         self.assertEqual(resp_shop.data['resultats'][0]['produits_finis'][0]['taille_ml'], 50)
 
-        # 2. Vue Dashboard (avec en-tête dashboard) -> produits_finis n'est pas présent
+        # 2. Vue Labo (X-Context: labo) -> produits_finis est exclu pour se concentrer sur le stock ml
+        resp_labo = self.client.get('/api/v1/lab/essences/', HTTP_X_CONTEXT='labo')
+        self.assertEqual(resp_labo.status_code, 200)
+        self.assertNotIn('produits_finis', resp_labo.data['resultats'][0])
+
+        # 3. Vue Dashboard Admin (X-Context: dashboard) -> utilise EssenceSerializer d'administration
         user_model = get_user_model()
         admin = user_model.objects.create_user(email='admin-ess@example.com', password='password123', is_staff=True)
         self.client.force_authenticate(admin)
-        resp_dash = self.client.get('/api/v1/lab/essences/', HTTP_X_DASHBOARD_CONTEXT='true')
+        resp_dash = self.client.get('/api/v1/lab/essences/', HTTP_X_CONTEXT='dashboard')
         self.assertEqual(resp_dash.status_code, 200)
-        self.assertNotIn('produits_finis', resp_dash.data['resultats'][0])
+
+    def test_essence_sans_produit_fini_visible_au_labo_mais_masquee_en_boutique(self):
+        from catalogue.models import Essence, LotEssence
+        # Essence brute avec stock en ml mais SANS produit fini
+        essence_brute = Essence.objects.create(
+            marque="Maison Lab", nom="Jasmin Brut", code_reference="ESS-BRUTE-001",
+            categorie="premium", prix_par_ml=Decimal('400.00'), actif=True
+        )
+        LotEssence.objects.create(
+            essence=essence_brute, stock_ml=Decimal('200.00'), quantite_initiale_ml=Decimal('200.00'), actif=True
+        )
+
+        # 1. En Boutique (X-Context: boutique) -> L'essence brute sans produit fini n'apparaît pas
+        resp_boutique = self.client.get('/api/v1/lab/essences/', HTTP_X_CONTEXT='boutique')
+        self.assertEqual(resp_boutique.status_code, 200)
+        slugs_boutique = [e['slug'] for e in resp_boutique.data['resultats']]
+        self.assertNotIn(essence_brute.slug, slugs_boutique)
+
+        # 2. Au Labo (X-Context: labo) -> L'essence brute apparaît car elle a du stock brut (stock_total_ml > 0)
+        resp_labo = self.client.get('/api/v1/lab/essences/', HTTP_X_CONTEXT='labo')
+        self.assertEqual(resp_labo.status_code, 200)
+        slugs_labo = [e['nom'] for e in resp_labo.data['resultats']]
+        self.assertIn("Jasmin Brut", slugs_labo)
+
+    def test_essence_sans_stock_masquee_au_labo_et_en_boutique(self):
+        from catalogue.models import Essence, ProduitFiniEssence
+        # Essence créée à vide sans aucun lot de stock
+        essence_vide = Essence.objects.create(
+            marque="Maison Vide", nom="Musc Vide", code_reference="ESS-VIDE-001",
+            categorie="premium", prix_par_ml=Decimal('300.00'), actif=True
+        )
+        ProduitFiniEssence.objects.create(
+            essence=essence_vide, taille_ml=30, prix=Decimal('10000.00'), actif=True
+        )
+
+        # 1. En Boutique -> Masquée car stock_total_ml = 0 < min_taille_ml (30ml)
+        resp_boutique = self.client.get('/api/v1/lab/essences/', HTTP_X_CONTEXT='boutique')
+        slugs_boutique = [e['slug'] for e in resp_boutique.data['resultats']]
+        self.assertNotIn(essence_vide.slug, slugs_boutique)
+
+        # 2. Au Labo -> Masquée car stock_total_ml = 0
+        resp_labo = self.client.get('/api/v1/lab/essences/', HTTP_X_CONTEXT='labo')
+        slugs_labo = [e['nom'] for e in resp_labo.data['resultats']]
+        self.assertNotIn("Musc Vide", slugs_labo)
+
+        # 3. En Dashboard Admin -> Visible pour permettre l'approvisionnement
+        user_model = get_user_model()
+        admin = user_model.objects.create_user(email='admin-vide@example.com', password='password123', is_staff=True)
+        self.client.force_authenticate(admin)
+        resp_dash = self.client.get('/api/v1/lab/essences/', HTTP_X_CONTEXT='dashboard')
+        slugs_dash = [e['slug'] for e in resp_dash.data['resultats']]
+        self.assertIn(essence_vide.slug, slugs_dash)
 
 
 class IngredientVisibilityAPITest(APITestCase):

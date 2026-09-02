@@ -289,6 +289,41 @@ class ParfumViewSet(viewsets.ModelViewSet):
 # ============================================================
 # ESSENCES
 # ============================================================
+
+def get_request_context(request):
+    """
+    Détermine le contexte de la requête (boutique, labo, ou dashboard).
+    Vérifie les en-têtes HTTP 'X-Context' / 'X-Dashboard-Context' / 'X-Admin-Context',
+    puis se rabat sur le chemin d'accès (path) si l'en-tête n'est pas spécifié.
+    """
+    if not request:
+        return 'boutique'
+
+    header_ctx = None
+    if hasattr(request, 'headers'):
+        header_ctx = request.headers.get('X-Context') or request.headers.get('X-Dashboard-Context') or request.headers.get('X-Admin-Context')
+    if not header_ctx and hasattr(request, 'META'):
+        header_ctx = request.META.get('HTTP_X_CONTEXT') or request.META.get('HTTP_X_DASHBOARD_CONTEXT') or request.META.get('HTTP_X_ADMIN_CONTEXT')
+
+    if header_ctx:
+        ctx_str = str(header_ctx).strip().lower()
+        if ctx_str in ('dashboard', 'admin', 'true', '1', 'yes'):
+            return 'dashboard'
+        if ctx_str in ('labo', 'laboratoire', 'lab'):
+            return 'labo'
+        if ctx_str in ('boutique', 'shop'):
+            return 'boutique'
+
+    # Fallback selon l'URL de la requête
+    path = getattr(request, 'path', '').lower()
+    if '/lab/' in path:
+        return 'labo'
+    if '/shop/' in path:
+        return 'boutique'
+
+    return 'boutique'
+
+
 @extend_schema_view(
     list=extend_schema(
         summary="Liste des essences",
@@ -419,11 +454,6 @@ de la journée recommandés.
         tags=["Essences"],
     ),
 )
-
-# ============================================================
-# ESSENCES
-# ============================================================
-
 class EssenceViewSet(viewsets.ModelViewSet):
     serializer_class = EssenceSerializer
     pagination_class = StandardPagination
@@ -437,20 +467,67 @@ class EssenceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         from utilisateur.permissions import is_privileged_dashboard_user
-        if is_privileged_dashboard_user(self.request):
+        from django.db.models import Sum, F, Q, Min, DecimalField
+        from django.db.models.functions import Coalesce
+
+        ctx = get_request_context(self.request)
+
+        # Privilège Dashboard / Admin OU utilisateur staff : retourne toutes les essences (sans filtrage restrictif)
+        user = getattr(self.request, 'user', None)
+        if is_privileged_dashboard_user(self.request) or ctx == 'dashboard' or (user and user.is_authenticated and user.is_staff):
             return Essence.objects.all().prefetch_related('tags', 'lots', 'produits_finis')
-        # Public (Boutique) : uniquement les essences actives avec un prix par ml défini
-        return Essence.objects.filter(
-            actif=True,
-            prix_par_ml__gt=0
-        ).prefetch_related('tags', 'produits_finis')
-    
+
+        if ctx == 'labo':
+            # CONTEXTE LABORATOIRE :
+            # Essences actives, prix_par_ml > 0, et stock brut (lots) disponible > 0.
+            # Ne requiert PAS de produit fini (ProduitFiniEssence).
+            return Essence.objects.filter(
+                actif=True,
+                prix_par_ml__gt=0,
+            ).annotate(
+                total_stock_ml=Coalesce(
+                    Sum('lots__stock_ml', filter=Q(lots__actif=True)),
+                    Decimal('0'),
+                    output_field=DecimalField()
+                )
+            ).filter(
+                total_stock_ml__gt=0
+            ).distinct().prefetch_related('tags', 'lots')
+
+        else:
+            # CONTEXTE BOUTIQUE (par défaut) :
+            # Essences actives, prix_par_ml > 0, ayant au moins un ProduitFiniEssence actif et payant,
+            # ET ayant un stock brut en ml suffisant pour au moins un flacon (Option A : masque si stock insuffisant).
+            return Essence.objects.filter(
+                actif=True,
+                prix_par_ml__gt=0,
+                produits_finis__actif=True,
+                produits_finis__prix__gt=0,
+                produits_finis__taille_ml__gt=0,
+            ).annotate(
+                total_stock_ml=Coalesce(
+                    Sum('lots__stock_ml', filter=Q(lots__actif=True)),
+                    Decimal('0'),
+                    output_field=DecimalField()
+                ),
+                min_taille_ml=Min('produits_finis__taille_ml', filter=Q(produits_finis__actif=True, produits_finis__prix__gt=0))
+            ).filter(
+                total_stock_ml__gte=F('min_taille_ml')
+            ).distinct().prefetch_related('tags', 'produits_finis')
+
     def get_serializer_class(self):
         from utilisateur.permissions import is_privileged_dashboard_user
         if self.action in ['create', 'update', 'partial_update']:
             return EssenceCreateFullSerializer
         if is_privileged_dashboard_user(self.request):
             return EssenceSerializer
+
+        ctx = get_request_context(self.request)
+        if ctx == 'labo':
+            if self.action == 'list':
+                return EssenceLaboListSerializer
+            return EssenceLaboDetailSerializer
+
         return EssencePublicSerializer
 
 class LotEssenceViewSet(viewsets.ModelViewSet):
@@ -491,7 +568,7 @@ class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
                 output_field=DecimalField()
             )
         ).filter(
-            total_stock_ml__gt=Coalesce(F('essence__seuil_alerte_ml'), Decimal('0'))
+            total_stock_ml__gte=F('taille_ml')
         ).select_related('essence')
 
     def get_serializer_class(self):
