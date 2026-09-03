@@ -577,14 +577,29 @@ import sys as _sys
 if _sys.version_info >= (3, 14):
     import django.template.context as _ctx
 
+    def _copy_render_context(render_ctx):
+        """Copie sûre d'un RenderContext (BaseContext sans render_context propre)."""
+        rc_dup = render_ctx.__class__.__new__(render_ctx.__class__)
+        rc_dup.dicts = render_ctx.dicts[:]
+        return rc_dup
+
     def _basecontext_copy(self):
         duplicate = self.__class__.__new__(self.__class__)
         duplicate.dicts = self.dicts[:]
+        # render_context est présent sur Context mais pas sur RenderContext lui-même
+        if hasattr(self, 'render_context'):
+            duplicate.render_context = _copy_render_context(self.render_context)
+        if hasattr(self, 'autoescape'):
+            duplicate.autoescape = self.autoescape
         return duplicate
 
     def _requestcontext_copy(self):
         duplicate = self.__class__.__new__(self.__class__)
         duplicate.dicts = self.dicts[:]
+        if hasattr(self, 'render_context'):
+            duplicate.render_context = _copy_render_context(self.render_context)
+        if hasattr(self, 'autoescape'):
+            duplicate.autoescape = self.autoescape
         duplicate.request = self.request
         duplicate._processors = getattr(self, '_processors', None)
         duplicate._processors_index = getattr(self, '_processors_index', 0)
@@ -592,3 +607,4 @@ if _sys.version_info >= (3, 14):
 
     _ctx.BaseContext.__copy__ = _basecontext_copy
     _ctx.RequestContext.__copy__ = _requestcontext_copy
+
