@@ -565,3 +565,30 @@ LOGGING = {
     },
 }
 
+
+# ============================================================
+# PATCH COMPATIBILITÉ PYTHON 3.14 — Django Context.__copy__
+# En Python 3.14, copy(super()) ne renvoie plus une instance de la classe
+# parente mais un proxy `super`, ce qui casse BaseContext.__copy__ de Django.
+# Ce patch remplace __copy__ par une implémentation sûre pour toutes les
+# versions de Python (3.10, 3.11, 3.12, 3.13, 3.14+).
+# ============================================================
+import sys as _sys
+if _sys.version_info >= (3, 14):
+    import django.template.context as _ctx
+
+    def _basecontext_copy(self):
+        duplicate = self.__class__.__new__(self.__class__)
+        duplicate.dicts = self.dicts[:]
+        return duplicate
+
+    def _requestcontext_copy(self):
+        duplicate = self.__class__.__new__(self.__class__)
+        duplicate.dicts = self.dicts[:]
+        duplicate.request = self.request
+        duplicate._processors = getattr(self, '_processors', None)
+        duplicate._processors_index = getattr(self, '_processors_index', 0)
+        return duplicate
+
+    _ctx.BaseContext.__copy__ = _basecontext_copy
+    _ctx.RequestContext.__copy__ = _requestcontext_copy
