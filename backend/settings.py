@@ -570,41 +570,34 @@ LOGGING = {
 # PATCH COMPATIBILITÉ PYTHON 3.14 — Django Context.__copy__
 # En Python 3.14, copy(super()) ne renvoie plus une instance de la classe
 # parente mais un proxy `super`, ce qui casse BaseContext.__copy__ de Django.
-# Ce patch remplace __copy__ par une implémentation sûre pour toutes les
-# versions de Python (3.10, 3.11, 3.12, 3.13, 3.14+).
+# Solution : copie TOUS les attributs via __dict__ en une seule opération,
+# puis surcharge dicts et render_context avec des copies superficielles.
 # ============================================================
 import sys as _sys
 if _sys.version_info >= (3, 14):
     import django.template.context as _ctx
 
-    def _copy_render_context(render_ctx):
-        """Copie sûre d'un RenderContext (BaseContext sans render_context propre)."""
-        rc_dup = render_ctx.__class__.__new__(render_ctx.__class__)
-        rc_dup.dicts = render_ctx.dicts[:]
-        return rc_dup
-
     def _basecontext_copy(self):
+        """
+        Remplacement robuste de BaseContext.__copy__ pour Python 3.14+.
+        Utilise __dict__.update() pour copier TOUS les attributs d'un coup
+        (évite les AttributeError successifs sur template, autoescape, etc.)
+        """
         duplicate = self.__class__.__new__(self.__class__)
+        # Copie tous les attributs de l'instance d'un seul coup
+        duplicate.__dict__.update(self.__dict__)
+        # Copie superficielle de dicts (pile de contextes template) pour éviter les références partagées
         duplicate.dicts = self.dicts[:]
-        # render_context est présent sur Context mais pas sur RenderContext lui-même
-        if hasattr(self, 'render_context'):
-            duplicate.render_context = _copy_render_context(self.render_context)
-        if hasattr(self, 'autoescape'):
-            duplicate.autoescape = self.autoescape
+        # Copie superficielle de render_context si présent
+        if 'render_context' in self.__dict__:
+            rc = self.render_context
+            rc_dup = rc.__class__.__new__(rc.__class__)
+            rc_dup.__dict__.update(rc.__dict__)
+            rc_dup.dicts = rc.dicts[:]
+            duplicate.render_context = rc_dup
         return duplicate
 
-    def _requestcontext_copy(self):
-        duplicate = self.__class__.__new__(self.__class__)
-        duplicate.dicts = self.dicts[:]
-        if hasattr(self, 'render_context'):
-            duplicate.render_context = _copy_render_context(self.render_context)
-        if hasattr(self, 'autoescape'):
-            duplicate.autoescape = self.autoescape
-        duplicate.request = self.request
-        duplicate._processors = getattr(self, '_processors', None)
-        duplicate._processors_index = getattr(self, '_processors_index', 0)
-        return duplicate
-
+    # Un seul patch sur BaseContext suffit : Context et RequestContext héritent de lui
     _ctx.BaseContext.__copy__ = _basecontext_copy
-    _ctx.RequestContext.__copy__ = _requestcontext_copy
+
 
