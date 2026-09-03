@@ -212,3 +212,32 @@ def envoyer_push_fcm_sur_notification(sender, instance, created, **kwargs):
             "[Signal FCM] Notif #%d → %s.",
             instance.pk, instance.recipient.email,
         )
+
+
+# ============================================================
+# AUTOMATISATION SITE — Empêche les erreurs 500 dans l'Admin
+# ============================================================
+from django.db.models.signals import post_migrate
+
+@receiver(post_migrate)
+def meubler_site_par_defaut(sender, **kwargs):
+    """
+    S'assure que le Site correspondant à SITE_ID existe bien en base de données.
+    Évite les erreurs 500 dans l'administration Django et allauth si le site n'existe pas.
+    """
+    if getattr(sender, 'name', '') == 'django.contrib.sites':
+        try:
+            from django.contrib.sites.models import Site
+            site_id = getattr(settings, 'SITE_ID', 1)
+            site, created = Site.objects.get_or_create(
+                id=site_id,
+                defaults={
+                    'domain': 'accessoiresexclusifs.com',
+                    'name': 'Accessoires Exclusifs',
+                }
+            )
+            if created:
+                print(f"[SITE AUTO] Site #{site_id} créé automatiquement : {site.domain}")
+        except Exception as e:
+            print(f"[SITE AUTO] Erreur création site par défaut : {e}")
+
