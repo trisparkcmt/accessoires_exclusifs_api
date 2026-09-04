@@ -660,10 +660,11 @@ def generer_resume_conversation(messages_recents, resume_existant=''):
             if not api_key:
                 return resume_existant
             client_gemini = genai.Client(api_key=api_key)
-            response = client_gemini.models.generate_content(
-                model=gemini_model,
+            response = _generate_gemini_with_fallback(
+                client=client_gemini,
                 contents=prompt_resume,
                 config=types.GenerateContentConfig(temperature=0.1),
+                requested_model=gemini_model,
             )
             nouveau_resume = response.text.strip()
             print(f"[RESUME IA] Nouveau résumé généré (Gemini/{gemini_model}): '{nouveau_resume[:100]}...'", flush=True)
@@ -672,6 +673,68 @@ def generer_resume_conversation(messages_recents, resume_existant=''):
     except Exception as e:
         print(f"[RESUME IA] Erreur lors de la génération du résumé (non bloquant): {str(e)}", flush=True)
         return resume_existant  # On garde l'ancien résumé en cas d'erreur
+
+
+def _generate_gemini_with_fallback(client, contents, config, requested_model=None):
+    """
+    Appelle l'API Gemini avec le modèle demandé. Si le modèle retourne une erreur 404 (non disponible/déprécié),
+    tente automatiquement d'autres modèles compatibles (gemini-3.6-flash, gemini-flash-latest, etc.)
+    ou découvre dynamiquement la liste des modèles actifs autorisés sur l'API Key auprès de Google AI Studio.
+    """
+    default_requested = requested_model or os.environ.get('GEMINI_MODEL') or getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash')
+    candidates = [
+        default_requested,
+        'gemini-3.6-flash',
+        'gemini-flash-latest',
+        'gemini-2.5-flash',
+        'gemini-1.5-flash',
+        'gemini-2.0-flash',
+    ]
+    seen = set()
+    models_to_try = [m for m in candidates if m and not (m in seen or seen.add(m))]
+
+    last_error = None
+    for model_name in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=config,
+            )
+            print(f"[GEMINI SUCCESS] Appel réussi avec le modèle '{model_name}'.", flush=True)
+            return response
+        except Exception as e:
+            err_str = str(e).lower()
+            if '404' in err_str or 'not_found' in err_str or 'no longer available' in err_str or 'not found' in err_str:
+                print(f"[GEMINI FALLBACK] Modèle '{model_name}' non disponible (404). Tentative avec le modèle suivant...", flush=True)
+                last_error = e
+                continue
+            raise e
+
+    # Si tous les candidats prédéfinis échouent en 404, découvrir dynamiquement les modèles actifs sur Google AI Studio
+    try:
+        print("[GEMINI FALLBACK DYNAMIQUE] Recherche automatique des modèles actifs sur AI Studio...", flush=True)
+        available_models = list(client.models.list())
+        for m in available_models:
+            m_name = getattr(m, 'name', '') or str(m)
+            m_clean = m_name.replace('models/', '')
+            if 'flash' in m_clean.lower() and m_clean not in models_to_try:
+                try:
+                    response = client.models.generate_content(
+                        model=m_clean,
+                        contents=contents,
+                        config=config,
+                    )
+                    print(f"[GEMINI DYNAMIC SUCCESS] Appel réussi avec modèle découvert '{m_clean}'.", flush=True)
+                    return response
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    if last_error:
+        raise last_error
+    raise Exception("Aucun modèle Gemini valide disponible sur cette clé API.")
 
 
 
@@ -1002,13 +1065,14 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
                         client_g = genai.Client(api_key=gemini_key)
                         catalogue_fb = get_catalogue_context()
                         contents_g = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fb}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
-                        response_g = client_g.models.generate_content(
-                            model=gemini_model,
+                        response_g = _generate_gemini_with_fallback(
+                            client=client_g,
                             contents=contents_g,
                             config=types.GenerateContentConfig(
                                 temperature=0.2,
                                 response_mime_type='application/json',
-                            )
+                            ),
+                            requested_model=gemini_model,
                         )
                         reponse_texte = response_g.text.strip()
                     except Exception as gem_err:
@@ -1033,20 +1097,21 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
         if not api_key:
             return {"error": "Clé API Gemini manquante."}
 
-        print(f"[IA-RECOMMANDATION] Gemini: Envoi de la requete (modele: {gemini_model})...", flush=True)
+        print(f"[IA-RECOMMANDATION] Gemini: Envoi de la requete (modele cible: {gemini_model})...", flush=True)
         try:
             client = genai.Client(api_key=api_key)
 
             catalogue_fallback = get_catalogue_context()
             contents = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fallback}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
 
-            response = client.models.generate_content(
-                model=gemini_model,
+            response = _generate_gemini_with_fallback(
+                client=client,
                 contents=contents,
                 config=types.GenerateContentConfig(
                     temperature=0.2,
                     response_mime_type='application/json',
-                )
+                ),
+                requested_model=gemini_model,
             )
             reponse_texte = response.text.strip()
             print(f"[IA-RECOMMANDATION] Reponse recue de Gemini: '{reponse_texte[:120]}...'", flush=True)
