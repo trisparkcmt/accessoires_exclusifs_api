@@ -656,7 +656,7 @@ def generer_resume_conversation(messages_recents, resume_existant=''):
 
         else:
             api_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
-            gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash'))
+            gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash'))
             if not api_key:
                 return resume_existant
             client_gemini = genai.Client(api_key=api_key)
@@ -995,7 +995,7 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
                 print(f"[IA-RECOMMANDATION] Rate limit / Quota dépassé sur Groq (HTTP 429).", flush=True)
                 logger.warning('Groq Rate Limit 429')
                 gemini_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
-                gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash'))
+                gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash'))
                 if gemini_key:
                     print(f"[IA-RECOMMANDATION] Fallback automatique sur Gemini suite au rate limit Groq (429)...", flush=True)
                     try:
@@ -1029,7 +1029,7 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
     else:
         # Provider Gemini (defaut)
         api_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
-        gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash'))
+        gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash'))
         if not api_key:
             return {"error": "Clé API Gemini manquante."}
 
