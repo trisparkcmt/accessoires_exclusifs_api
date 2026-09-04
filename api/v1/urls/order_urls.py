@@ -51,7 +51,7 @@ urlpatterns = [
 
     # Factures
     path('commandes/<str:numero>/facture/', FactureDownloadView.as_view(), name='commande-facture-download'),
-    path('admin/factures/', AdminFactureListView.as_view(), name='admin-facture-list'),
+    path('admin/factures/', AdminFactureListView.as_view(), name='admin-factures-list'),
     path('admin/factures/<str:numero_facture>/renvoyer/', AdminFactureRenvoyerView.as_view(), name='admin-facture-renvoyer'),
 
     # Routeur Admin
