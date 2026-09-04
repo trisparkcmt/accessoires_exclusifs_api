@@ -764,54 +764,40 @@ def demander_recommandation_ia(prompt_utilisateur, history=None, client_info=Non
     if resume:
         print(f"[IA-RECOMMANDATION] Contexte: résumé existant ({len(resume)} chars)", flush=True)
     else:
-        print(f"[IA-RECOMMANDATION] Contexte: {len(history) if history else 0} messages bruts (pas encore de résumé)", flush=True)
-
+        print(f"[IA-RECOMMANDATION] Contexte: {len(history or [])} messages bruts (pas encore de résumé)", flush=True)
 
     system_prompt = f"""Tu es un expert parfumeur et conseiller de vente pour la boutique Accessoire Exclusif.
 {contexte_client_et_historique}
 Analyse la demande du client et utilise les OUTILS (Function Calling) mis à ta disposition si tu as besoin de chercher des produits, des parfums, des essences, des flacons ou des accessoires dans notre base de données.
 
-CONSIGNES DE CHOIX DES OUTILS (TRES IMPORTANT) :
-- Si le client s'intéresse à un parfum existant prêt à l'emploi (deja tout fait), utilise `rechercher_parfums`.
-- Si le client demande expressément une "composition", une "création", un parfum "sur-mesure", "personnalisé", "sur mesure" ou un mélange, c'est une création sur-mesure. Dans ce cas, n'appelle PAS `rechercher_parfums`. Tu dois appeler `rechercher_essences_et_ingredients` pour trouver les composants, ET appeler `obtenir_flacons_disponibles` pour proposer un flacon adapté.
-- Si la demande du client est VAGUE, GÉNÉRALE, DE PRÉSENTATION ou DE SÉLECTION (ex: "top 3 essence", "top items", "propose-moi quelque chose de bien", "recommande-moi des produits", "découverte", "idées cadeaux"), tu DOIS appeler simultanément `rechercher_essences_et_ingredients`, `rechercher_parfums` ET `rechercher_accessoires_et_diffuseurs` pour présenter un éventail complet incluant essences, parfums prêts à l'emploi, accessoires et diffuseurs.
+CONSIGNES STRICTES DE SELECTION ET LIMITATION DES PRODUITS (TRES IMPORTANT) :
+
+1. SI LE CLIENT DEMANDE UNE CATÉGORIE PRÉCISE :
+- Si le client demande spécifiquement des PARFUMS EXISTANTS (prêts à l'emploi) : Propose UNIQUEMENT des parfums dans `parfums_existants_recommandes` (MAXIMUM 3 PARFUMS). Ne propose AUCUN accessoire, AUCUN diffuseur et AUCUNE création sur-mesure (garde `flacon_id = 0`, `essences_pre_faites = []`, `accessoires = []`, `diffuseurs = []`).
+- Si le client demande spécifiquement des ACCESSOIRES ou DIFFUSEURS : Propose UNIQUEMENT des produits dans `accessoires` ou `diffuseurs` (MAXIMUM 3 PRODUITS AU TOTAL). Ne propose AUCUN parfum et AUCUNE création sur-mesure (garde `parfums_existants_recommandes = []`, `flacon_id = 0`, `essences_pre_faites = []`).
+- Si le client demande un PARFUM PERSONNALISÉ / CRÉATION SUR-MESURE : Propose UNE SEULE (1 SEULE) création sur-mesure avec `flacon_id` et ses essences dans `essences_pre_faites`. Ne propose AUCUN parfum existant prêt à l'emploi, AUCUN accessoire et AUCUN diffuseur (garde `parfums_existants_recommandes = []`, `accessoires = []`, `diffuseurs = []`).
+
+2. SI LA DEMANDE EST VAGUE, DÉCOUVERTE OU SANS CATÉGORIE SPÉCIFIQUE (ex: "propose-moi quelque chose", "idées cadeaux", "surprise-moi") :
+- Ne propose PAS les 3 catégories en même temps. Choisis UNIQUEMENT 1 SEUL PRODUIT parmi l'une des catégories (soit 1 seul parfum, soit 1 seul accessoire, soit 1 seule création sur-mesure). NE SURCHARGE JAMAIS le client.
+
+3. SIMPLE SALUTATION OU POLITESSE ("bonjour", "hello", "hi") :
+- Réponds uniquement avec un message chaleureux dans la langue du client SANS appeler d'outils et laisse TOUTES les listes vides (`flacon_id = 0`, `parfums_existants_recommandes = []`, `accessoires = []`, `diffuseurs = []`, `essences_pre_faites = []`).
 
 RÈGLES IMPÉRATIVES :
 0. DÉTECTION DE LA LANGUE ET RÉPONSE (EXIGENCE ABSOLUE ET IMPÉRATIVE) :
-- Tu DOIS IMPÉRATIVEMENT détecter et utiliser la LANGUE DU DERNIER PROMPT fourni par le client.
-- Si la demande du client est en ANGLAIS (ex: "give me top 3 essence and give top 3 item", "I want a sweet perfume"), le champ "message" de ta réponse DOIT ÊTRE 100% EN ANGLAIS.
-- Si la demande du client est en FRANÇAIS (ex: "Je cherche un parfum doux", "Bonjour"), le champ "message" de ta réponse DOIT ÊTRE 100% EN FRANÇAIS.
-- Si la demande du client est dans une AUTRE LANGUE (ex: espagnol, allemand, arabe), le champ "message" DOIT ÊTRE DANS CETTE MÊME LANGUE.
-- Ne bascule JAMAIS en français par défaut si le client s'est adressé à toi en anglais ou dans une autre langue.
+- Tu DOIS IMPÉRATIVEMENT détecter et utiliser la LANGUE DU DERNIER PROMPT fourni par le client (français, anglais, etc.).
 - Écris sans AUCUNE abréviation. Écris TOUJOURS les mots en entier (« pour », « tout », « toujours », « s'il vous plaît », « beaucoup » / "for", "with", "always", "please", "thank you").
 
-1. COMPORTEMENT ET LOGIQUE DE CONVERSATION :
-- Si la demande est une simple salutation ou une politesse ("bonjour", "hello"), réponds chaleureusement dans "message" (DANS LA LANGUE DU CLIENT) sans appeler d'outils et laisse les listes de produits vides avec flacon_id = 0.
-- Si le client cherche une recommandation ou une création sur-mesure, utilise les outils pour interroger la base de données puis propose la meilleure sélection.
-- Si la demande n'est pas très précise ou demande un aperçu/top produits, propose une offre diversifiée combinant essences, parfums existants, accessoires et diffuseurs d'ambiance.
-
-2. COMPOSITION SUR-MESURE VS RECOMMANDATION SIMPLE :
-- Un flacon ("flacon_id") ne doit être choisi QUE pour une création personnalisée sur-mesure. Pour une recommandation générale d'essences ou de produits, garde `flacon_id = 0`.
-- Pour "essences_pre_faites", fournis la liste des objets d'essences recommandées avec `{{"id": <id_essence>, "quantite_ml": 0}}` (ou avec `quantite_ml` s'il s'agit d'un mélange).
-- Pour "parfums_existants_recommandes", "accessoires", et "diffuseurs", fournis la liste de leurs identifiants numériques [id1, id2]. Le serveur Python récupèrera automatiquement toutes les caractéristiques des produits depuis la base de données.
-
-3. VENTE COMPLÉMENTAIRE ET VARIÉTÉ DE PRODUITS :
-- Quand la demande est générale ou pour du cross-selling, n'hésite pas à remplir à la fois "essences_pre_faites", "parfums_existants_recommandes", "accessoires" et "diffuseurs" avec les identifiants issus des outils.
-
-4. FORMAT DE RÉPONSE FINAL :
-Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSON strict respectant la structure suivante (sans balise ```json).
-ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que des EXEMPLES D'ILLUSTRATION de la structure. Tu DOIS les remplacer par les vrais IDs et les vraies valeurs issus de la recherche de produits :
+1. FORMAT DE RÉPONSE FINAL :
+Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSON strict respectant la structure suivante (sans balise ```json) :
 {{
-    "message": "Ton message chaleureux expliquant tes choix rédigé STRICTEMENT DANS LA LANGUE DU DERNIER PROMPT (français ou anglais, 2 phrases maximum, mots complets, sans abréviation).",
+    "message": "Ton message chaleureux expliquant tes choix rédigé STRICTEMENT DANS LA LANGUE DU DERNIER PROMPT (2 phrases maximum, mots complets, sans abréviation).",
     "quantite_demandee_ml": 0,
     "budget_max_fcfa": 0,
     "flacon_id": 0,
-    "essences_pre_faites": [
-        {{"id": 11, "quantite_ml": 0}},
-        {{"id": 12, "quantite_ml": 0}}
-    ],
+    "essences_pre_faites": [],
     "ingredients_sur_mesure": [],
-    "parfums_existants_recommandes": [1],
+    "parfums_existants_recommandes": [],
     "accessoires": [],
     "diffuseurs": []
 }}
@@ -1174,9 +1160,20 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
     if is_custom_creation:
         parsed = normaliser_reponse_composition(parsed)
         parsed = ajuster_composition_45_percent(parsed)
+        # Une création sur-mesure est exclusive : on vide les autres catégories
+        parsed['parfums_existants_recommandes'] = []
+        parsed['accessoires'] = []
+        parsed['diffuseurs'] = []
     else:
-        # Réponse directe (salutation, parfums existants, accessoires) — on ne touche à rien
-        print(f"[IA-RECOMMANDATION] Pas de création sur mesure détectée — la réponse IA est transmise telle quelle.", flush=True)
+        # Réponse directe (salutation, parfums existants, accessoires)
+        # Plafonnier strict à 3 éléments maximum par catégorie ciblée
+        if parsed.get('parfums_existants_recommandes'):
+            parsed['parfums_existants_recommandes'] = parsed['parfums_existants_recommandes'][:3]
+        if parsed.get('accessoires') or parsed.get('diffuseurs'):
+            parsed['accessoires'] = parsed.get('accessoires', [])[:3]
+            rem = max(0, 3 - len(parsed['accessoires']))
+            parsed['diffuseurs'] = parsed.get('diffuseurs', [])[:rem]
+        print(f"[IA-RECOMMANDATION] Post-traitement Python des limites appliqué avec succès.", flush=True)
 
     # 2. Validation du schéma JSON
     valid, validation_error = validate_ia_response_schema(parsed)
