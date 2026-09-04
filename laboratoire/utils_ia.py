@@ -164,23 +164,32 @@ def ajuster_composition_45_percent(reponse_dict):
 
 # --- TOOLS PYTHON POUR FUNCTION CALLING ---
 
+# --- TOOLS PYTHON POUR FUNCTION CALLING ---
+
 def tool_rechercher_parfums(notes=None, budget_max=None, contenance_ml=None, **kwargs):
     """Recherche des parfums dans la base de données."""
     print(f"\n[TOOL CALL] tool_rechercher_parfums - Parametres: notes={notes}, budget_max={budget_max}, contenance_ml={contenance_ml}", flush=True)
-    queryset = Parfum.objects.filter(actif=True, stock_quantite__gt=0)
+    base_qs = Parfum.objects.filter(actif=True, stock_quantite__gt=0)
+    queryset = base_qs
     has_filter = False
 
-    if notes:
+    GENERIC_WORDS = {'personalized', 'personnalise', 'personnalisé', 'perfume', 'parfum', 'custom', 'sur-mesure', 'sur mesure', 'good', 'morning', '50ml', '100ml', 'want', 'like', 'need'}
+    cleaned_notes = notes
+    if notes and isinstance(notes, str):
+        words = [w for w in notes.lower().split() if w not in GENERIC_WORDS and len(w) > 2]
+        cleaned_notes = " ".join(words) if words else None
+
+    if cleaned_notes:
         has_filter = True
         query = (
-            models.Q(nom__icontains=notes) |
-            models.Q(notes_tete__icontains=notes) |
-            models.Q(notes_coeur__icontains=notes) |
-            models.Q(notes_fond__icontains=notes) |
-            models.Q(description_courte__icontains=notes) |
-            models.Q(description_longue__icontains=notes) |
-            models.Q(description_ia__icontains=notes) |
-            models.Q(tags__nom__icontains=notes)
+            models.Q(nom__icontains=cleaned_notes) |
+            models.Q(notes_tete__icontains=cleaned_notes) |
+            models.Q(notes_coeur__icontains=cleaned_notes) |
+            models.Q(notes_fond__icontains=cleaned_notes) |
+            models.Q(description_courte__icontains=cleaned_notes) |
+            models.Q(description_longue__icontains=cleaned_notes) |
+            models.Q(description_ia__icontains=cleaned_notes) |
+            models.Q(tags__nom__icontains=cleaned_notes)
         )
         queryset = queryset.filter(query)
     if budget_max is not None:
@@ -196,8 +205,10 @@ def tool_rechercher_parfums(notes=None, budget_max=None, contenance_ml=None, **k
         except (ValueError, TypeError):
             pass
 
-    # Sans filtre : ordre aléatoire pour varier les résultats
-    if not has_filter:
+    if not queryset.exists():
+        print(f"[TOOL FALLBACK] tool_rechercher_parfums: Aucun parfum avec filtres. Fallback sur parfums actifs.", flush=True)
+        queryset = base_qs.order_by('?')
+    elif not has_filter:
         queryset = queryset.order_by('?')
 
     results = []
@@ -220,30 +231,45 @@ def tool_rechercher_essences_et_ingredients(recherche=None, categorie=None, **kw
         actif=True, stock_ml__gt=0
     ).values_list('essence_id', flat=True).distinct()
 
-    essences_qs = Essence.objects.filter(actif=True, prix_par_ml__gt=0, id__in=essence_ids_en_stock)
-    ingredients_qs = Ingredient.objects.filter(actif=True)
+    base_essences_qs = Essence.objects.filter(actif=True, prix_par_ml__gt=0, id__in=essence_ids_en_stock)
+    base_ingredients_qs = Ingredient.objects.filter(actif=True)
+
+    essences_qs = base_essences_qs
+    ingredients_qs = base_ingredients_qs
     has_filter = False
 
-    if recherche:
+    GENERIC_WORDS = {'personalized', 'personnalise', 'personnalisé', 'perfume', 'parfum', 'custom', 'sur-mesure', 'sur mesure', 'good', 'morning', '50ml', '100ml', 'bottle', 'flacon', 'want', 'like', 'need', 'please'}
+    cleaned_recherche = recherche
+    if recherche and isinstance(recherche, str):
+        words = [w for w in recherche.lower().split() if w not in GENERIC_WORDS and len(w) > 2]
+        cleaned_recherche = " ".join(words) if words else None
+
+    if cleaned_recherche:
         has_filter = True
         e_query = (
-            models.Q(nom__icontains=recherche) |
-            models.Q(notes_tete__icontains=recherche) |
-            models.Q(notes_coeur__icontains=recherche) |
-            models.Q(notes_fond__icontains=recherche) |
-            models.Q(description__icontains=recherche)|
-            models.Q(description_ia__icontains=recherche)
+            models.Q(nom__icontains=cleaned_recherche) |
+            models.Q(notes_tete__icontains=cleaned_recherche) |
+            models.Q(notes_coeur__icontains=cleaned_recherche) |
+            models.Q(notes_fond__icontains=cleaned_recherche) |
+            models.Q(description__icontains=cleaned_recherche)|
+            models.Q(description_ia__icontains=cleaned_recherche)
         )
         essences_qs = essences_qs.filter(e_query)
-        ingredients_qs = ingredients_qs.filter(models.Q(nom__icontains=recherche) | models.Q(description__icontains=recherche))
+        ingredients_qs = ingredients_qs.filter(models.Q(nom__icontains=cleaned_recherche) | models.Q(description__icontains=cleaned_recherche))
 
     if categorie:
         has_filter = True
-        essences_qs = essences_qs.filter(categorie=categorie)
+        essences_qs = essences_qs.filter(categorie__icontains=categorie)
 
-    # Sans filtre : ordre aléatoire pour varier les résultats
-    if not has_filter:
+    if not essences_qs.exists():
+        print(f"[TOOL FALLBACK] tool_rechercher_essences_et_ingredients: Aucune essence avec filtres. Fallback sur toutes les essences dispo.", flush=True)
+        essences_qs = base_essences_qs.order_by('?')
+    elif not has_filter:
         essences_qs = essences_qs.order_by('?')
+
+    if not ingredients_qs.exists():
+        ingredients_qs = base_ingredients_qs.order_by('?')
+    elif not has_filter:
         ingredients_qs = ingredients_qs.order_by('?')
 
     essences_res = []
@@ -303,12 +329,19 @@ def tool_obtenir_flacons_disponibles(contenance_souhaitee_ml=None, **kwargs):
 def tool_rechercher_accessoires_et_diffuseurs(recherche=None, budget_max=None, **kwargs):
     """Recherche des accessoires ou diffuseurs d'ambiance."""
     print(f"\n[TOOL CALL] tool_rechercher_accessoires_et_diffuseurs - Parametres: recherche={recherche}, budget_max={budget_max}", flush=True)
-    acc_qs = Accessoire.objects.filter(actif=True)
-    diff_qs = DiffuseurParfum.objects.filter(actif=True, stock_quantite__gt=0)
+    base_acc = Accessoire.objects.filter(actif=True)
+    base_diff = DiffuseurParfum.objects.filter(actif=True, stock_quantite__gt=0)
+
+    acc_qs = base_acc
+    diff_qs = base_diff
 
     if recherche:
         acc_qs = acc_qs.filter(models.Q(nom__icontains=recherche) | models.Q(description_courte__icontains=recherche))
         diff_qs = diff_qs.filter(models.Q(nom__icontains=recherche) | models.Q(description__icontains=recherche))
+        if not acc_qs.exists():
+            acc_qs = base_acc.order_by('?')
+        if not diff_qs.exists():
+            diff_qs = base_diff.order_by('?')
     else:
         acc_qs = acc_qs.order_by('?')
         diff_qs = diff_qs.order_by('?')
@@ -772,6 +805,11 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
                             'content': json.dumps(tool_result, ensure_ascii=False)
                         })
 
+                    messages.append({
+                        'role': 'user',
+                        'content': "Toutes les recherches d'outils ont été effectuées avec succès. Génère MAINTENANT la réponse finale sous la forme d'un objet JSON strict respectant le schéma demandé (avec 'message', 'flacon_id', 'essences_pre_faites', etc.). Ne fais plus d'appels d'outils."
+                    })
+
                     second_payload = {
                         'model': model_name,
                         'messages': messages,
@@ -895,6 +933,11 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
                             'content': json.dumps(tool_result, ensure_ascii=False)
                         })
 
+                    messages.append({
+                        'role': 'user',
+                        'content': "Toutes les recherches d'outils ont été effectuées avec succès. Génère MAINTENANT la réponse finale sous la forme d'un objet JSON strict respectant le schéma demandé (avec 'message', 'flacon_id', 'essences_pre_faites', etc.). Ne fais plus d'appels d'outils."
+                    })
+
                     second_payload = {
                         'model': groq_model,
                         'messages': messages,
@@ -903,16 +946,44 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
                     }
                     print(f"[IA-RECOMMANDATION] Groq: Envoi du deuxieme appel avec les resultats des outils...", flush=True)
                     second_resp = _post_groq(second_payload)
+                    
                     if second_resp.status_code != 200:
                         print(f"[IA-RECOMMANDATION] ERREUR Groq 2eme appel ({second_resp.status_code}): {second_resp.text}", flush=True)
-                    second_resp.raise_for_status()
-                    second_data = second_resp.json()
-                    if 'choices' in second_data and second_data['choices']:
-                        reponse_texte = second_data['choices'][0].get('message', {}).get('content')
-                        print(f"[IA-RECOMMANDATION] Reponse finale recue de Groq: '{reponse_texte[:120]}...'", flush=True)
+                        # Tenter de récupérer 'failed_generation' si présent dans l'erreur 400 de Groq
+                        try:
+                            err_json = second_resp.json()
+                            failed_gen = err_json.get('error', {}).get('failed_generation')
+                            if failed_gen:
+                                extracted = _extract_json_from_text(failed_gen)
+                                if extracted:
+                                    print(f"[IA-RECOMMANDATION] JSON extrait avec succès depuis 'failed_generation' de Groq!", flush=True)
+                                    reponse_texte = json.dumps(extracted, ensure_ascii=False)
+                        except Exception as parse_err:
+                            print(f"[IA-RECOMMANDATION] Impossible d'analyser failed_generation: {parse_err}", flush=True)
+
+                        # Si toujours pas de réponse texte, faire une tentative fallback sans response_format
+                        if not reponse_texte:
+                            print(f"[IA-RECOMMANDATION] Groq: Tentative fallback du 2ème appel sans response_format...", flush=True)
+                            fallback_payload = {
+                                'model': groq_model,
+                                'messages': messages,
+                                'temperature': 0.2,
+                            }
+                            fb_resp = _post_groq(fallback_payload)
+                            if fb_resp.status_code == 200:
+                                fb_data = fb_resp.json()
+                                reponse_texte = fb_data.get('choices', [{}])[0].get('message', {}).get('content')
+                                print(f"[IA-RECOMMANDATION] Reponse fallback recue de Groq sans response_format: '{reponse_texte[:120] if reponse_texte else ''}...'", flush=True)
+                            else:
+                                second_resp.raise_for_status()
+                    else:
+                        second_data = second_resp.json()
+                        if 'choices' in second_data and second_data['choices']:
+                            reponse_texte = second_data['choices'][0].get('message', {}).get('content')
+                            print(f"[IA-RECOMMANDATION] Reponse finale recue de Groq: '{reponse_texte[:120] if reponse_texte else ''}...'", flush=True)
                 else:
                     reponse_texte = message_obj.get('content')
-                    print(f"[IA-RECOMMANDATION] Reponse directe recue de Groq: '{reponse_texte[:120]}...'", flush=True)
+                    print(f"[IA-RECOMMANDATION] Reponse directe recue de Groq: '{reponse_texte[:120] if reponse_texte else ''}...'", flush=True)
             else:
                 reponse_texte = response.text
                 print(f"[IA-RECOMMANDATION] Reponse inattendue de Groq: {reponse_texte}", flush=True)
