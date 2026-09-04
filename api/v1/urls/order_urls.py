@@ -45,16 +45,14 @@ urlpatterns = [
     path('commandes/', CommandeListView.as_view(), name='commandes-list'),
     path('commandes/passer/', PasserCommandeView.as_view(), name='commande-passer'),
     path('commandes/passer-composition-directe/', PasserCommandeCompositionDirecteView.as_view(), name='commande-passer-composition-directe'),
+    path('commandes/statistiques-benefices/', AdminStatistiquesBeneficesView.as_view(), name='admin-statistiques-benefices'),
     path('commandes/<str:numero>/', CommandeDetailView.as_view(), name='commande-detail'),
     path('commandes/<str:numero>/annuler/', CommandeAnnulerView.as_view(), name='commande-annuler'),
 
     # Factures
     path('commandes/<str:numero>/facture/', FactureDownloadView.as_view(), name='commande-facture-download'),
-    path('admin/factures/', AdminFactureListView.as_view(), name='admin-factures-list'),
+    path('admin/factures/', AdminFactureListView.as_view(), name='admin-facture-list'),
     path('admin/factures/<str:numero_facture>/renvoyer/', AdminFactureRenvoyerView.as_view(), name='admin-facture-renvoyer'),
-
-    # Statistiques financières (admin only)
-    path('commandes/statistiques-benefices/', AdminStatistiquesBeneficesView.as_view(), name='admin-statistiques-benefices'),
 
     # Routeur Admin
     path('', include(router.urls)),

@@ -1015,44 +1015,49 @@ class AdminCodePromoViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         instance = serializer.save()
         
-        # Envoi de la notification et de l'e-mail uniquement lors de la création
+        # Envoi de la notification et de l'e-mail de manière asynchrone en arrière-plan
+        import threading
         from utilisateur.models import Notification
         from django.core.mail import EmailMultiAlternatives
         from django.template.loader import render_to_string
         from django.utils.html import strip_tags
         from django.conf import settings
-        
-        for client in instance.clients_autorises.all():
-            user = client.user
-            subject = "Nouveau code promo exclusif pour vous !"
-            
-            # Notification FCM via base
-            Notification.objects.create(
-                recipient=user,
-                type='code_promo_admin',
-                title='Code promo exclusif disponible !',
-                message=f"Profitez de {instance.reduction_pourcentage}% de réduction avec le code : {instance.code}",
-                url='/api/v1/orders/panier/',
-                metadata={
-                    'code_promo': instance.code,
-                    'reduction_pourcentage': str(instance.reduction_pourcentage)
-                }
-            )
-            
-            # Envoi d'email HTML embellit
-            context = {
-                'prenom': user.first_name or user.username,
-                'user': user,
-                'code_promo': instance.code,
-                'reduction_pourcentage': instance.reduction_pourcentage,
-                'frontend_url': settings.FRONTEND_URL,
-            }
-            html_content = render_to_string('emails/code_promo_exclusif.html', context)
-            text_content = strip_tags(html_content)
-            
-            msg = EmailMultiAlternatives(subject, text_content, settings.DEFAULT_FROM_EMAIL, [user.email])
-            msg.attach_alternative(html_content, "text/html")
-            msg.send(fail_silently=True)
+
+        def _send_promo_notifications(promo_instance):
+            try:
+                for client in promo_instance.clients_autorises.all():
+                    user = client.user
+                    subject = "Nouveau code promo exclusif pour vous !"
+                    
+                    Notification.objects.create(
+                        recipient=user,
+                        type='code_promo_admin',
+                        title='Code promo exclusif disponible !',
+                        message=f"Profitez de {promo_instance.reduction_pourcentage}% de réduction avec le code : {promo_instance.code}",
+                        url='/api/v1/orders/panier/',
+                        metadata={
+                            'code_promo': promo_instance.code,
+                            'reduction_pourcentage': str(promo_instance.reduction_pourcentage)
+                        }
+                    )
+                    
+                    context = {
+                        'prenom': user.first_name or user.username,
+                        'user': user,
+                        'code_promo': promo_instance.code,
+                        'reduction_pourcentage': promo_instance.reduction_pourcentage,
+                        'frontend_url': settings.FRONTEND_URL,
+                    }
+                    html_content = render_to_string('emails/code_promo_exclusif.html', context)
+                    text_content = strip_tags(html_content)
+                    
+                    msg = EmailMultiAlternatives(subject, text_content, settings.DEFAULT_FROM_EMAIL, [user.email])
+                    msg.attach_alternative(html_content, "text/html")
+                    msg.send(fail_silently=True)
+            except Exception as err:
+                logger.error(f"[CODE-PROMO-EMAIL] Erreur d'envoi d'emails promo: {err}")
+
+        threading.Thread(target=_send_promo_notifications, args=(instance,), daemon=True).start()
 
 
 # ============================================================

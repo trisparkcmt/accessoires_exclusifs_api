@@ -397,6 +397,11 @@ class CodePromoAdminSerializer(serializers.ModelSerializer):
         model = CodePromoAdmin
         fields = ['id', 'code', 'reduction_pourcentage', 'est_actif', 'clients_autorises', 'date_creation', 'date_modification']
 
+    def validate_code(self, value):
+        if value:
+            return value.strip().upper()
+        return value
+
     def validate_clients_autorises(self, users):
         clients = []
         for user in users:
