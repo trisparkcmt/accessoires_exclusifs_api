@@ -27,6 +27,7 @@ def normaliser_reponse_composition(reponse_dict):
             reponse_dict['flacon_id'] = 0
 
     essences = []
+    vus_essences = set()
     for item in (reponse_dict.get('essences_pre_faites', []) or []):
         # Fallback : si l'IA retourne un simple entier ou une chaîne numérique (ex: [11, 12] ou ["11", "12"])
         if isinstance(item, (int, float, str)) and not isinstance(item, bool):
@@ -43,17 +44,26 @@ def normaliser_reponse_composition(reponse_dict):
         item_norm = dict(item)
         raw_id = item_norm.get('id')
         try:
-            item_norm['id'] = int(raw_id) if raw_id is not None else None
+            e_id = int(raw_id) if raw_id is not None else None
         except (ValueError, TypeError):
             continue
+
+        if not e_id or e_id in vus_essences:
+            continue
+
+        # Vérifier si l'essence existe réellement en BD et est active
+        if not Essence.objects.filter(id=e_id, actif=True).exists():
+            print(f"[NORMALISE] Essence ID {e_id} ignorée (inexistante en BD ou inactive).", flush=True)
+            continue
+
+        vus_essences.add(e_id)
+        item_norm['id'] = e_id
 
         try:
             item_norm['quantite_ml'] = round(float(item_norm.get('quantite_ml', 0) or 0), 2)
         except (TypeError, ValueError):
             item_norm['quantite_ml'] = 0.0
 
-        if item_norm.get('id') is None:
-            continue
         if item_norm['quantite_ml'] <= 0:
             item_norm['quantite_ml'] = 1.0
         essences.append(item_norm)
