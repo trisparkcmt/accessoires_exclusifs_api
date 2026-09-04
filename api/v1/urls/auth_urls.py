@@ -19,7 +19,9 @@ from utilisateur.views import (
     WebLoginView, MobileLoginView, DeprecatedLoginView, HybridTokenRefreshView,
     ThrottledPasswordResetView, ThrottledRegisterView,
     ThrottledVerifyEmailView, ThrottledResendEmailVerificationView,
-    CustomLogoutView
+    CustomLogoutView,
+    # Firebase Cloud Messaging (FCM)
+    register_fcm_device, unregister_fcm_device
 )
 
 urlpatterns = [
@@ -31,6 +33,10 @@ urlpatterns = [
     path('password/reset/', ThrottledPasswordResetView.as_view(), name='rest_password_reset'),
     path('logout/', CustomLogoutView.as_view(), name='rest_logout'),
     path('', include('dj_rest_auth.urls')),
+
+    # Firebase Cloud Messaging (Push Notifications)
+    path('fcm/register/', register_fcm_device, name='fcm-register'),
+    path('fcm/unregister/', unregister_fcm_device, name='fcm-unregister'),
 
     # Inscription avec limitation anti-abus, mêmes URLs que dj-rest-auth
     path('registration/', ThrottledRegisterView.as_view(), name='rest_register'),
