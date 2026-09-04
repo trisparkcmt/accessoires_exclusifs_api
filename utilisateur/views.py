@@ -199,10 +199,26 @@ class ThrottledPasswordResetView(PasswordResetView):
 class CustomLogoutView(LogoutView):
     """
     Vue de déconnexion personnalisée.
-    S'assure que les cookies JWT sont correctement supprimés avec les attributs
-    SameSite=None et Secure=True nécessaires pour le Cross-Origin/HTTPS.
+    - Désactive automatiquement les tokens FCM de l'utilisateur déconnecté.
+    - S'assure que les cookies JWT sont correctement supprimés avec les attributs
+      SameSite=None et Secure=True nécessaires pour le Cross-Origin/HTTPS.
     """
     def logout(self, request):
+        # Désactiver les tokens FCM de l'utilisateur courant pour éviter tout push non désiré
+        if request.user and request.user.is_authenticated:
+            try:
+                from utilisateur.models import FCMDevice
+                token = None
+                if hasattr(request, 'data') and isinstance(request.data, dict):
+                    token = request.data.get('registration_token')
+
+                if token:
+                    FCMDevice.objects.filter(registration_token=token, user=request.user).update(active=False)
+                else:
+                    FCMDevice.objects.filter(user=request.user).update(active=False)
+            except Exception as e:
+                pass
+
         response = super().logout(request)
         
         cookie_name = dj_rest_auth_settings.JWT_AUTH_COOKIE
