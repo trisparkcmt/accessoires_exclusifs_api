@@ -785,13 +785,19 @@ CONSIGNES STRICTES DE SELECTION ET LIMITATION DES PRODUITS (TRES IMPORTANT) :
 
 RÈGLES IMPÉRATIVES :
 0. DÉTECTION DE LA LANGUE ET RÉPONSE (EXIGENCE ABSOLUE ET IMPÉRATIVE) :
-- Tu DOIS IMPÉRATIVEMENT détecter et utiliser la LANGUE DU DERNIER PROMPT fourni par le client (français, anglais, etc.).
+- Tu DOIS IMPÉRATIVEMENT détecter et utiliser la LANGUE DU MESSAGE ACTUEL DU CLIENT (le message immédiat qu'il vient d'envoyer : français, anglais, etc.).
+- ATTENTION CONTEXTE / HISTORIQUE : NE TE FIE PAS à la langue des messages précédents dans l'historique si le client a changé de langue dans son message actuel !
+  - Si le message actuel du client est en anglais (ex: "hello", "I want a perfume"), ta réponse DOIT être STRICTEMENT ET INTÉGRALEMENT EN ANGLAIS.
+  - Si le message actuel du client est en français (ex: "bonjour", "je cherche un parfum"), ta réponse DOIT être STRICTEMENT EN FRANÇAIS.
 - Écris sans AUCUNE abréviation. Écris TOUJOURS les mots en entier (« pour », « tout », « toujours », « s'il vous plaît », « beaucoup » / "for", "with", "always", "please", "thank you").
 
-1. FORMAT DE RÉPONSE FINAL :
+1. RÈGLE FLACON / ESSENCES (SUR-MESURE) :
+- Si tu ne proposes pas d'essences dans `essences_pre_faites`, tu NE DOIS PAS non plus proposer de flacon (`flacon_id` DOIT ÊTRE ÉGAL À 0). Un `flacon_id` (> 0) n'est autorisé QUE SI `essences_pre_faites` contient au moins une essence.
+
+2. FORMAT DE RÉPONSE FINAL :
 Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSON strict respectant la structure suivante (sans balise ```json) :
 {{
-    "message": "Ton message chaleureux expliquant tes choix rédigé STRICTEMENT DANS LA LANGUE DU DERNIER PROMPT (2 phrases maximum, mots complets, sans abréviation).",
+    "message": "Ton message chaleureux expliquant tes choix rédigé STRICTEMENT DANS LA LANGUE DU MESSAGE ACTUEL DU CLIENT (2 phrases maximum, mots complets, sans abréviation).",
     "quantite_demandee_ml": 0,
     "budget_max_fcfa": 0,
     "flacon_id": 0,
@@ -1166,6 +1172,9 @@ Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSO
         parsed['diffuseurs'] = []
     else:
         # Réponse directe (salutation, parfums existants, accessoires)
+        # S'il n'y a pas d'essences pré-faites, on garantit flacon_id = 0 et essences_pre_faites = []
+        parsed['flacon_id'] = 0
+        parsed['essences_pre_faites'] = []
         # Plafonnier strict à 3 éléments maximum par catégorie ciblée
         if parsed.get('parfums_existants_recommandes'):
             parsed['parfums_existants_recommandes'] = parsed['parfums_existants_recommandes'][:3]
@@ -1173,7 +1182,7 @@ Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSO
             parsed['accessoires'] = parsed.get('accessoires', [])[:3]
             rem = max(0, 3 - len(parsed['accessoires']))
             parsed['diffuseurs'] = parsed.get('diffuseurs', [])[:rem]
-        print(f"[IA-RECOMMANDATION] Post-traitement Python des limites appliqué avec succès.", flush=True)
+        print(f"[IA-RECOMMANDATION] Post-traitement Python des limites et réinitialisation flacon_id appliqué avec succès.", flush=True)
 
     # 2. Validation du schéma JSON
     valid, validation_error = validate_ia_response_schema(parsed)
