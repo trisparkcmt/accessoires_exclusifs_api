@@ -1114,11 +1114,17 @@ class AdminStatistiquesBeneficesView(APIView):
 
         for lot in lots_qs:
             # CA généré sur ce lot pour les commandes filtrées
+            # LotEssenceConsommation n'a pas de FK directe vers Commande :
+            # il faut filtrer via les lignes de parfum perso ou produit fini essence
+            filtre_conso = (
+                Q(ligne_parfum_perso__commande__in=commandes_ids) |
+                Q(ligne_produit_fini_essence__commande__in=commandes_ids)
+            )
             consommations = lot.consommations.filter(
-                commande__in=commandes_ids
+                filtre_conso
             ).aggregate(
                 ca=Sum('prix_vente_attribue'),
-                ml_consommes=Sum('quantite_ml_utilisee')
+                ml_consommes=Sum('quantite_ml')  # champ réel sur le modèle
             )
             ca_lot = Decimal(str(consommations['ca'] or 0))
             ml_lot = Decimal(str(consommations['ml_consommes'] or 0))
