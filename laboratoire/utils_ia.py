@@ -988,6 +988,37 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
                 reponse_texte = response.text
                 print(f"[IA-RECOMMANDATION] Reponse inattendue de Groq: {reponse_texte}", flush=True)
 
+        except requests.exceptions.HTTPError as e:
+            status_code = getattr(e.response, 'status_code', None)
+            if status_code == 429:
+                print(f"[IA-RECOMMANDATION] Rate limit / Quota dépassé sur Groq (HTTP 429).", flush=True)
+                logger.warning('Groq Rate Limit 429')
+                gemini_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
+                if gemini_key:
+                    print(f"[IA-RECOMMANDATION] Fallback automatique sur Gemini suite au rate limit Groq (429)...", flush=True)
+                    try:
+                        client_g = genai.Client(api_key=gemini_key)
+                        catalogue_fb = get_catalogue_context()
+                        contents_g = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fb}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
+                        response_g = client_g.models.generate_content(
+                            model='gemini-2.5-flash',
+                            contents=contents_g,
+                            config=types.GenerateContentConfig(
+                                temperature=0.2,
+                                response_mime_type='application/json',
+                            )
+                        )
+                        reponse_texte = response_g.text.strip()
+                    except Exception as gem_err:
+                        print(f"[IA-RECOMMANDATION] Fallback Gemini a aussi échoué après 429 Groq: {gem_err}", flush=True)
+                        return {"error": "Quota d'IA temporairement atteint. Réessayez plus tard."}
+                else:
+                    return {"error": "Quota d'IA temporairement atteint. Réessayez plus tard."}
+            else:
+                print(f"[IA-RECOMMANDATION] ERREUR HTTP Groq ({status_code}): {str(e)}", flush=True)
+                logger.exception('Erreur HTTP Groq Function Calling')
+                return {"error": f"Erreur de l'API Groq : {str(e)}"}
+
         except Exception as e:
             print(f"[IA-RECOMMANDATION] ERREUR critique lors de l'appel a Groq: {str(e)}", flush=True)
             logger.exception('Erreur Groq Function Calling')
