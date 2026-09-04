@@ -208,7 +208,7 @@ def tool_rechercher_parfums(notes=None, budget_max=None, contenance_ml=None, **k
     if not queryset.exists():
         print(f"[TOOL FALLBACK] tool_rechercher_parfums: Aucun parfum avec filtres. Fallback sur parfums actifs.", flush=True)
         queryset = base_qs.order_by('?')
-    elif not has_filter:
+    else:
         queryset = queryset.order_by('?')
 
     results = []
@@ -264,12 +264,12 @@ def tool_rechercher_essences_et_ingredients(recherche=None, categorie=None, **kw
     if not essences_qs.exists():
         print(f"[TOOL FALLBACK] tool_rechercher_essences_et_ingredients: Aucune essence avec filtres. Fallback sur toutes les essences dispo.", flush=True)
         essences_qs = base_essences_qs.order_by('?')
-    elif not has_filter:
+    else:
         essences_qs = essences_qs.order_by('?')
 
     if not ingredients_qs.exists():
         ingredients_qs = base_ingredients_qs.order_by('?')
-    elif not has_filter:
+    else:
         ingredients_qs = ingredients_qs.order_by('?')
 
     essences_res = []
