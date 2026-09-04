@@ -656,16 +656,17 @@ def generer_resume_conversation(messages_recents, resume_existant=''):
 
         else:
             api_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
+            gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash'))
             if not api_key:
                 return resume_existant
             client_gemini = genai.Client(api_key=api_key)
             response = client_gemini.models.generate_content(
-                model='gemini-2.5-flash',
+                model=gemini_model,
                 contents=prompt_resume,
                 config=types.GenerateContentConfig(temperature=0.1),
             )
             nouveau_resume = response.text.strip()
-            print(f"[RESUME IA] Nouveau résumé généré (Gemini): '{nouveau_resume[:100]}...'", flush=True)
+            print(f"[RESUME IA] Nouveau résumé généré (Gemini/{gemini_model}): '{nouveau_resume[:100]}...'", flush=True)
             return nouveau_resume if nouveau_resume else resume_existant
 
     except Exception as e:
@@ -994,6 +995,7 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
                 print(f"[IA-RECOMMANDATION] Rate limit / Quota dépassé sur Groq (HTTP 429).", flush=True)
                 logger.warning('Groq Rate Limit 429')
                 gemini_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
+                gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash'))
                 if gemini_key:
                     print(f"[IA-RECOMMANDATION] Fallback automatique sur Gemini suite au rate limit Groq (429)...", flush=True)
                     try:
@@ -1001,7 +1003,7 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
                         catalogue_fb = get_catalogue_context()
                         contents_g = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fb}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
                         response_g = client_g.models.generate_content(
-                            model='gemini-2.5-flash',
+                            model=gemini_model,
                             contents=contents_g,
                             config=types.GenerateContentConfig(
                                 temperature=0.2,
@@ -1027,10 +1029,11 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
     else:
         # Provider Gemini (defaut)
         api_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
+        gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash'))
         if not api_key:
             return {"error": "Clé API Gemini manquante."}
 
-        print(f"[IA-RECOMMANDATION] Gemini: Envoi de la requete...", flush=True)
+        print(f"[IA-RECOMMANDATION] Gemini: Envoi de la requete (modele: {gemini_model})...", flush=True)
         try:
             client = genai.Client(api_key=api_key)
 
@@ -1038,7 +1041,7 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
             contents = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fallback}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
 
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=gemini_model,
                 contents=contents,
                 config=types.GenerateContentConfig(
                     temperature=0.2,
