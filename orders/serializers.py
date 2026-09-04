@@ -642,10 +642,19 @@ class CommanderCompositionDirecteSerializer(serializers.Serializer):
             raise serializers.ValidationError({"flacon_id": f"Stock de flacon insuffisant. Disponible : {flacon.stock_quantite}."})
             
         # 2. Valider les lots d'essences et les stocks
-        from catalogue.models import LotEssence
+        from catalogue.models import LotEssence, Essence
         lot_ids = [ligne['lot_essence_id'] for ligne in lignes_data]
         lots = LotEssence.objects.filter(id__in=lot_ids, actif=True).select_related('essence')
         lots_dict = {lot.id: lot for lot in lots}
+        
+        # Résolution de secours pour les ID d'Essence transmises à la place des ID de LotEssence
+        missing_ids = set(lot_ids) - set(lots_dict.keys())
+        if missing_ids:
+            essences = Essence.objects.filter(id__in=missing_ids)
+            for essence in essences:
+                active_lot = LotEssence.objects.filter(essence=essence, actif=True).select_related('essence').first()
+                if active_lot:
+                    lots_dict[essence.id] = active_lot
         
         errors = {}
         total_volume_essences = Decimal('0')
@@ -656,7 +665,7 @@ class CommanderCompositionDirecteSerializer(serializers.Serializer):
             qty = Decimal(str(ligne['quantite_ml']))
             
             if l_id not in lots_dict:
-                errors[f'lignes[{idx}].lot_essence_id'] = "Ce lot d'essence n'existe pas ou n'est pas actif."
+                errors[f'lignes[{idx}].lot_essence_id'] = f"Ce lot ou essence #{l_id} n'existe pas ou n'a pas de lot actif en stock."
                 continue
                 
             lot = lots_dict[l_id]
@@ -961,10 +970,19 @@ class PasserCommandeCompositionDirecteSerializer(serializers.Serializer):
             raise serializers.ValidationError({"flacon_id": f"Stock de flacon insuffisant. Disponible : {flacon.stock_quantite}."})
 
         # 2. Valider les lots d'essences et les stocks
-        from catalogue.models import LotEssence
+        from catalogue.models import LotEssence, Essence
         lot_ids = [ligne['lot_essence_id'] for ligne in lignes_data]
         lots = LotEssence.objects.filter(id__in=lot_ids, actif=True).select_related('essence')
         lots_dict = {lot.id: lot for lot in lots}
+
+        # Résolution de secours pour les ID d'Essence transmises à la place des ID de LotEssence
+        missing_ids = set(lot_ids) - set(lots_dict.keys())
+        if missing_ids:
+            essences = Essence.objects.filter(id__in=missing_ids)
+            for essence in essences:
+                active_lot = LotEssence.objects.filter(essence=essence, actif=True).select_related('essence').first()
+                if active_lot:
+                    lots_dict[essence.id] = active_lot
 
         errors = {}
         total_volume_essences = Decimal('0')
@@ -975,7 +993,7 @@ class PasserCommandeCompositionDirecteSerializer(serializers.Serializer):
             qty = Decimal(str(ligne['quantite_ml']))
 
             if l_id not in lots_dict:
-                errors[f'lignes[{idx}].lot_essence_id'] = "Ce lot d'essence n'existe pas ou n'est pas actif."
+                errors[f'lignes[{idx}].lot_essence_id'] = f"Ce lot ou essence #{l_id} n'existe pas ou n'a pas de lot actif en stock."
                 continue
 
             lot = lots_dict[l_id]

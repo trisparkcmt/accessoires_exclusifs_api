@@ -125,11 +125,27 @@ class EssencePersonnaliseeSerializer(serializers.ModelSerializer):
         return essence_perso
 
 
+class LotOrEssenceRelatedField(serializers.PrimaryKeyRelatedField):
+    def to_internal_value(self, data):
+        try:
+            return super().to_internal_value(data)
+        except serializers.ValidationError:
+            try:
+                from catalogue.models import Essence, LotEssence
+                essence_obj = Essence.objects.get(pk=data)
+                lot = LotEssence.objects.filter(essence=essence_obj, actif=True).first()
+                if lot:
+                    return lot
+            except Exception:
+                pass
+            raise serializers.ValidationError(f"Invalid pk \"{data}\" - ni un lot d'essence ni une essence active valide.")
+
+
 class ParfumPersonnaliseLigneSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(required=False)
     essence_detail = serializers.SerializerMethodField()
     
-    essence = serializers.PrimaryKeyRelatedField(queryset=LotEssence.objects.all(), required=False, allow_null=True)
+    essence = LotOrEssenceRelatedField(queryset=LotEssence.objects.all(), required=False, allow_null=True)
     essence_personnalisee = serializers.PrimaryKeyRelatedField(queryset=EssencePersonnalisee.objects.all(), required=False, allow_null=True)
 
     class Meta:
