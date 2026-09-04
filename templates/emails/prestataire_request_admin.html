@@ -1,0 +1,170 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Nouvelle demande de prestataire</title>
+    <style>
+      body {
+        font-family: "Helvetica Neue", Arial, sans-serif;
+        background-color: #f4f4f4;
+        margin: 0;
+        padding: 0;
+        color: #333333;
+      }
+      .email-wrapper {
+        width: 100%;
+        background-color: #f4f4f4;
+        padding: 40px 0;
+      }
+      .email-content {
+        max-width: 600px;
+        margin: 0 auto;
+        background-color: #ffffff;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      }
+      .header {
+        background-color: #1a1a1a;
+        padding: 30px 20px;
+        text-align: center;
+      }
+      .header h1 {
+        color: #d4af37; /* Or/Doré premium */
+        margin: 0;
+        font-size: 22px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+      }
+      .body-content {
+        padding: 35px 30px;
+      }
+      .body-content h2 {
+        font-size: 18px;
+        color: #1a1a1a;
+        margin-top: 0;
+        margin-bottom: 15px;
+      }
+      .body-content p {
+        font-size: 15px;
+        line-height: 1.6;
+        margin-bottom: 20px;
+        color: #444444;
+      }
+      .card {
+        background-color: #f9f9f9;
+        border-left: 4px solid #d4af37;
+        padding: 20px;
+        margin: 25px 0;
+        border-radius: 0 6px 6px 0;
+      }
+      .card-row {
+        margin-bottom: 10px;
+        font-size: 14px;
+      }
+      .card-row:last-child {
+        margin-bottom: 0;
+      }
+      .card-label {
+        font-weight: bold;
+        color: #1a1a1a;
+        display: inline-block;
+        width: 120px;
+      }
+      .badge {
+        display: inline-block;
+        background-color: #fff3cd;
+        color: #856404;
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: bold;
+      }
+      .cta-container {
+        text-align: center;
+        margin: 30px 0 10px 0;
+      }
+      .cta-button {
+        display: inline-block;
+        background-color: #d4af37;
+        color: #1a1a1a !important;
+        text-decoration: none;
+        padding: 13px 28px;
+        border-radius: 6px;
+        font-weight: bold;
+        font-size: 15px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .footer {
+        background-color: #f9f9f9;
+        padding: 20px;
+        text-align: center;
+        font-size: 13px;
+        color: #888888;
+        border-top: 1px solid #eeeeee;
+      }
+      .footer p {
+        margin: 4px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="email-wrapper">
+      <div class="email-content">
+        <div class="header">
+          <h1>Accessoires Exclusifs</h1>
+        </div>
+
+        <div class="body-content">
+          <h2>Nouvelle demande de Prestataire 🤝</h2>
+          <p>
+            Un utilisateur vient de soumettre une demande pour devenir
+            prestataire sur la plateforme
+            <strong>Accessoires Exclusifs</strong>.
+          </p>
+
+          <div class="card">
+            <div class="card-row">
+              <span class="card-label">Email :</span>
+              <span>{{ client_email }}</span>
+            </div>
+            <div class="card-row">
+              <span class="card-label">Nom complet :</span>
+              <span>{{ client_nom }}</span>
+            </div>
+            {% if client_telephone %}
+            <div class="card-row">
+              <span class="card-label">Téléphone :</span>
+              <span>{{ client_telephone }}</span>
+            </div>
+            {% endif %}
+            <div class="card-row">
+              <span class="card-label">Statut :</span>
+              <span class="badge">En attente de validation</span>
+            </div>
+            <div class="card-row">
+              <span class="card-label">Date :</span>
+              <span>{{ date_creation|date:"d/m/Y H:i" }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <p><strong>L'équipe Maison Accessoires Exclusifs</strong></p>
+          <p><em>Redefine your style</em></p>
+          <p
+            style="
+              margin-top: 12px;
+              font-size: 12px;
+              color: #aaaaaa;
+              font-weight: 500;
+            "
+          >
+            Fait par Trispark Digital Cameroun
+          </p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

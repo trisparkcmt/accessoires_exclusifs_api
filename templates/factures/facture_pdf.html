@@ -157,8 +157,10 @@
           <div class="company-name">Accessoires Exclusifs</div>
           <div>Prestige & Parfumerie Fine</div>
           <div>Yaoundé, Cameroun</div>
-          <div>Téléphone : a modifier lorsque jaurai le vrai num</div>
-          <div>Email : ca aussi</div>
+          {% if entreprise_telephone %}
+          <div>Téléphone : {{ entreprise_telephone }}</div>
+          {% endif %}
+          <div>Email : accessoiresexclusifs@gmail.com</div>
         </td>
       </tr>
     </table>
@@ -177,7 +179,8 @@
               <strong>Code de suivi :</strong> {{ facture.numero_facture }}
             </div>
             <div>
-              <strong>Date d'émission :</strong> {{ facture.date_emission|date:"d/m/Y H:i" }}
+              <strong>Date d'émission :</strong> {{
+              facture.date_emission|date:"d/m/Y H:i" }}
             </div>
             <div>
               <strong>Statut :</strong> <span class="badge-paid">PAYÉE</span>
@@ -293,30 +296,35 @@
         {% for ligne in lignes_parfums_perso %}
         <tr>
           <td>
-            <strong>{{ ligne.parfum_personnalise.nom }} (Parfum Personnalisé)</strong>
+            <strong
+              >{{ ligne.parfum_personnalise.nom }} (Parfum Personnalisé)</strong
+            >
             {% if ligne.parfum_personnalise.flacon %}
             <br /><small style="color: #666"
-              >Flacon : {{ ligne.parfum_personnalise.flacon.nom }} — {{ ligne.parfum_personnalise.flacon.contenance_ml }} ml</small
+              >Flacon : {{ ligne.parfum_personnalise.flacon.nom }} — {{
+              ligne.parfum_personnalise.flacon.contenance_ml }} ml</small
             >
-            {% endif %}
-            {% if ligne.parfum_personnalise.lignes.exists %}
+            {% endif %} {% if ligne.parfum_personnalise.lignes.exists %}
             <br /><small style="color: #666">Composition :</small>
-            <ul style="margin: 5px 0 0 12px; color: #666; font-size: 9pt; padding-left: 0; list-style: disc;">
+            <ul
+              style="
+                margin: 5px 0 0 12px;
+                color: #666;
+                font-size: 9pt;
+                padding-left: 0;
+                list-style: disc;
+              "
+            >
               {% for comp in ligne.parfum_personnalise.lignes.all %}
-              <li style="margin-bottom: 2px;">
-                {% if comp.essence and comp.essence.essence %}
-                  {{ comp.essence.essence.nom }}
-                {% elif comp.essence_personnalisee %}
-                  {{ comp.essence_personnalisee.nom }}
-                {% else %}
-                  Essence inconnue
-                {% endif %}
-                — {{ comp.quantite_ml }} ml
+              <li style="margin-bottom: 2px">
+                {% if comp.essence and comp.essence.essence %} {{
+                comp.essence.essence.nom }} {% elif comp.essence_personnalisee
+                %} {{ comp.essence_personnalisee.nom }} {% else %} Essence
+                inconnue {% endif %} — {{ comp.quantite_ml }} ml
               </li>
               {% endfor %}
             </ul>
-            {% endif %}
-            {% if ligne.note_laboratoire %}
+            {% endif %} {% if ligne.note_laboratoire %}
             <br /><small style="color: #666"
               >Note labo : {{ ligne.note_laboratoire }}</small
             >
@@ -366,7 +374,8 @@
       {% if commande.remise_code_promo > 0 %}
       <tr>
         <td class="total-label">
-          Remise{% if commande.code_promo_utilise %} ({{ commande.code_promo_utilise }}){% endif %} :
+          Remise{% if commande.code_promo_utilise %} ({{
+          commande.code_promo_utilise }}){% endif %} :
         </td>
         <td class="total-value" style="color: #c0392b">
           -{{ commande.remise_code_promo|floatformat:0 }} {{ DEVISE }}
@@ -390,8 +399,18 @@
     <!-- Pied de page -->
     <div class="footer">
       <p>Merci pour votre confiance !</p>
-      <p>Accessoires Exclusifs</p>
+      <p><strong>Accessoires Exclusifs</strong></p>
       <p>Cette facture tient lieu de preuve d'achat et de paiement.</p>
+      <p
+        style="
+          margin-top: 15px;
+          font-size: 8.5pt;
+          color: #777777;
+          font-weight: bold;
+        "
+      >
+        Fait par Trispark Digital Cameroun
+      </p>
     </div>
   </body>
 </html>

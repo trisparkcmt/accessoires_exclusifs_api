@@ -69,8 +69,20 @@ def generer_facture(commande):
     logo_path = os.path.join(settings.BASE_DIR, 'staticfiles', 'img', 'logo.png')
 
     # gérer le cas où la commande est passée par un invité (client peut être None)
-    client_obj = commande.client if getattr(commande, 'client', None) else None
-    user_obj = getattr(client_obj, 'user', None) if client_obj else None
+    # Informations sur l'entreprise pour l'en-tête de la facture
+    try:
+        from catalogue.models import EntrepriseInfo
+        entreprise = EntrepriseInfo.objects.first()
+    except Exception:
+        entreprise = None
+
+    entreprise_telephone = (
+        (entreprise.telephone_principal or entreprise.telephone_secondaire or entreprise.whatsapp)
+        if entreprise else None
+    )
+    entreprise_email = (
+        getattr(entreprise, 'email', None) if entreprise else None
+    ) or 'accessoiresexclusifs@gmail.com'
 
     context = {
         'facture': facture,
@@ -85,6 +97,8 @@ def generer_facture(commande):
         'lignes_parfums_perso': commande.lignes_parfums_perso.all(),
         'lignes_essence_personnalisee': commande.lignes_essence_personnalisee.all(),
         'lignes_diffuseurs': commande.lignes_diffuseurs.all(),
+        'entreprise_telephone': entreprise_telephone,
+        'entreprise_email': entreprise_email,
         'DEVISE': 'FCFA',
     }
 

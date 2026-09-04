@@ -89,16 +89,36 @@ def notify_admin_on_prestataire_request(sender, instance, created, **kwargs):
             }
         )
 
-        # Envoi d'email en complément
+        # Envoi d'email HTML enrichi en complément
         admin_emails = list(admin_users.values_list('email', flat=True))
         if admin_emails:
-            send_mail(
-                subject,
-                message,
-                settings.DEFAULT_FROM_EMAIL,
-                admin_emails,
-                fail_silently=True,
-            )
+            try:
+                client_user = instance.client.user
+                context = {
+                    'client_email': instance.client.email,
+                    'client_nom': client_user.get_full_name() or client_user.username,
+                    'client_telephone': getattr(client_user, 'telephone', '') or '',
+                    'date_creation': instance.date_creation,
+                    'admin_url': f"{settings.FRONTEND_URL.rstrip('/')}/admin/prestataires",
+                }
+                html_content = render_to_string('emails/prestataire_request_admin.html', context)
+                msg = EmailMultiAlternatives(
+                    subject=subject,
+                    body=message,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    to=admin_emails,
+                )
+                msg.attach_alternative(html_content, "text/html")
+                msg.send(fail_silently=True)
+            except Exception as exc:
+                _sig_logger.error(f"[PRESTATAIRE] Erreur envoi email HTML admin : {exc}")
+                send_mail(
+                    subject,
+                    message,
+                    settings.DEFAULT_FROM_EMAIL,
+                    admin_emails,
+                    fail_silently=True,
+                )
 
 def send_accessoire_welcome_email(user):
     """Envoie le mail de bienvenue Accessoires Exclusifs."""
