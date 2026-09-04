@@ -276,30 +276,45 @@ def ia_recommandation(request):
             flacon = None
 
     essence_ids = [e.get('id') for e in essences_data if isinstance(e, dict)]
-    if essence_ids and flacon:
-        from catalogue.models import LotEssence
+    if essence_ids:
+        from catalogue.models import LotEssence, Essence
+        from catalogue.serializers import EssencePublicSerializer
         for e_data in essences_data:
             if not isinstance(e_data, dict):
                 continue
             essence_id = e_data.get('id')
             quantite_ml = float(e_data.get('quantite_ml', 0) or 0)
-            if not essence_id or quantite_ml <= 0:
+            if not essence_id:
                 continue
+
+            essence_obj = Essence.objects.filter(id=essence_id, actif=True).first()
+            if not essence_obj:
+                continue
+
             lot = LotEssence.objects.filter(
-                essence_id=essence_id, actif=True, stock_ml__gte=quantite_ml
+                essence=essence_obj, actif=True
             ).order_by('date_reception').first()
-            if not lot:
-                continue
+
             from decimal import Decimal as D
-            essences_recommandees.append({
-                'id': lot.essence.id,
-                'lot_essence_id': lot.id,
-                'nom': lot.essence.nom,
-                'code_reference': lot.essence.code_reference,
-                'prix_par_ml': str(lot.essence.prix_par_ml),
-                'quantite_ml': quantite_ml,
-                'prix_total_quantite': str(lot.essence.prix_par_ml * D(str(quantite_ml))),
-            })
+            essence_public_data = EssencePublicSerializer(essence_obj, context={'request': request}).data
+
+            item_dict = {
+                'id': essence_obj.id,
+                'lot_essence_id': lot.id if lot else None,
+                'nom': essence_obj.nom,
+                'marque': essence_obj.marque,
+                'categorie': essence_obj.categorie,
+                'code_reference': essence_obj.code_reference,
+                'prix_par_ml': str(essence_obj.prix_par_ml),
+                'stock_total_ml': essence_obj.stock_total_ml(),
+                'produits_finis': essence_public_data.get('produits_finis', []),
+            }
+
+            if flacon and quantite_ml > 0:
+                item_dict['quantite_ml'] = quantite_ml
+                item_dict['prix_total_quantite'] = str(essence_obj.prix_par_ml * D(str(quantite_ml)))
+
+            essences_recommandees.append(item_dict)
 
     if ingredients_data and flacon:
         for i_data in ingredients_data:

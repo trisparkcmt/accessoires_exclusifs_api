@@ -248,12 +248,20 @@ def tool_rechercher_essences_et_ingredients(recherche=None, categorie=None, **kw
 
     essences_res = []
     for e in essences_qs[:8]:
+        active_lot = LotEssence.objects.filter(essence=e, actif=True).first()
+        prods_finis = [
+            {'id': pf.id, 'taille_ml': pf.taille_ml, 'prix': float(pf.prix_actuel)}
+            for pf in e.produits_finis.filter(actif=True, prix__gt=0)
+        ]
         essences_res.append({
             'id': e.id,
+            'initial_lot_id': active_lot.id if active_lot else None,
             'nom': e.nom,
+            'marque': e.marque,
             'categorie': e.categorie,
             'prix_par_ml': float(e.prix_par_ml),
             'description': (e.description_ia or e.description or '')[:100],
+            'produits_finis': prods_finis,
         })
 
     ingredients_res = []
@@ -659,12 +667,12 @@ Analyse la demande du client et utilise les OUTILS (Function Calling) mis à ta 
 CONSIGNES DE CHOIX DES OUTILS (TRES IMPORTANT) :
 - Si le client s'intéresse à un parfum existant prêt à l'emploi (deja tout fait), utilise `rechercher_parfums`.
 - Si le client demande expressément une "composition", une "création", un parfum "sur-mesure", "personnalisé", "sur mesure" ou un mélange, c'est une création sur-mesure. Dans ce cas, n'appelle PAS `rechercher_parfums`. Tu dois appeler `rechercher_essences_et_ingredients` pour trouver les composants, ET appeler `obtenir_flacons_disponibles` pour proposer un flacon adapté.
-- Si la demande du client est VAGUE, GÉNÉRALE ou NON PRÉCISE (ex: "propose-moi quelque chose de bien", "recommande-moi des produits", "découverte", "idées cadeaux"), tu DOIS appeler simultanément `rechercher_parfums` ET `rechercher_accessoires_et_diffuseurs` pour lui présenter une sélection variée incluant différents types de produits (parfums prêts à l'emploi, accessoires, diffuseurs).
+- Si la demande du client est VAGUE, GÉNÉRALE, DE PRÉSENTATION ou DE SÉLECTION (ex: "top 3 essence", "top items", "propose-moi quelque chose de bien", "recommande-moi des produits", "découverte", "idées cadeaux"), tu DOIS appeler simultanément `rechercher_essences_et_ingredients`, `rechercher_parfums` ET `rechercher_accessoires_et_diffuseurs` pour présenter un éventail complet incluant essences, parfums prêts à l'emploi, accessoires et diffuseurs.
 
 RÈGLES IMPÉRATIVES :
 0. DÉTECTION DE LA LANGUE ET RÉPONSE (EXIGENCE ABSOLUE ET IMPÉRATIVE) :
 - Tu DOIS IMPÉRATIVEMENT détecter et utiliser la LANGUE DU DERNIER PROMPT fourni par le client.
-- Si la demande du client est en ANGLAIS (ex: "I want a sweet perfume", "Hello", "Show me your prices"), le champ "message" de ta réponse DOIT ÊTRE 100% EN ANGLAIS.
+- Si la demande du client est en ANGLAIS (ex: "give me top 3 essence and give top 3 item", "I want a sweet perfume"), le champ "message" de ta réponse DOIT ÊTRE 100% EN ANGLAIS.
 - Si la demande du client est en FRANÇAIS (ex: "Je cherche un parfum doux", "Bonjour"), le champ "message" de ta réponse DOIT ÊTRE 100% EN FRANÇAIS.
 - Si la demande du client est dans une AUTRE LANGUE (ex: espagnol, allemand, arabe), le champ "message" DOIT ÊTRE DANS CETTE MÊME LANGUE.
 - Ne bascule JAMAIS en français par défaut si le client s'est adressé à toi en anglais ou dans une autre langue.
@@ -673,17 +681,15 @@ RÈGLES IMPÉRATIVES :
 1. COMPORTEMENT ET LOGIQUE DE CONVERSATION :
 - Si la demande est une simple salutation ou une politesse ("bonjour", "hello"), réponds chaleureusement dans "message" (DANS LA LANGUE DU CLIENT) sans appeler d'outils et laisse les listes de produits vides avec flacon_id = 0.
 - Si le client cherche une recommandation ou une création sur-mesure, utilise les outils pour interroger la base de données puis propose la meilleure sélection.
-- Si la demande n'est pas très précise, propose une offre diversifiée combinant parfums existants, accessoires et diffuseurs d'ambiance.
+- Si la demande n'est pas très précise ou demande un aperçu/top produits, propose une offre diversifiée combinant essences, parfums existants, accessoires et diffuseurs d'ambiance.
 
-2. COMPOSITION SUR-MESURE :
-- Un flacon ("flacon_id") ne doit être choisi que pour une création personnalisée sur-mesure. Les quantités d'essences en ml seront automatiquement ajustées par notre système Python à exactement 45% de la contenance du flacon.
-- Pour une création personnalisée, la base du parfum doit contenir uniquement des essences dans "essences_pre_faites". Le champ "ingredients_sur_mesure" doit rester vide.
-- Si le client demande une création personnalisée, n'inclus pas d'ingrédients dans la réponse finale.
-- IMPORTANT : pour "essences_pre_faites", fournis une liste d'objets avec "id" et "quantite_ml".
-- Pour "parfums_existants_recommandes", "accessoires", et "diffuseurs", il suffit de fournir la liste de leurs identifiants numériques [id1, id2]. Le serveur Python récupèrera automatiquement toutes les caractéristiques des produits depuis la base de données.
+2. COMPOSITION SUR-MESURE VS RECOMMANDATION SIMPLE :
+- Un flacon ("flacon_id") ne doit être choisi QUE pour une création personnalisée sur-mesure. Pour une recommandation générale d'essences ou de produits, garde `flacon_id = 0`.
+- Pour "essences_pre_faites", fournis la liste des objets d'essences recommandées avec `{{"id": <id_essence>, "quantite_ml": 0}}` (ou avec `quantite_ml` s'il s'agit d'un mélange).
+- Pour "parfums_existants_recommandes", "accessoires", et "diffuseurs", fournis la liste de leurs identifiants numériques [id1, id2]. Le serveur Python récupèrera automatiquement toutes les caractéristiques des produits depuis la base de données.
 
 3. VENTE COMPLÉMENTAIRE ET VARIÉTÉ DE PRODUITS :
-- Quand la demande est générale ou pour du cross-selling, n'hésite pas à remplir à la fois "parfums_existants_recommandes", "accessoires" et "diffuseurs" avec les identifiants issus des outils.
+- Quand la demande est générale ou pour du cross-selling, n'hésite pas à remplir à la fois "essences_pre_faites", "parfums_existants_recommandes", "accessoires" et "diffuseurs" avec les identifiants issus des outils.
 
 4. FORMAT DE RÉPONSE FINAL :
 Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSON strict respectant la structure suivante (sans balise ```json).
@@ -694,8 +700,8 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
     "budget_max_fcfa": 0,
     "flacon_id": 0,
     "essences_pre_faites": [
-        {{"id": 11, "quantite_ml": 11.25}},
-        {{"id": 12, "quantite_ml": 11.25}}
+        {{"id": 11, "quantite_ml": 0}},
+        {{"id": 12, "quantite_ml": 0}}
     ],
     "ingredients_sur_mesure": [],
     "parfums_existants_recommandes": [1],
@@ -812,19 +818,24 @@ ATTENTION : Les nombres et IDs indiqués dans le modèle ci-dessous ne sont que 
         def _post_groq(payload, retries=3):
             for attempt in range(1, retries + 1):
                 try:
-                    session = requests.Session()
-                    session.headers.update(groq_headers)
-                    return session.post(
+                    resp = requests.post(
                         'https://api.groq.com/openai/v1/chat/completions',
+                        headers=groq_headers,
                         json=payload,
                         timeout=(15, 60),
                     )
+                    if resp.status_code in (500, 502, 503, 504, 429) and attempt < retries:
+                        print(f"[IA-RECOMMANDATION] Groq retourné HTTP {resp.status_code}, tentative {attempt}/{retries}...", flush=True)
+                        import time
+                        time.sleep(0.8 * attempt)
+                        continue
+                    return resp
                 except (requests.exceptions.RequestException, Exception) as err:
                     print(f"[IA-RECOMMANDATION] Tentative Groq {attempt}/{retries} échouée (déconnexion/erreur): {err}", flush=True)
                     if attempt == retries:
                         raise
                     import time
-                    time.sleep(0.5 * attempt)
+                    time.sleep(0.8 * attempt)
 
         messages = [
             {'role': 'system', 'content': system_prompt},
