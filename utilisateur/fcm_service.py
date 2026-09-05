@@ -83,6 +83,17 @@ def send_fcm_notification(
                     aps=fcm_messaging.Aps(sound='default'),
                 ),
             ),
+            webpush=fcm_messaging.WebpushConfig(
+                headers={'Urgency': 'high'},
+                notification=fcm_messaging.WebpushNotification(
+                    title=title,
+                    body=message,
+                    icon='/icons/icon-192x192.png',
+                ),
+                fcm_options=fcm_messaging.WebpushFCMOptions(
+                    link=str_data.get('url', '/'),
+                ),
+            ),
         )
 
         try:
