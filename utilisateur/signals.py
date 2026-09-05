@@ -90,17 +90,20 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
     - Prestataire : notifié lorsque son code promo génère une commission (payée/livrée) ou est remboursé.
     - Livreur : notifié lors d'une affectation, retrait d'affectation ou annulation de sa commande.
     """
+    cmd_ref = getattr(instance, 'numero_commande', '') or f"#{instance.pk}"
+
     # 1. NOUVELLE COMMANDE CRÉÉE
     if created:
         # Notifier les Admins & Serveuses (exclut l'acheteur s'il est aussi serveuse/admin)
         Notification.objects.create(
             is_global_admin=True,
             type='nouvelle_commande_admin',
-            title=f"Nouvelle Commande #{instance.pk}",
-            message=f"Commande de {instance.total_ttc} FCFA reçue de {instance.client.email if instance.client else 'Client'}.",
+            title=f"Nouvelle Commande {cmd_ref}",
+            message=f"Commande {cmd_ref} de {instance.total_ttc} FCFA reçue de {instance.client.email if instance.client else 'Client'}.",
             url=f"/api/v1/orders/commandes/{instance.pk}/",
             metadata={
                 'commande_id': str(instance.pk),
+                'numero_commande': str(cmd_ref),
                 'statut': instance.statut,
                 'total_ttc': str(instance.total_ttc),
                 'exclude_user_id': str(instance.client.user.pk) if (instance.client and instance.client.user) else '',
@@ -121,19 +124,19 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                 Notification.objects.create(
                     recipient=user_client,
                     type='commande_livree',
-                    title=f"Commande #{instance.pk} livrée ! 📦",
-                    message=f"Votre commande #{instance.pk} a été livrée avec succès. Merci de votre confiance !",
+                    title=f"Commande {cmd_ref} livrée ! 📦",
+                    message=f"Votre commande {cmd_ref} a été livrée avec succès. Merci de votre confiance !",
                     url=f"/api/v1/orders/commandes/{instance.pk}/",
-                    metadata={'commande_id': str(instance.pk), 'statut': 'livrée'}
+                    metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref), 'statut': 'livrée'}
                 )
             elif nouveau_statut == 'remboursée' and ancien_statut != 'remboursée':
                 Notification.objects.create(
                     recipient=user_client,
                     type='commande_remboursee',
-                    title=f"Commande #{instance.pk} remboursée 💳",
-                    message=f"Votre commande #{instance.pk} a été remboursée.",
+                    title=f"Commande {cmd_ref} remboursée 💳",
+                    message=f"Votre commande {cmd_ref} a été remboursée.",
                     url=f"/api/v1/orders/commandes/{instance.pk}/",
-                    metadata={'commande_id': str(instance.pk), 'statut': 'remboursée'}
+                    metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref), 'statut': 'remboursée'}
                 )
 
         # --- B. NOTIFICATIONS PRESTATAIRE (quand son code promo génère une commission ou est remboursé) ---
@@ -145,12 +148,13 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                     type='commission_gagne',
                     title="Commission validée ! 💰",
                     message=(
-                        f"La commande #{instance.pk} utilisant votre code promo a été validée/livrée ! "
+                        f"La commande {cmd_ref} utilisant votre code promo a été validée/livrée ! "
                         f"Vous avez gagné {instance.commission_montant} FCFA de commission."
                     ),
                     url="/api/v1/utilisateur/prestataire/dashboard/",
                     metadata={
                         'commande_id': str(instance.pk),
+                        'numero_commande': str(cmd_ref),
                         'commission_montant': str(instance.commission_montant),
                         'code_promo': str(instance.code_promo_utilise or instance.prestataire.code_promo or ''),
                     }
@@ -160,9 +164,9 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                     recipient=user_prestataire,
                     type='commission_annulee',
                     title="Commande avec votre code remboursée ⚠️",
-                    message=f"La commande #{instance.pk} liée à votre code promo a été remboursée.",
+                    message=f"La commande {cmd_ref} liée à votre code promo a été remboursée.",
                     url="/api/v1/utilisateur/prestataire/dashboard/",
-                    metadata={'commande_id': str(instance.pk)}
+                    metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref)}
                 )
 
         # --- C. NOTIFICATIONS LIVREUR ---
@@ -176,9 +180,9 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                         recipient=nouveau_livreur.client.user,
                         type='livraison_assignee',
                         title=f"Nouvelle livraison attribuée ! 🚚",
-                        message=f"La commande #{instance.pk} vous a été attribuée pour livraison.",
+                        message=f"La commande {cmd_ref} vous a été attribuée pour livraison.",
                         url=f"/api/v1/auth/livreur/commandes/",
-                        metadata={'commande_id': str(instance.pk), 'adresse': str(instance.adresse_livraison or '')}
+                        metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref), 'adresse': str(instance.adresse_livraison or '')}
                     )
             except Exception:
                 pass
@@ -193,9 +197,9 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                         recipient=ancien_livreur.client.user,
                         type='livraison_retiree',
                         title=f"Livraison réassignée ℹ️",
-                        message=f"La livraison de la commande #{instance.pk} ne vous est plus attribuée.",
+                        message=f"La livraison de la commande {cmd_ref} ne vous est plus attribuée.",
                         url=f"/api/v1/auth/livreur/commandes/",
-                        metadata={'commande_id': str(instance.pk)}
+                        metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref)}
                     )
             except Exception:
                 pass
@@ -210,12 +214,46 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                         recipient=livreur_actuel.client.user,
                         type='livraison_annulee',
                         title=f"Livraison annulée 🛑",
-                        message=f"La commande #{instance.pk} qui vous était attribuée a été annulée.",
+                        message=f"La commande {cmd_ref} qui vous était attribuée a été annulée.",
                         url=f"/api/v1/auth/livreur/commandes/",
-                        metadata={'commande_id': str(instance.pk)}
+                        metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref)}
                     )
             except Exception:
                 pass
+
+
+# ============================================================
+# SIGNAL CODE PROMO ADMIN EXCLUSIF
+# ============================================================
+from django.db.models.signals import m2m_changed
+from orders.models import CodePromoAdmin
+
+@receiver(m2m_changed, sender=CodePromoAdmin.clients_autorises.through)
+def notifier_clients_code_promo_exclusif(sender, instance, action, pk_set, **kwargs):
+
+    """
+    Notifie le ou les clients sélectionnés lorsqu'un Code Promo Admin exclusif leur est attribué.
+    """
+    if action == 'post_add' and pk_set:
+        from utilisateur.models import Client
+        clients = Client.objects.filter(pk__in=pk_set).select_related('user')
+        for client in clients:
+            if client.user and client.user.is_active:
+                Notification.objects.create(
+                    recipient=client.user,
+                    type='code_promo_exclusif',
+                    title="🎁 Code Promo Exclusif !",
+                    message=(
+                        f"Vous avez reçu un code promo exclusif '{instance.code}' "
+                        f"offrant {instance.reduction_pourcentage}% de réduction !"
+                    ),
+                    url="/api/v1/orders/promos/",
+                    metadata={
+                        'code_promo': str(instance.code),
+                        'reduction_pourcentage': str(instance.reduction_pourcentage),
+                    }
+                )
+
 
 
 
