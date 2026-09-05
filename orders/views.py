@@ -1029,18 +1029,6 @@ class AdminCodePromoViewSet(viewsets.ModelViewSet):
                     user = client.user
                     subject = "Nouveau code promo exclusif pour vous !"
                     
-                    Notification.objects.create(
-                        recipient=user,
-                        type='code_promo_admin',
-                        title='Code promo exclusif disponible !',
-                        message=f"Profitez de {promo_instance.reduction_pourcentage}% de réduction avec le code : {promo_instance.code}",
-                        url='/api/v1/orders/panier/',
-                        metadata={
-                            'code_promo': promo_instance.code,
-                            'reduction_pourcentage': str(promo_instance.reduction_pourcentage)
-                        }
-                    )
-                    
                     context = {
                         'prenom': user.first_name or user.username,
                         'user': user,
