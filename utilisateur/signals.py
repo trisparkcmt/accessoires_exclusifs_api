@@ -60,7 +60,7 @@ def maj_points_fidelite_sur_paiement(sender, instance, **kwargs):
 
 @receiver(pre_save, sender='orders.Commande')
 def capturer_ancien_statut_commande(sender, instance, **kwargs):
-    """Capture l'ancien statut d'une commande avant modification."""
+    """Capture l'ancien statut et le livreur d'une commande avant modification."""
     if instance.pk:
         try:
             from orders.models import Commande
@@ -68,41 +68,31 @@ def capturer_ancien_statut_commande(sender, instance, **kwargs):
             instance._ancien_statut = ancien.statut
             instance._ancien_statut_livraison = ancien.statut_livraison
             instance._ancien_statut_paiement = ancien.statut_paiement
+            instance._ancien_livreur_id = ancien.livreur_id
         except Exception:
             instance._ancien_statut = None
             instance._ancien_statut_livraison = None
             instance._ancien_statut_paiement = None
+            instance._ancien_livreur_id = None
     else:
         instance._ancien_statut = None
         instance._ancien_statut_livraison = None
         instance._ancien_statut_paiement = None
+        instance._ancien_livreur_id = None
 
 
 @receiver(post_save, sender='orders.Commande')
 def notifier_changement_commande(sender, instance, created, **kwargs):
     """
-    Crée automatiquement des Notifications (In-App + FCM Push) lors de :
-    - La création d'une nouvelle commande (notifie le client et les administrateurs)
-    - Le changement de statut d'une commande (notifie le client)
+    Gestion stricte des notifications selon les règles métier demandées :
+    - Client : notifié UNIQUEMENT quand la commande est 'livrée' ou 'remboursée'.
+    - Serveuses & Admins : notifiés lors d'une NOUVELLE commande passée.
+    - Prestataire : notifié lorsque son code promo génère une commission (payée/livrée) ou est remboursé.
+    - Livreur : notifié lors d'une affectation, retrait d'affectation ou annulation de sa commande.
     """
     # 1. NOUVELLE COMMANDE CRÉÉE
     if created:
-        # Notification Client
-        if instance.client and instance.client.user:
-            Notification.objects.create(
-                recipient=instance.client.user,
-                type='commande_creee',
-                title=f"Commande #{instance.pk} enregistrée !",
-                message=f"Votre commande de {instance.total_ttc} FCFA a bien été reçue et est en cours de traitement.",
-                url=f"/api/v1/orders/commandes/{instance.pk}/",
-                metadata={
-                    'commande_id': str(instance.pk),
-                    'statut': instance.statut,
-                    'total_ttc': str(instance.total_ttc),
-                }
-            )
-
-        # Notification Globale Admin (exclut éventuellement le client lui-même s'il est aussi serveuse/admin)
+        # Notifier les Admins & Serveuses (exclut l'acheteur s'il est aussi serveuse/admin)
         Notification.objects.create(
             is_global_admin=True,
             type='nouvelle_commande_admin',
@@ -117,72 +107,116 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
             }
         )
 
-        # Notification au Prestataire si son code promo a été utilisé
-        if instance.prestataire and instance.prestataire.client and instance.prestataire.client.user:
-            user_prestataire = instance.prestataire.client.user
-            Notification.objects.create(
-                recipient=user_prestataire,
-                type='commission_gagne',
-                title="Code Promo utilisé ! 💰",
-                message=(
-                    f"Votre code promo a été utilisé sur la commande #{instance.pk} ! "
-                    f"Vous avez gagné {instance.commission_montant} FCFA de commission."
-                ),
-                url="/api/v1/utilisateur/prestataire/dashboard/",
-                metadata={
-                    'commande_id': str(instance.pk),
-                    'commission_montant': str(instance.commission_montant),
-                    'code_promo': str(instance.code_promo_utilise or instance.prestataire.code_promo or ''),
-                }
-            )
-
-    # 2. MISES À JOUR / CHANGEMENT DE STATUT (COMMANDE & LIVRAISON)
+    # 2. MODIFICATION D'UNE COMMANDE EXISTANTE
     else:
         ancien_statut = getattr(instance, '_ancien_statut', None)
         nouveau_statut = instance.statut
-        ancien_livraison = getattr(instance, '_ancien_statut_livraison', None)
-        nouveau_livraison = instance.statut_livraison
+        ancien_livreur_id = getattr(instance, '_ancien_livreur_id', None)
+        nouveau_livreur_id = instance.livreur_id
 
-        # Notification Client sur statut commande
+        # --- A. NOTIFICATIONS CLIENT (Règle : UNIQUEMENT pour 'livrée' et 'remboursée') ---
         if ancien_statut and ancien_statut != nouveau_statut and instance.client and instance.client.user:
             user_client = instance.client.user
-            
-            messages_statut = {
-                'validé': (f"Commande #{instance.pk} validée ! 🎉", f"Bonne nouvelle ! Votre commande #{instance.pk} a été validée."),
-                'en_cours': (f"Commande #{instance.pk} en cours de préparation", f"Votre commande #{instance.pk} est en cours de préparation par nos équipes."),
-                'livrée': (f"Commande #{instance.pk} livrée ! 📦", f"Votre commande #{instance.pk} a été livrée. Merci de votre confiance !"),
-                'annulée': (f"Commande #{instance.pk} annulée", f"Votre commande #{instance.pk} a été annulée."),
-                'remboursée': (f"Commande #{instance.pk} remboursée 💳", f"Votre commande #{instance.pk} a été remboursée."),
-            }
-
-            if nouveau_statut in messages_statut:
-                title, msg = messages_statut[nouveau_statut]
+            if nouveau_statut == 'livrée' and ancien_statut != 'livrée':
                 Notification.objects.create(
                     recipient=user_client,
-                    type=f'commande_{nouveau_statut}',
-                    title=title,
-                    message=msg,
+                    type='commande_livree',
+                    title=f"Commande #{instance.pk} livrée ! 📦",
+                    message=f"Votre commande #{instance.pk} a été livrée avec succès. Merci de votre confiance !",
                     url=f"/api/v1/orders/commandes/{instance.pk}/",
-                    metadata={
-                        'commande_id': str(instance.pk),
-                        'statut': nouveau_statut,
-                    }
+                    metadata={'commande_id': str(instance.pk), 'statut': 'livrée'}
+                )
+            elif nouveau_statut == 'remboursée' and ancien_statut != 'remboursée':
+                Notification.objects.create(
+                    recipient=user_client,
+                    type='commande_remboursee',
+                    title=f"Commande #{instance.pk} remboursée 💳",
+                    message=f"Votre commande #{instance.pk} a été remboursée.",
+                    url=f"/api/v1/orders/commandes/{instance.pk}/",
+                    metadata={'commande_id': str(instance.pk), 'statut': 'remboursée'}
                 )
 
-        # Notification au Livreur en cas d'assignation de livraison
-        if nouveau_livraison == 'assignée' and ancien_livraison != 'assignée' and instance.livreur and instance.livreur.client:
-            user_livreur = instance.livreur.client.user
-            Notification.objects.create(
-                recipient=user_livreur,
-                type='livraison_assignee',
-                title=f"Nouvelle livraison attribuée ! 🚚",
-                message=f"La commande #{instance.pk} vous a été attribuée pour livraison.",
-                url=f"/api/v1/auth/livreur/commandes/",
-                metadata={
-                    'commande_id': str(instance.pk),
-                    'adresse': str(instance.adresse_livraison or ''),
-                }
-            )
+        # --- B. NOTIFICATIONS PRESTATAIRE (quand son code promo génère une commission ou est remboursé) ---
+        if instance.prestataire and instance.prestataire.client and instance.prestataire.client.user:
+            user_prestataire = instance.prestataire.client.user
+            if nouveau_statut in ['validé', 'livrée'] and ancien_statut not in ['validé', 'livrée']:
+                Notification.objects.create(
+                    recipient=user_prestataire,
+                    type='commission_gagne',
+                    title="Commission validée ! 💰",
+                    message=(
+                        f"La commande #{instance.pk} utilisant votre code promo a été validée/livrée ! "
+                        f"Vous avez gagné {instance.commission_montant} FCFA de commission."
+                    ),
+                    url="/api/v1/utilisateur/prestataire/dashboard/",
+                    metadata={
+                        'commande_id': str(instance.pk),
+                        'commission_montant': str(instance.commission_montant),
+                        'code_promo': str(instance.code_promo_utilise or instance.prestataire.code_promo or ''),
+                    }
+                )
+            elif nouveau_statut == 'remboursée' and ancien_statut != 'remboursée':
+                Notification.objects.create(
+                    recipient=user_prestataire,
+                    type='commission_annulee',
+                    title="Commande avec votre code remboursée ⚠️",
+                    message=f"La commande #{instance.pk} liée à votre code promo a été remboursée.",
+                    url="/api/v1/utilisateur/prestataire/dashboard/",
+                    metadata={'commande_id': str(instance.pk)}
+                )
+
+        # --- C. NOTIFICATIONS LIVREUR ---
+        # 1. Attribué à un nouveau livreur
+        if nouveau_livreur_id and nouveau_livreur_id != ancien_livreur_id:
+            try:
+                from utilisateur.models import Livreur
+                nouveau_livreur = Livreur.objects.get(pk=nouveau_livreur_id)
+                if nouveau_livreur.client and nouveau_livreur.client.user:
+                    Notification.objects.create(
+                        recipient=nouveau_livreur.client.user,
+                        type='livraison_assignee',
+                        title=f"Nouvelle livraison attribuée ! 🚚",
+                        message=f"La commande #{instance.pk} vous a été attribuée pour livraison.",
+                        url=f"/api/v1/auth/livreur/commandes/",
+                        metadata={'commande_id': str(instance.pk), 'adresse': str(instance.adresse_livraison or '')}
+                    )
+            except Exception:
+                pass
+
+        # 2. Retiré/désattribué à l'ancien livreur
+        if ancien_livreur_id and ancien_livreur_id != nouveau_livreur_id:
+            try:
+                from utilisateur.models import Livreur
+                ancien_livreur = Livreur.objects.get(pk=ancien_livreur_id)
+                if ancien_livreur.client and ancien_livreur.client.user:
+                    Notification.objects.create(
+                        recipient=ancien_livreur.client.user,
+                        type='livraison_retiree',
+                        title=f"Livraison réassignée ℹ️",
+                        message=f"La livraison de la commande #{instance.pk} ne vous est plus attribuée.",
+                        url=f"/api/v1/auth/livreur/commandes/",
+                        metadata={'commande_id': str(instance.pk)}
+                    )
+            except Exception:
+                pass
+
+        # 3. Commande attribuée qui est annulée
+        if nouveau_statut == 'annulée' and ancien_statut != 'annulée' and nouveau_livreur_id:
+            try:
+                from utilisateur.models import Livreur
+                livreur_actuel = Livreur.objects.get(pk=nouveau_livreur_id)
+                if livreur_actuel.client and livreur_actuel.client.user:
+                    Notification.objects.create(
+                        recipient=livreur_actuel.client.user,
+                        type='livraison_annulee',
+                        title=f"Livraison annulée 🛑",
+                        message=f"La commande #{instance.pk} qui vous était attribuée a été annulée.",
+                        url=f"/api/v1/auth/livreur/commandes/",
+                        metadata={'commande_id': str(instance.pk)}
+                    )
+            except Exception:
+                pass
+
 
 
 # ============================================================
