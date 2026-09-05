@@ -212,9 +212,11 @@ class CustomLogoutView(LogoutView):
                 if hasattr(request, 'data') and isinstance(request.data, dict):
                     token = request.data.get('registration_token')
 
+                logout_all = request.data.get('logout_all', False) if hasattr(request, 'data') and isinstance(request.data, dict) else False
+
                 if token:
                     FCMDevice.objects.filter(registration_token=token, user=request.user).update(active=False)
-                else:
+                elif logout_all:
                     FCMDevice.objects.filter(user=request.user).update(active=False)
             except Exception as e:
                 pass
