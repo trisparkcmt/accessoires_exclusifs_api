@@ -102,7 +102,7 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                 }
             )
 
-        # Notification Globale Admin
+        # Notification Globale Admin (exclut éventuellement le client lui-même s'il est aussi serveuse/admin)
         Notification.objects.create(
             is_global_admin=True,
             type='nouvelle_commande_admin',
@@ -113,8 +113,10 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                 'commande_id': str(instance.pk),
                 'statut': instance.statut,
                 'total_ttc': str(instance.total_ttc),
+                'exclude_user_id': str(instance.client.user.pk) if (instance.client and instance.client.user) else '',
             }
         )
+
 
     # 2. MISES À JOUR / CHANGEMENT DE STATUT
     else:
@@ -360,12 +362,16 @@ def envoyer_push_fcm_sur_notification(sender, instance, created, **kwargs):
             serveuse_users = []
 
         # Dédupliquer les utilisateurs cibles
+        exclude_id = str(instance.metadata.get('exclude_user_id', '')) if instance.metadata else ''
         seen = set()
         all_users = []
         for user in admin_users + staff_users + serveuse_users:
+            if str(user.pk) == exclude_id:
+                continue
             if user.pk not in seen:
                 seen.add(user.pk)
                 all_users.append(user)
+
 
         if all_users:
             send_fcm_notification(

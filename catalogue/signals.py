@@ -284,7 +284,7 @@ def creer_notification_alerte(type_produit, product_id, product_name, stock_actu
         f"(stock: {stock_actuel}, seuil: {seuil_alerte})"
     )
 
-    # 1. Notification en base (NotificationCatalogue — visible dans l'admin)
+    # 1. Notification catalogue spécifique
     NotificationCatalogue.objects.create(
         type_produit=type_produit,
         product_id=product_id,
@@ -295,22 +295,26 @@ def creer_notification_alerte(type_produit, product_id, product_name, stock_actu
         metadata=metadata,
     )
 
-    # 2. Push FCM vers tous les admins et staff actifs
-    admins = User.objects.filter(is_active=True, is_staff=True)
-    if admins.exists():
-        send_fcm_notification(
-            users=admins,
-            title=f"⚠️ Alerte stock — {product_name}",
-            message=message,
-            data={
-                'type': 'alerte_stock',
-                'type_produit': str(type_produit),
-                'product_id': str(product_id),
-                'product_name': product_name,
-                'stock_actuel': str(stock_actuel),
-                'seuil_alerte': str(seuil_alerte),
-            },
-        )
+    # 2. Notification Globale Admin In-App + FCM Push automatique
+    from utilisateur.models import Notification
+    meta = {
+        'type_produit': str(type_produit),
+        'product_id': str(product_id),
+        'product_name': product_name,
+        'stock_actuel': str(stock_actuel),
+        'seuil_alerte': str(seuil_alerte),
+    }
+    meta.update(metadata)
+
+    Notification.objects.create(
+        is_global_admin=True,
+        type='alerte_stock',
+        title=f"⚠️ Alerte stock — {product_name}",
+        message=message,
+        url="/api/v1/catalogue/notifications-catalogue/",
+        metadata=meta,
+    )
+
 
 
 # ============================================================
