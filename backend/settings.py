@@ -317,6 +317,9 @@ SOCIALACCOUNT_PROVIDERS = {
 # URL du Frontend (Variable d'environnement ou localhost par défaut)
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
 
+# URL du Backend/API (utilisé pour les liens dans les emails — reset password, etc.)
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000' if DEBUG else 'https://api.accessoiresexclusifs.com')
+
 # Adaptateur personnalisé pour gérer la redirection des emails vers le Frontend
 ACCOUNT_ADAPTER = 'utilisateur.adapters.CustomAccountAdapter'
 
@@ -368,7 +371,8 @@ REST_AUTH = {
     'REGISTER_SERIALIZER': 'utilisateur.serializers.CustomRegisterSerializer',
     'PASSWORD_CHANGE_SERIALIZER': 'utilisateur.serializers.CustomPasswordChangeSerializer',
     'PASSWORD_RESET_USE_SITES_DOMAIN': False,
-    'PASSWORD_RESET_CONFIRM_URL': FRONTEND_URL + '/auth/reset-password-confirm/{uid}/{token}/',
+    # Lien dans l'email de réinitialisation → page HTML servie directement par le backend
+    'PASSWORD_RESET_CONFIRM_URL': BACKEND_URL + '/accounts/password/reset/confirm/{uid}/{token}/',
     'USER_DETAILS_SERIALIZER': 'utilisateur.serializers.UserSerializer',
 }
 

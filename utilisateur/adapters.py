@@ -49,13 +49,32 @@ class CustomAccountAdapter(DefaultAccountAdapter):
 
     def send_mail(self, template_prefix, email, context):
         """
-        Intercepte l'envoi d'email pour garder le reset password cote backend
-        tout en conservant FRONTEND_URL pour les liens generaux.
+        Intercepte l'envoi d'email pour forcer le lien de reinitialisation
+        de mot de passe vers la page HTML servie par le backend Django (100% backend).
         """
-        if 'password_reset_url' in context and 'uid' in context and 'token' in context:
-            path = reverse("password_reset_confirm", args=[context['uid'], context['token']])
-            site = Site.objects.get_current()
-            context['password_reset_url'] = f"https://{site.domain}{path}"
+        import re
+
+        # Cas 1 : uid et token sont dans le contexte (allauth standard)
+        if 'password_reset_url' in context and context.get('uid') and context.get('token'):
+            uid = context['uid']
+            token = context['token']
+            path = reverse("password_reset_confirm", args=[uid, token])
+            scheme = 'http' if settings.DEBUG else 'https'
+            host = settings.BACKEND_URL.rstrip('/')
+            context['password_reset_url'] = f"{host}{path}"
+
+        # Cas 2 : l'URL est déjà construite par dj_rest_auth mais pointe vers le frontend
+        # → on extrait uid/token depuis l'URL et on reconstruit vers le backend
+        elif 'password_reset_url' in context:
+            url = context['password_reset_url']
+            # Tente d'extraire uid et token depuis un pattern commun
+            match = re.search(r'/([A-Za-z0-9\-_]+)/([A-Za-z0-9\-_]+)/?$', url)
+            if match:
+                uid = match.group(1)
+                token = match.group(2)
+                path = reverse("password_reset_confirm", args=[uid, token])
+                host = settings.BACKEND_URL.rstrip('/')
+                context['password_reset_url'] = f"{host}{path}"
 
         # Ajout de FRONTEND_URL à tous les contextes d'email pour le bouton général/footer
         context['frontend_url'] = settings.FRONTEND_URL
