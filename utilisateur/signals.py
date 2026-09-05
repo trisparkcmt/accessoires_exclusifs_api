@@ -58,6 +58,96 @@ def maj_points_fidelite_sur_paiement(sender, instance, **kwargs):
             )
 
 
+@receiver(pre_save, sender='orders.Commande')
+def capturer_ancien_statut_commande(sender, instance, **kwargs):
+    """Capture l'ancien statut d'une commande avant modification."""
+    if instance.pk:
+        try:
+            from orders.models import Commande
+            ancien = Commande.objects.get(pk=instance.pk)
+            instance._ancien_statut = ancien.statut
+            instance._ancien_statut_livraison = ancien.statut_livraison
+            instance._ancien_statut_paiement = ancien.statut_paiement
+        except Exception:
+            instance._ancien_statut = None
+            instance._ancien_statut_livraison = None
+            instance._ancien_statut_paiement = None
+    else:
+        instance._ancien_statut = None
+        instance._ancien_statut_livraison = None
+        instance._ancien_statut_paiement = None
+
+
+@receiver(post_save, sender='orders.Commande')
+def notifier_changement_commande(sender, instance, created, **kwargs):
+    """
+    Crée automatiquement des Notifications (In-App + FCM Push) lors de :
+    - La création d'une nouvelle commande (notifie le client et les administrateurs)
+    - Le changement de statut d'une commande (notifie le client)
+    """
+    # 1. NOUVELLE COMMANDE CRÉÉE
+    if created:
+        # Notification Client
+        if instance.client and instance.client.user:
+            Notification.objects.create(
+                recipient=instance.client.user,
+                type='commande_creee',
+                title=f"Commande #{instance.pk} enregistrée !",
+                message=f"Votre commande de {instance.total_ttc} FCFA a bien été reçue et est en cours de traitement.",
+                url=f"/api/v1/orders/commandes/{instance.pk}/",
+                metadata={
+                    'commande_id': str(instance.pk),
+                    'statut': instance.statut,
+                    'total_ttc': str(instance.total_ttc),
+                }
+            )
+
+        # Notification Globale Admin
+        Notification.objects.create(
+            is_global_admin=True,
+            type='nouvelle_commande_admin',
+            title=f"Nouvelle Commande #{instance.pk}",
+            message=f"Commande de {instance.total_ttc} FCFA reçue de {instance.client.email if instance.client else 'Client'}.",
+            url=f"/api/v1/orders/commandes/{instance.pk}/",
+            metadata={
+                'commande_id': str(instance.pk),
+                'statut': instance.statut,
+                'total_ttc': str(instance.total_ttc),
+            }
+        )
+
+    # 2. MISES À JOUR / CHANGEMENT DE STATUT
+    else:
+        ancien_statut = getattr(instance, '_ancien_statut', None)
+        nouveau_statut = instance.statut
+
+        if ancien_statut and ancien_statut != nouveau_statut and instance.client and instance.client.user:
+            user_client = instance.client.user
+            
+            messages_statut = {
+                'validé': (f"Commande #{instance.pk} validée ! 🎉", f"Bonne nouvelle ! Votre commande #{instance.pk} a été validée."),
+                'en_cours': (f"Commande #{instance.pk} en cours de préparation", f"Votre commande #{instance.pk} est en cours de préparation par nos équipes."),
+                'livrée': (f"Commande #{instance.pk} livrée ! 📦", f"Votre commande #{instance.pk} a été livrée. Merci de votre confiance !"),
+                'annulée': (f"Commande #{instance.pk} annulée", f"Votre commande #{instance.pk} a été annulée."),
+                'remboursée': (f"Commande #{instance.pk} remboursée 💳", f"Votre commande #{instance.pk} a été remboursée."),
+            }
+
+            if nouveau_statut in messages_statut:
+                title, msg = messages_statut[nouveau_statut]
+                Notification.objects.create(
+                    recipient=user_client,
+                    type=f'commande_{nouveau_statut}',
+                    title=title,
+                    message=msg,
+                    url=f"/api/v1/orders/commandes/{instance.pk}/",
+                    metadata={
+                        'commande_id': str(instance.pk),
+                        'statut': nouveau_statut,
+                    }
+                )
+
+
+
 
 @receiver(pre_save, sender=Prestataire)
 def capturer_ancien_statut_prestataire(sender, instance, **kwargs):
