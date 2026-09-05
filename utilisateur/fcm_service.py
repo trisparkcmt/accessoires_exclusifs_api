@@ -78,6 +78,15 @@ def send_fcm_notification(
     else:
         webpush_link = f"{frontend_base}/"
 
+    icon_url = str_data.get('icon')
+    if not icon_url:
+        backend_base = getattr(settings, 'BACKEND_URL', 'https://api.accessoiresexclusifs.com').rstrip('/')
+        icon_url = f"{backend_base}/static/img/logo.jpg"
+    elif not icon_url.startswith('http'):
+        if not icon_url.startswith('/'):
+            icon_url = '/' + icon_url
+        icon_url = f"{frontend_base}{icon_url}"
+
     for batch in chunks(tokens, 500):
         multicast_message = fcm_messaging.MulticastMessage(
             tokens=batch,
@@ -103,7 +112,7 @@ def send_fcm_notification(
                 notification=fcm_messaging.WebpushNotification(
                     title=title,
                     body=message,
-                    icon=f"{frontend_base}/icons/icon-192x192.png",
+                    icon=icon_url,
                 ),
                 fcm_options=fcm_messaging.WebpushFCMOptions(
                     link=webpush_link,
