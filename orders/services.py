@@ -69,6 +69,9 @@ def generer_facture(commande):
     logo_path = os.path.join(settings.BASE_DIR, 'staticfiles', 'img', 'logo.png')
 
     # gérer le cas où la commande est passée par un invité (client peut être None)
+    client_obj = commande.client if getattr(commande, 'client', None) else None
+    user_obj = getattr(client_obj, 'user', None) if client_obj else None
+
     # Informations sur l'entreprise pour l'en-tête de la facture
     try:
         from catalogue.models import EntrepriseInfo
@@ -80,9 +83,7 @@ def generer_facture(commande):
         (entreprise.telephone_principal or entreprise.telephone_secondaire or entreprise.whatsapp)
         if entreprise else None
     )
-    entreprise_email = (
-        getattr(entreprise, 'email', None) if entreprise else None
-    ) or 'accessoiresexclusifs@gmail.com'
+    entreprise_email = 'accessoiresexclusifs@gmail.com'
 
     context = {
         'facture': facture,

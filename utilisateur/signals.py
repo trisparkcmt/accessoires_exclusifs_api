@@ -1,4 +1,4 @@
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from django.core.mail import send_mail, EmailMultiAlternatives
 from django.template.loader import render_to_string
@@ -57,6 +57,75 @@ def maj_points_fidelite_sur_paiement(sender, instance, **kwargs):
                 getattr(instance.client, 'pk', '?'), e
             )
 
+
+
+@receiver(pre_save, sender=Prestataire)
+def capturer_ancien_statut_prestataire(sender, instance, **kwargs):
+    """Capture l'ancien statut avant sauvegarde pour détecter l'acceptation ou le refus."""
+    if instance.pk:
+        try:
+            ancien = Prestataire.objects.get(pk=instance.pk)
+            instance._ancien_statut = ancien.statut
+        except Prestataire.DoesNotExist:
+            instance._ancien_statut = None
+    else:
+        instance._ancien_statut = None
+
+
+@receiver(post_save, sender=Prestataire)
+def notify_prestataire_statut_change(sender, instance, created, **kwargs):
+    """
+    Notifie le prestataire (In-App + Push FCM) lorsque sa candidature est acceptée ou refusée.
+    """
+    if created:
+        return  # La création initiale (demande) est notifiée aux admins par notify_admin_on_prestataire_request
+
+    ancien_statut = getattr(instance, '_ancien_statut', None)
+    nouveau_statut = instance.statut
+
+    if ancien_statut and ancien_statut != nouveau_statut:
+        user = instance.client.user
+        
+        # 1. CAS ACCEPTÉ / VALIDÉ (ex: en_attente -> actif ou valide)
+        if nouveau_statut in ['actif', 'valide']:
+            Notification.objects.create(
+                recipient=user,
+                type='prestataire_statut_valide',
+                title="Candidature Prestataire Validée ! 🎉",
+                message=(
+                    f"Félicitations {user.first_name or user.username} ! "
+                    f"Votre demande pour devenir partenaire a été acceptée.\n"
+                    f"Code promo : {instance.code_promo or 'N/A'}\n"
+                    f"Taux commission : {instance.taux_commission}%\n"
+                    f"Réduction client : {instance.reduction_client_pourcentage}%"
+                ),
+                url='/api/v1/utilisateur/prestataire/dashboard/',
+                metadata={
+                    'prestataire_id': instance.pk,
+                    'statut': nouveau_statut,
+                    'code_promo': instance.code_promo or '',
+                    'taux_commission': str(instance.taux_commission),
+                    'reduction_client': str(instance.reduction_client_pourcentage),
+                }
+            )
+
+        # 2. CAS REFUSÉ / REJETÉ (ex: en_attente -> inactif / suspendu / refuse)
+        elif nouveau_statut in ['refuse', 'rejete', 'inactif', 'suspendu'] and ancien_statut == 'en_attente':
+            Notification.objects.create(
+                recipient=user,
+                type='prestataire_statut_refuse',
+                title="Mise à jour candidature Prestataire",
+                message=(
+                    f"Bonjour {user.first_name or user.username}, "
+                    f"nous avons examiné votre demande de partenariat. "
+                    f"Malheureusement, nous ne pouvons pas y donner une suite favorable pour le moment."
+                ),
+                url='/api/v1/utilisateur/me/',
+                metadata={
+                    'prestataire_id': instance.pk,
+                    'statut': nouveau_statut,
+                }
+            )
 
 
 @receiver(post_save, sender=Prestataire)
