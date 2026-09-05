@@ -117,12 +117,33 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
             }
         )
 
+        # Notification au Prestataire si son code promo a été utilisé
+        if instance.prestataire and instance.prestataire.client and instance.prestataire.client.user:
+            user_prestataire = instance.prestataire.client.user
+            Notification.objects.create(
+                recipient=user_prestataire,
+                type='commission_gagne',
+                title="Code Promo utilisé ! 💰",
+                message=(
+                    f"Votre code promo a été utilisé sur la commande #{instance.pk} ! "
+                    f"Vous avez gagné {instance.commission_montant} FCFA de commission."
+                ),
+                url="/api/v1/utilisateur/prestataire/dashboard/",
+                metadata={
+                    'commande_id': str(instance.pk),
+                    'commission_montant': str(instance.commission_montant),
+                    'code_promo': str(instance.code_promo_utilise or instance.prestataire.code_promo or ''),
+                }
+            )
 
-    # 2. MISES À JOUR / CHANGEMENT DE STATUT
+    # 2. MISES À JOUR / CHANGEMENT DE STATUT (COMMANDE & LIVRAISON)
     else:
         ancien_statut = getattr(instance, '_ancien_statut', None)
         nouveau_statut = instance.statut
+        ancien_livraison = getattr(instance, '_ancien_statut_livraison', None)
+        nouveau_livraison = instance.statut_livraison
 
+        # Notification Client sur statut commande
         if ancien_statut and ancien_statut != nouveau_statut and instance.client and instance.client.user:
             user_client = instance.client.user
             
@@ -147,6 +168,79 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                         'statut': nouveau_statut,
                     }
                 )
+
+        # Notification au Livreur en cas d'assignation de livraison
+        if nouveau_livraison == 'assignée' and ancien_livraison != 'assignée' and instance.livreur and instance.livreur.client:
+            user_livreur = instance.livreur.client.user
+            Notification.objects.create(
+                recipient=user_livreur,
+                type='livraison_assignee',
+                title=f"Nouvelle livraison attribuée ! 🚚",
+                message=f"La commande #{instance.pk} vous a été attribuée pour livraison.",
+                url=f"/api/v1/auth/livreur/commandes/",
+                metadata={
+                    'commande_id': str(instance.pk),
+                    'adresse': str(instance.adresse_livraison or ''),
+                }
+            )
+
+
+# ============================================================
+# SIGNATION RETRAITS PRESTATAIRE (PayoutTransaction)
+# ============================================================
+from .models import PayoutTransaction
+
+@receiver(pre_save, sender=PayoutTransaction)
+def capturer_ancien_statut_payout(sender, instance, **kwargs):
+    if instance.pk:
+        try:
+            ancien = PayoutTransaction.objects.get(pk=instance.pk)
+            instance._ancien_statut = ancien.statut
+        except PayoutTransaction.DoesNotExist:
+            instance._ancien_statut = None
+    else:
+        instance._ancien_statut = None
+
+
+@receiver(post_save, sender=PayoutTransaction)
+def notifier_statut_payout_prestataire(sender, instance, created, **kwargs):
+    """Notifie le Prestataire des demandes et de l'état final de son virement Campay."""
+    if not instance.prestataire or not instance.prestataire.client or not instance.prestataire.client.user:
+        return
+
+    user_prestataire = instance.prestataire.client.user
+
+    if created:
+        Notification.objects.create(
+            recipient=user_prestataire,
+            type='payout_demande',
+            title="Demande de retrait enregistrée 💸",
+            message=f"Votre demande de retrait de {instance.montant} FCFA est en cours de traitement.",
+            url="/api/v1/utilisateur/prestataire/payouts/",
+            metadata={'payout_id': str(instance.pk), 'montant': str(instance.montant)}
+        )
+    else:
+        ancien = getattr(instance, '_ancien_statut', None)
+        if ancien and ancien != instance.statut:
+            if instance.statut == 'succes':
+                Notification.objects.create(
+                    recipient=user_prestataire,
+                    type='payout_succes',
+                    title="Retrait effectué avec succès ! 💰",
+                    message=f"Votre virement de {instance.montant} FCFA vers {instance.telephone_destination} a été validé.",
+                    url="/api/v1/utilisateur/prestataire/payouts/",
+                    metadata={'payout_id': str(instance.pk), 'montant': str(instance.montant)}
+                )
+            elif instance.statut == 'echec':
+                Notification.objects.create(
+                    recipient=user_prestataire,
+                    type='payout_echec',
+                    title="Échec du virement ⚠️",
+                    message=f"Votre demande de retrait de {instance.montant} FCFA n'a pas pu aboutir. Votre solde a été crédité.",
+                    url="/api/v1/utilisateur/prestataire/payouts/",
+                    metadata={'payout_id': str(instance.pk), 'montant': str(instance.montant)}
+                )
+
 
 
 
