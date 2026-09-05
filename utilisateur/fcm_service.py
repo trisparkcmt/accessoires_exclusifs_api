@@ -63,6 +63,21 @@ def send_fcm_notification(
 
     invalid_tokens = []
 
+    from django.conf import settings
+    frontend_base = getattr(settings, 'FRONTEND_URL', 'https://accessoiresexclusifs.com').rstrip('/')
+
+    raw_link = str_data.get('url', '')
+    if raw_link and raw_link.startswith('https://'):
+        webpush_link = raw_link
+    elif raw_link and raw_link.startswith('http://'):
+        webpush_link = 'https://' + raw_link[7:]
+    elif raw_link:
+        if not raw_link.startswith('/'):
+            raw_link = '/' + raw_link
+        webpush_link = f"{frontend_base}{raw_link}"
+    else:
+        webpush_link = f"{frontend_base}/"
+
     for batch in chunks(tokens, 500):
         multicast_message = fcm_messaging.MulticastMessage(
             tokens=batch,
@@ -88,10 +103,10 @@ def send_fcm_notification(
                 notification=fcm_messaging.WebpushNotification(
                     title=title,
                     body=message,
-                    icon='/icons/icon-192x192.png',
+                    icon=f"{frontend_base}/icons/icon-192x192.png",
                 ),
                 fcm_options=fcm_messaging.WebpushFCMOptions(
-                    link=str_data.get('url', '/'),
+                    link=webpush_link,
                 ),
             ),
         )
