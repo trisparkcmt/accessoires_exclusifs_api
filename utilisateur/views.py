@@ -1041,12 +1041,13 @@ def detail_prestataire_request(request, pk):
     serializer = PrestataireSerializer(prestataire)
     return Response(serializer.data)
 
-@api_view(['GET', 'POST', 'PATCH'])
+@api_view(['GET', 'POST', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def user_notifications(request):
     """
     GET : Liste des notifications destinées à l'utilisateur connecté (et globales pour admin/serveuse).
     POST / PATCH : Marque toutes les notifications personnelles de l'utilisateur connecté comme lues.
+    DELETE : Supprime une, plusieurs ou toutes les notifications de l'utilisateur connecté de la base de données.
     """
     user = request.user
     from utilisateur.permissions import is_active_serveuse
@@ -1069,6 +1070,65 @@ def user_notifications(request):
         return Response({
             "detail": "Toutes vos notifications ont été marquées comme lues.",
             "updated": updated
+        }, status=status.HTTP_200_OK)
+
+    elif request.method == 'DELETE':
+        notif_id = request.query_params.get('id') or (request.data.get('notification_id') if hasattr(request, 'data') and isinstance(request.data, dict) else None)
+        notif_ids = request.data.get('notification_ids') if hasattr(request, 'data') and isinstance(request.data, dict) else None
+
+        if notif_id:
+            deleted_count, _ = Notification.objects.filter(pk=notif_id, recipient=user).delete()
+            if deleted_count == 0 and (user.is_superuser or user.is_staff):
+                deleted_count, _ = Notification.objects.filter(pk=notif_id, is_global_admin=True).delete()
+            return Response({
+                "detail": f"Notification #{notif_id} supprimée de la base de données." if deleted_count > 0 else "Notification introuvable.",
+                "deleted": deleted_count
+            }, status=status.HTTP_200_OK if deleted_count > 0 else status.HTTP_404_NOT_FOUND)
+
+        elif notif_ids and isinstance(notif_ids, list):
+            deleted_count, _ = Notification.objects.filter(pk__in=notif_ids, recipient=user).delete()
+            return Response({
+                "detail": f"{deleted_count} notification(s) supprimée(s) de la base de données.",
+                "deleted": deleted_count
+            }, status=status.HTTP_200_OK)
+
+        else:
+            deleted_count, _ = Notification.objects.filter(recipient=user).delete()
+            return Response({
+                "detail": "Toutes vos notifications ont été supprimées de la base de données.",
+                "deleted": deleted_count
+            }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def user_notification_detail(request, pk):
+    """
+    GET : Détail d'une notification.
+    PATCH : Marque la notification comme lue.
+    DELETE : Supprime définitivement la notification de la base de données.
+    """
+    user = request.user
+    from utilisateur.permissions import is_active_serveuse
+
+    if user.is_superuser or is_active_serveuse(user) or user.is_staff:
+        notif = get_object_or_404(Notification, Q(pk=pk) & (Q(recipient=user) | Q(is_global_admin=True)))
+    else:
+        notif = get_object_or_404(Notification, pk=pk, recipient=user)
+
+    if request.method == 'GET':
+        serializer = NotificationSerializer(notif)
+        return Response(serializer.data)
+
+    elif request.method == 'PATCH':
+        notif.is_read = True
+        notif.save()
+        return Response(NotificationSerializer(notif).data)
+
+    elif request.method == 'DELETE':
+        notif.delete()
+        return Response({
+            "detail": f"Notification #{pk} supprimée avec succès de la base de données."
         }, status=status.HTTP_200_OK)
 
 from django.template.loader import render_to_string

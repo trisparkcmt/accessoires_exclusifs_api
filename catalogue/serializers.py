@@ -446,16 +446,27 @@ class ProduitFiniEssencePublicSerializer(serializers.ModelSerializer):
     categorie = serializers.CharField(source='essence.categorie', read_only=True)
     essence_details = EssencePublicSerializer(source='essence', read_only=True)
     stock_disponible = serializers.SerializerMethodField()
+    is_favori = serializers.SerializerMethodField()
 
     class Meta:
         model = ProduitFiniEssence
-        fields = ['id', 'essence', 'essence_details', 'marque', 'nom', 'categorie', 'taille_ml', 'prix', 'prix_promotionnel', 'prix_actuel', 'stock_disponible', 'actif']
+        fields = ['id', 'essence', 'essence_details', 'marque', 'nom', 'categorie', 'taille_ml', 'prix', 'prix_promotionnel', 'prix_actuel', 'stock_disponible', 'is_favori', 'actif']
 
     @extend_schema_field(OpenApiTypes.INT)
     def get_stock_disponible(self, obj):
         if obj.taille_ml > 0:
             return int(obj.essence.stock_total_ml() // obj.taille_ml)
         return 0
+
+    def get_is_favori(self, obj):
+        request = self.context.get('request')
+        if request and request.user and request.user.is_authenticated:
+            try:
+                client = request.user.client
+                return Favori.objects.filter(client=client, produit_fini_essence=obj).exists()
+            except Exception:
+                pass
+        return False
 
 class LotEssenceSerializer(serializers.ModelSerializer):
     essence_details = EssenceLaboListSerializer(source='essence', read_only=True)
@@ -927,11 +938,18 @@ class FavoriSerializer(serializers.ModelSerializer):
 
     def get_image_produit(self, obj):
         request = self.context.get('request')
-        produit = obj.parfum if obj.parfum else obj.accessoire
-        if produit and produit.image_principale:
+        image = None
+        if obj.parfum and obj.parfum.image_principale:
+            image = obj.parfum.image_principale
+        elif obj.accessoire and obj.accessoire.image_principale:
+            image = obj.accessoire.image_principale
+        elif obj.produit_fini_essence and obj.produit_fini_essence.essence and obj.produit_fini_essence.essence.image_principale:
+            image = obj.produit_fini_essence.essence.image_principale
+
+        if image:
             if request:
-                return request.build_absolute_uri(produit.image_principale.url)
-            return produit.image_principale.url
+                return request.build_absolute_uri(image.url)
+            return image.url
         return None
 
     def get_type_produit(self, obj):
@@ -944,6 +962,8 @@ class FavoriSerializer(serializers.ModelSerializer):
             return obj.parfum.slug
         if obj.accessoire:
             return obj.accessoire.slug
+        if obj.produit_fini_essence and obj.produit_fini_essence.essence:
+            return obj.produit_fini_essence.essence.slug
         return None
 
     def get_id_produit(self, obj):
