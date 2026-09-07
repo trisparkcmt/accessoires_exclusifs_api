@@ -318,7 +318,8 @@ class Commande(models.Model):
         
         if self.prestataire:
             self.remise_code_promo = self.sous_total * (self.prestataire.reduction_client_pourcentage / 100)
-            self.commission_montant = self.sous_total * (self.prestataire.taux_commission / 100)
+            montant_apres_remise = self.sous_total - self.remise_code_promo
+            self.commission_montant = montant_apres_remise * (self.prestataire.taux_commission / 100)
         elif self.code_promo_utilise:
             # Chercher si c'est un code promo admin
             promo_admin = CodePromoAdmin.objects.filter(code__iexact=self.code_promo_utilise, est_actif=True).first()

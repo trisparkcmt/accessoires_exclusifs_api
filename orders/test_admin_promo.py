@@ -163,7 +163,7 @@ class AdminPromoTestCase(APITestCase):
         
         # Pas de nouvel envoi
         mock_send_mail.assert_not_called()
-        self.assertEqual(Notification.objects.count(), 0)
+        self.assertEqual(Notification.objects.filter(type='code_promo_admin').count(), 0)
 
     @patch('django.core.mail.send_mail')
     def test_apply_admin_promo_to_panier(self, mock_send_mail):
@@ -373,7 +373,7 @@ class AdminPromoTestCase(APITestCase):
         
         # Récupérer l'objet commande
         commande = Commande.objects.get(numero_commande=response_passer.data['numero_commande'])
-        self.assertEqual(commande.commission_montant, Decimal("2000.00")) # 5% de 40000
+        self.assertEqual(commande.commission_montant, Decimal("1800.00")) # 5% de 36000 (40000 - 4000)
         self.assertEqual(commande.commission_statut, 'non_versée')
         self.assertEqual(prestataire.solde_commission, Decimal("0.00"))
         
@@ -386,7 +386,7 @@ class AdminPromoTestCase(APITestCase):
         
         # Recharger le prestataire
         prestataire.refresh_from_db()
-        self.assertEqual(prestataire.solde_commission, Decimal("2000.00"))
+        self.assertEqual(prestataire.solde_commission, Decimal("1800.00"))
         
         # Vérifier que le prestataire a reçu une notification de versement
         notif_versement = Notification.objects.filter(recipient=self.client_user2, type='commission').first()

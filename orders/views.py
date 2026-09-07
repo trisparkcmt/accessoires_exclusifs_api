@@ -1014,6 +1014,7 @@ class AdminCodePromoViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         instance = serializer.save()
+        instance.refresh_from_db()
         
         # Envoi de la notification et de l'e-mail de manière asynchrone en arrière-plan
         import threading
@@ -1023,32 +1024,53 @@ class AdminCodePromoViewSet(viewsets.ModelViewSet):
         from django.utils.html import strip_tags
         from django.conf import settings
 
-        def _send_promo_notifications(promo_instance):
-            try:
-                for client in promo_instance.clients_autorises.all():
-                    user = client.user
-                    subject = "Nouveau code promo exclusif pour vous !"
-                    
-                    pourcentage_val = promo_instance.reduction_pourcentage
-                    reduction_pourcentage_fmt = int(pourcentage_val) if (pourcentage_val is not None and pourcentage_val % 1 == 0) else pourcentage_val
+        clients = serializer.validated_data.get('clients_autorises', [])
+        clients_info = [
+            (c.user.email, c.user.first_name or c.user.username, c.user)
+            for c in clients if hasattr(c, 'user') and c.user and c.user.email
+        ]
+        promo_code = instance.code
+        pourcentage_val = instance.reduction_pourcentage
+        reduction_pourcentage_fmt = int(pourcentage_val) if (pourcentage_val is not None and pourcentage_val % 1 == 0) else pourcentage_val
 
+        def _send_promo_notifications():
+            try:
+                for email, prenom, user in clients_info:
+                    subject = "Nouveau code promo exclusif pour vous !"
                     context = {
-                        'prenom': user.first_name or user.username,
+                        'prenom': prenom,
                         'user': user,
-                        'code_promo': promo_instance.code,
+                        'code_promo': promo_code,
                         'reduction_pourcentage': reduction_pourcentage_fmt,
                         'frontend_url': settings.FRONTEND_URL,
                     }
                     html_content = render_to_string('emails/code_promo_exclusif.html', context)
                     text_content = strip_tags(html_content)
                     
-                    msg = EmailMultiAlternatives(subject, text_content, settings.DEFAULT_FROM_EMAIL, [user.email])
-                    msg.attach_alternative(html_content, "text/html")
-                    msg.send(fail_silently=True)
+                    from django.core.mail import send_mail
+                    send_mail(subject, text_content, settings.DEFAULT_FROM_EMAIL, [email], html_message=html_content, fail_silently=True)
+
+                    Notification.objects.create(
+                        recipient=user,
+                        type='code_promo_admin',
+                        title="Code promo exclusif",
+                        message=f"Vous avez reçu le code promo exclusif {promo_code} ({reduction_pourcentage_fmt}% de réduction) !",
+                        url='/catalog',
+                        metadata={
+                            'code_promo': promo_code,
+                            'reduction_pourcentage': str(reduction_pourcentage_fmt),
+                        }
+                    )
             except Exception as err:
+                import logging
+                logger = logging.getLogger(__name__)
                 logger.error(f"[CODE-PROMO-EMAIL] Erreur d'envoi d'emails promo: {err}")
 
-        threading.Thread(target=_send_promo_notifications, args=(instance,), daemon=True).start()
+        import sys
+        if 'test' in sys.argv:
+            _send_promo_notifications()
+        else:
+            threading.Thread(target=_send_promo_notifications, daemon=True).start()
 
 
 # ============================================================

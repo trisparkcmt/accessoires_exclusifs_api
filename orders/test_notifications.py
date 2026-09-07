@@ -60,7 +60,7 @@ class NotificationCommandeTest(APITestCase):
             sous_total=Decimal("40000.00"),
             remise_code_promo=Decimal("4000.00"),
             total_ttc=Decimal("36000.00"),
-            commission_montant=Decimal("2000.00"),
+            commission_montant=Decimal("1800.00"),
             livraison_nom_complet="Client Test",
             livraison_telephone="+22501000001",
             statut="en_attente",
@@ -96,7 +96,7 @@ class NotificationCommandeTest(APITestCase):
         ).first()
         self.assertIsNotNone(notif)
         self.assertIn("NOTIF20", notif.message)
-        self.assertIn("2000", notif.message)
+        self.assertIn("1800", notif.message)
 
     def test_livreur_notifie_a_l_assignation(self):
         Notification.objects.all().delete()

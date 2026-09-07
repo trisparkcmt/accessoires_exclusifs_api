@@ -313,5 +313,5 @@ class POSTestCase(APITestCase):
         self.assertEqual(commande.remise_code_promo, Decimal("3500.00"))
         self.assertEqual(commande.total_ttc, Decimal("31500.00"))
         self.assertEqual(commande.prestataire, self.prestataire_user.client.prestataire)
-        self.assertEqual(commande.commission_montant, Decimal("5250.00")) # 15% de 35000
+        self.assertEqual(commande.commission_montant, Decimal("4725.00")) # 15% de 31500 (35000 - 3500 de réduction)
         self.assertEqual(commande.commission_statut, "versée") # la commission est versée car statut_paiement='payé'
