@@ -1029,11 +1029,14 @@ class AdminCodePromoViewSet(viewsets.ModelViewSet):
                     user = client.user
                     subject = "Nouveau code promo exclusif pour vous !"
                     
+                    pourcentage_val = promo_instance.reduction_pourcentage
+                    reduction_pourcentage_fmt = int(pourcentage_val) if (pourcentage_val is not None and pourcentage_val % 1 == 0) else pourcentage_val
+
                     context = {
                         'prenom': user.first_name or user.username,
                         'user': user,
                         'code_promo': promo_instance.code,
-                        'reduction_pourcentage': promo_instance.reduction_pourcentage,
+                        'reduction_pourcentage': reduction_pourcentage_fmt,
                         'frontend_url': settings.FRONTEND_URL,
                     }
                     html_content = render_to_string('emails/code_promo_exclusif.html', context)

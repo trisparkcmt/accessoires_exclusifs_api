@@ -230,13 +230,23 @@ from orders.models import CodePromoAdmin
 
 @receiver(m2m_changed, sender=CodePromoAdmin.clients_autorises.through)
 def notifier_clients_code_promo_exclusif(sender, instance, action, pk_set, **kwargs):
-
     """
     Notifie le ou les clients sélectionnés lorsqu'un Code Promo Admin exclusif leur est attribué.
     """
     if action == 'post_add' and pk_set:
         from utilisateur.models import Client
         clients = Client.objects.filter(pk__in=pk_set).select_related('user')
+        
+        # Formater proprement le pourcentage de réduction (ex: 10% au lieu de 10.00%)
+        pourcentage_val = instance.reduction_pourcentage
+        if pourcentage_val is not None:
+            if pourcentage_val % 1 == 0:
+                pourcentage_str = f"{int(pourcentage_val)}%"
+            else:
+                pourcentage_str = f"{pourcentage_val}%"
+        else:
+            pourcentage_str = "une"
+
         for client in clients:
             if client.user and client.user.is_active:
                 Notification.objects.create(
@@ -245,7 +255,7 @@ def notifier_clients_code_promo_exclusif(sender, instance, action, pk_set, **kwa
                     title="🎁 Code Promo Exclusif !",
                     message=(
                         f"Vous avez reçu un code promo exclusif '{instance.code}' "
-                        f"offrant {instance.reduction_pourcentage}% de réduction !"
+                        f"offrant {pourcentage_str} de réduction !"
                     ),
                     url="/api/v1/orders/promos/",
                     metadata={

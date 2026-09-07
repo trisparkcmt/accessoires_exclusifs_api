@@ -32,6 +32,7 @@ class ParfumFilter(django_filters.FilterSet):
     occasion          = django_filters.CharFilter(method='filter_occasion')
 
     # --- Autres filtres ---
+    categorie     = django_filters.NumberFilter(field_name='categorie__id')
     marque        = django_filters.CharFilter(field_name='marque', lookup_expr='icontains')
     genre         = django_filters.CharFilter(field_name='genre_cible')
     intensite     = django_filters.CharFilter(field_name='intensite')
@@ -55,7 +56,7 @@ class ParfumFilter(django_filters.FilterSet):
 
     class Meta:
         model  = Parfum
-        fields = ['marque', 'genre', 'intensite', 'contenance_ml', 'prix_min', 'prix_max']
+        fields = ['categorie', 'marque', 'genre', 'intensite', 'contenance_ml', 'prix_min', 'prix_max']
 
 
 # ============================================================
