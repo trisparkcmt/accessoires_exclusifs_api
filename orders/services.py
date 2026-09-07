@@ -24,6 +24,71 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
+def number_to_words_fr(number: float) -> str:
+    """Convertit un montant en FCFA en toutes lettres (ex: 35000 -> Trente-cinq mille FCFA)."""
+    try:
+        n = int(round(float(number)))
+    except (ValueError, TypeError):
+        return ""
+    if n <= 0:
+        return "Zéro FCFA"
+
+    units = ["", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf"]
+    teens = ["dix", "onze", "douze", "treize", "quatorze", "quinze", "seize", "dix-sept", "dix-huit", "dix-neuf"]
+    tens = ["", "dix", "vingt", "trente", "quarante", "cinquante", "soixante", "soixante-dix", "quatre-vingts", "quatre-vingt-dix"]
+
+    def convert_below_1000(num):
+        if num == 0:
+            return ""
+        res = []
+        c = num // 100
+        r = num % 100
+        if c > 0:
+            if c == 1:
+                res.append("cent")
+            else:
+                res.append(units[c] + " cent" + ("s" if r == 0 else ""))
+        if r > 0:
+            if r < 10:
+                res.append(units[r])
+            elif r < 20:
+                res.append(teens[r - 10])
+            else:
+                t = r // 10
+                u = r % 10
+                if t in (7, 9):
+                    base_t = tens[t - 1]
+                    rem_val = r - (t - 1) * 10
+                    res.append(base_t + (" et " if u == 1 and t == 7 else "-") + teens[rem_val - 10])
+                else:
+                    base_t = tens[t]
+                    if t == 8 and u == 0:
+                        res.append("quatre-vingts")
+                    elif u == 1 and t != 8:
+                        res.append(base_t + " et un")
+                    elif u > 0:
+                        res.append(base_t + "-" + units[u])
+                    else:
+                        res.append(base_t)
+        return " ".join(res)
+
+    parts = []
+    millions = n // 1_000_000
+    remainder = n % 1_000_000
+    thousands = remainder // 1_000
+    units_part = remainder % 1_000
+
+    if millions > 0:
+        parts.append("un million" if millions == 1 else convert_below_1000(millions) + " millions")
+    if thousands > 0:
+        parts.append("mille" if thousands == 1 else convert_below_1000(thousands) + " mille")
+    if units_part > 0:
+        parts.append(convert_below_1000(units_part))
+
+    words = " ".join(parts).strip()
+    return (words.capitalize() + " FCFA") if words else ""
+
+
 def generer_facture(commande):
     """
     Génère (ou régénère) la facture PDF d'une commande payée.
@@ -79,11 +144,19 @@ def generer_facture(commande):
     except Exception:
         entreprise = None
 
-    entreprise_telephone = (
-        (entreprise.telephone_principal or entreprise.telephone_secondaire or entreprise.whatsapp)
-        if entreprise else None
-    )
+    telephones = []
+    if entreprise:
+        if entreprise.telephone_principal:
+            telephones.append(entreprise.telephone_principal)
+        if entreprise.telephone_secondaire:
+            telephones.append(entreprise.telephone_secondaire)
+        if not telephones and entreprise.whatsapp:
+            telephones.append(entreprise.whatsapp)
+
+    entreprise_telephone = " / ".join(telephones) if telephones else "+237 693 835 601 / 680 215 310"
     entreprise_email = 'accessoiresexclusifs@gmail.com'
+
+    total_en_lettres = number_to_words_fr(commande.total_ttc)
 
     context = {
         'facture': facture,
@@ -100,6 +173,7 @@ def generer_facture(commande):
         'lignes_diffuseurs': commande.lignes_diffuseurs.all(),
         'entreprise_telephone': entreprise_telephone,
         'entreprise_email': entreprise_email,
+        'total_en_lettres': total_en_lettres,
         'DEVISE': 'FCFA',
     }
 
