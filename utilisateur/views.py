@@ -161,7 +161,29 @@ class HybridTokenRefreshView(BaseRefreshView):
       pour empêcher tout accès JS (protection XSS).
     - Si la requête provient d'une App Mobile / Client API : les jetons sont retournés directement
       dans le corps JSON de la réponse, et aucun cookie n'est conservé.
+    - Gère le cas où un compte utilisateur a été supprimé en nettoyant les cookies et en renvoyant un 401.
     """
+    def post(self, request, *args, **kwargs):
+        try:
+            return super().post(request, *args, **kwargs)
+        except AuthUser.DoesNotExist:
+            response = Response(
+                {"detail": "Utilisateur introuvable ou compte supprimé.", "code": "user_not_found"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+            cookie_name = dj_rest_auth_settings.JWT_AUTH_COOKIE
+            refresh_cookie_name = dj_rest_auth_settings.JWT_AUTH_REFRESH_COOKIE
+            refresh_cookie_path = dj_rest_auth_settings.JWT_AUTH_REFRESH_COOKIE_PATH
+            cookie_samesite = dj_rest_auth_settings.JWT_AUTH_SAMESITE
+            cookie_domain = dj_rest_auth_settings.JWT_AUTH_COOKIE_DOMAIN
+            if cookie_name:
+                response.delete_cookie(cookie_name, path='/', samesite=cookie_samesite, domain=cookie_domain)
+            if refresh_cookie_name:
+                response.delete_cookie(refresh_cookie_name, path=refresh_cookie_path, samesite=cookie_samesite, domain=cookie_domain)
+            response.delete_cookie('sessionid', path='/')
+            response.delete_cookie('csrftoken', path='/')
+            return response
+
     def finalize_response(self, request, response, *args, **kwargs):
         response = super().finalize_response(request, response, *args, **kwargs)
 
