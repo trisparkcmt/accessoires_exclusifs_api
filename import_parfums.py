@@ -57,7 +57,6 @@ def import_parfums():
 
     parfums_data = [
         # --- PARFUMS 4 À 18 ---
-        # 4. Paris Corner – Shahaf : Oud Tonka
         {
             "sku": "PARFUM-PC-SHAHAF-004",
             "nom": "Shahaf : Oud Tonka",
@@ -78,7 +77,6 @@ def import_parfums():
             "est_nouveau": True,
             "est_bestseller": False
         },
-        # 5. Fragrance World – Invicto Absolu
         {
             "sku": "PARFUM-FW-INVICTO-005",
             "nom": "INVICTO ABSOLU",
@@ -99,7 +97,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 6. Maison Alhambra – Le Secret de Séduction de la Rose
         {
             "sku": "PARFUM-MA-ROSE-006",
             "nom": "Le secret de séduction de la rose",
@@ -120,7 +117,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 7. Chanel – Bleu de Chanel
         {
             "sku": "PARFUM-CH-BLEU-007",
             "nom": "Bleu de Chanel",
@@ -141,7 +137,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 8. Lattafa – Raghba pour Homme
         {
             "sku": "PARFUM-LA-RAGHBA-008",
             "nom": "Raghba pour Homme",
@@ -162,7 +157,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 9. Lattafa – KHAMRAH
         {
             "sku": "PARFUM-LA-KHAMRAH-009",
             "nom": "KHAMRAH",
@@ -183,7 +177,6 @@ def import_parfums():
             "est_nouveau": True,
             "est_bestseller": True
         },
-        # 10. Leonard – Cuir Ambre
         {
             "sku": "PARFUM-LE-CUIRAMBRE-010",
             "nom": "Cuir Ambre",
@@ -204,7 +197,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 11. Lattafa – Hayaati Rose
         {
             "sku": "PARFUM-LA-HAYAATIROSE-011",
             "nom": "Hayaati Rose",
@@ -225,7 +217,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 12. Maison Alhambra – Kismet For Men
         {
             "sku": "PARFUM-MA-KISMET-012",
             "nom": "Kismet For Men",
@@ -246,7 +237,6 @@ def import_parfums():
             "est_nouveau": True,
             "est_bestseller": False
         },
-        # 13. Pascal Morabito – Rose Édition Oud
         {
             "sku": "PARFUM-PM-ROSEOUD-013",
             "nom": "Rose Édition Oud",
@@ -267,7 +257,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 14. Tom Ford – Oud Wood
         {
             "sku": "PARFUM-TF-OUDWOOD-014",
             "nom": "Oud Wood",
@@ -288,7 +277,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 15. Zara – Red Temptation
         {
             "sku": "PARFUM-ZA-REDTEMPT-015",
             "nom": "Red Temptation",
@@ -309,7 +297,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 16. Zara – Tender Amber
         {
             "sku": "PARFUM-ZA-TENDERAMBER-016",
             "nom": "Tender Amber",
@@ -330,7 +317,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 17. Hugo Boss – Boss Bottled Night
         {
             "sku": "PARFUM-HB-BOSSNIGHT-017",
             "nom": "Boss Bottled Night",
@@ -351,7 +337,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 18. Lattafa – Proud Of You
         {
             "sku": "PARFUM-LA-PROUDOFYOU-018",
             "nom": "Proud Of You",
@@ -374,7 +359,6 @@ def import_parfums():
         },
 
         # --- PARFUMS 19 À 31 ---
-        # 19. Iris Patchouli
         {
             "sku": "PARFUM-MN-IRISPATCH-019",
             "nom": "Iris Patchouli",
@@ -395,7 +379,6 @@ def import_parfums():
             "est_nouveau": True,
             "est_bestseller": False
         },
-        # 20. Fiero Blue Man
         {
             "sku": "PARFUM-FW-FIEROBLUE-020",
             "nom": "Fiero Blue Man",
@@ -416,7 +399,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 21. Homme Authentique : Geovany
         {
             "sku": "PARFUM-GEO-HOMMEAUTH-021",
             "nom": "Homme authentique : Geovany",
@@ -437,7 +419,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 22. Hamdaan
         {
             "sku": "PARFUM-LA-HAMDAAN-022",
             "nom": "Hamdaan",
@@ -458,7 +439,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 23. L'Unique Explorer
         {
             "sku": "PARFUM-FW-UNIQUEEXPL-023",
             "nom": "L'UNIQUE EXPLORER",
@@ -479,7 +459,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 24. Noble Black
         {
             "sku": "PARFUM-DU-NOBLEBLACK-024",
             "nom": "Noble Black",
@@ -500,7 +479,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 25. Oud de Minuit
         {
             "sku": "PARFUM-MO-OUDMINUIT-025",
             "nom": "Oud de minuit",
@@ -521,7 +499,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 26. Scandale (Pour Femme)
         {
             "sku": "PARFUM-FW-SCANDALE-026",
             "nom": "Scandale",
@@ -542,7 +519,6 @@ def import_parfums():
             "est_nouveau": True,
             "est_bestseller": True
         },
-        # 27. Ambre et Néroli
         {
             "sku": "PARFUM-CP-AMBRENEROLI-027",
             "nom": "Ambre et néroli",
@@ -563,7 +539,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 28. Hommes Intenses
         {
             "sku": "PARFUM-FW-HOMMESINT-028",
             "nom": "Hommes Intenses",
@@ -584,7 +559,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 29. Paris Corner – Khair Pistachio
         {
             "sku": "PARFUM-PC-KHAIRPIST-029",
             "nom": "Khair Pistache",
@@ -605,7 +579,6 @@ def import_parfums():
             "est_nouveau": True,
             "est_bestseller": True
         },
-        # 30. Maison Alhambra – Jean Lowe Matière
         {
             "sku": "PARFUM-MA-JEANLOWEMAT-030",
             "nom": "Jean Lowe : Matière",
@@ -626,7 +599,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 31. Maison Alhambra – Ombre Nomade Fab-lab
         {
             "sku": "PARFUM-MA-OMBREFAB-031",
             "nom": "Ombre Nomade Fab-lab",
@@ -649,7 +621,6 @@ def import_parfums():
         },
 
         # --- PARFUMS 32 À 40 ---
-        # 32. Lattafa – Asad Bourbon
         {
             "sku": "PARFUM-LA-ASADBOURBON-032",
             "nom": "Asad : Bourbon",
@@ -670,7 +641,6 @@ def import_parfums():
             "est_nouveau": True,
             "est_bestseller": True
         },
-        # 33. Lattafa – Éclair
         {
             "sku": "PARFUM-LA-ECLAIR-033",
             "nom": "Éclair",
@@ -691,7 +661,6 @@ def import_parfums():
             "est_nouveau": True,
             "est_bestseller": True
         },
-        # 34. Zara – Rose Gourmand
         {
             "sku": "PARFUM-ZA-ROSEGOURMAND-034",
             "nom": "Zara : Rose Gourmand",
@@ -712,7 +681,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 35. Zara – Golden Decade (Ruby)
         {
             "sku": "PARFUM-ZA-GOLDENDECADE-035",
             "nom": "Zara : Décennie dorée (Rubis)",
@@ -733,7 +701,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 36. Zara – Vibrant Leather Oud
         {
             "sku": "PARFUM-ZA-VIBRANTOUD-036",
             "nom": "Zara : Cuir Oud Vibrant",
@@ -754,7 +721,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 37. Fragrance World – Suave Le Parfum
         {
             "sku": "PARFUM-FW-SUAVE-037",
             "nom": "Suave Le Parfum",
@@ -775,7 +741,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 38. Lattafa – Raghba (Classique)
         {
             "sku": "PARFUM-LA-RAGHBA-038",
             "nom": "Raghba",
@@ -796,7 +761,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 39. Fragrance World – Sceptre Bronzite
         {
             "sku": "PARFUM-FW-SCEPTREBRONZ-039",
             "nom": "Sceptre : Bronzite",
@@ -817,7 +781,6 @@ def import_parfums():
             "est_nouveau": True,
             "est_bestseller": False
         },
-        # 40. Lattafa – Hayaati Royale
         {
             "sku": "PARFUM-LA-HAYAATIROYALE-040",
             "nom": "Hayaati : Royale",
@@ -840,7 +803,6 @@ def import_parfums():
         },
 
         # --- PARFUMS 41 À 50 ---
-        # 41. Montale – Black Aoud
         {
             "sku": "PARFUM-MO-BLACKAOUD-041",
             "nom": "Montale Black Oud",
@@ -861,7 +823,6 @@ def import_parfums():
             "est_nouveau": True,
             "est_bestseller": True
         },
-        # 42. Lattafa – Yara (Rose)
         {
             "sku": "PARFUM-LA-YARA-042",
             "nom": "Yara",
@@ -882,7 +843,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 43. Christian Dior – Sauvage
         {
             "sku": "PARFUM-CD-SAUVAGE-043",
             "nom": "Dior Sauvage",
@@ -903,7 +863,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 44. Paris Corner – Khair Fusion
         {
             "sku": "PARFUM-PC-KHAIRFUSION-044",
             "nom": "Khair Fusion",
@@ -924,7 +883,6 @@ def import_parfums():
             "est_nouveau": True,
             "est_bestseller": False
         },
-        # 45. Fragrance World – Oniro
         {
             "sku": "PARFUM-FW-ONIRO-045",
             "nom": "Oniro",
@@ -945,7 +903,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 46. Paris Corner – Ka-Ly Libre Intense
         {
             "sku": "PARFUM-PC-KALYLIBRE-046",
             "nom": "Ka-Ly Libre Intense",
@@ -966,7 +923,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 47. Lattafa – Mazaaji
         {
             "sku": "PARFUM-LA-MAZAAJI-047",
             "nom": "Mazaaji",
@@ -987,7 +943,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": False
         },
-        # 48. Azzaro – Azzaro Pour Homme
         {
             "sku": "PARFUM-AZ-POURHOMME-048",
             "nom": "Azzaro Pour Homme",
@@ -1008,7 +963,6 @@ def import_parfums():
             "est_nouveau": False,
             "est_bestseller": True
         },
-        # 49. Paris Corner – Khair Confection
         {
             "sku": "PARFUM-PC-KHAIRCONF-049",
             "nom": "Khair Confection",
@@ -1029,7 +983,6 @@ def import_parfums():
             "est_nouveau": True,
             "est_bestseller": False
         },
-        # 50. Mauboussin – Mauboussin Pour Lui
         {
             "sku": "PARFUM-MA-POURLUI-050",
             "nom": "Mauboussin Pour Lui",
@@ -1049,10 +1002,1062 @@ def import_parfums():
             "description_ia": "Un bijou de la parfumerie masculine. Mauboussin Pour Lui apporte une signature sobre, classe et affirmée à votre style.",
             "est_nouveau": False,
             "est_bestseller": False
+        },
+
+        # --- PARFUMS 51 À 100 ---
+        # 51. Tabac rouge
+        {
+            "sku": "PARFUM-FW-TABACROUGE-051",
+            "nom": "Tabac rouge",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("22000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Gingembre, Miel, Cannelle",
+            "notes_coeur": "Feuille de tabac, Prune, Maté",
+            "notes_fond": "Ambre, Benjoin, Pêche, Fève tonka",
+            "description_courte": "Un ambré épicé chaud et opulent mariant des feuilles de tabac blond au miel et aux fruits secs.",
+            "description_longue": "Tabac Rouge propose une plongée envoûtante dans un univers oriental riche. La chaleur du tabac à pipe s'adoucit sous la gourmandise du miel et de la prune pour créer un sillage ténébreux et réconfortant.",
+            "description_ia": "Chaleureux, mystérieux et profondément addictif. Tabac Rouge enveloppe votre peau d'une aura orientale et suave idéale pour les moments d'exception.",
+            "est_nouveau": True,
+            "est_bestseller": False
+        },
+        # 52. Ra'ed Silver
+        {
+            "sku": "PARFUM-LA-RAEDSILVER-052",
+            "nom": "Ra'ed (Ra'ed Luxe / Silver)",
+            "marque": "Lattafa",
+            "categorie": cat_dupe,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("35000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Agrumes, Baies de genièvre, Ananas, Pastèque",
+            "notes_coeur": "Lavande, Sauge, Poivre rose, Cannelle",
+            "notes_fond": "Châtaigne, Vanille, Ambre, Bois de santal, Fraise",
+            "description_courte": "Une fraîcheur fruitée et épicée posée sur un fond chaleureux de vanille et bois de santal.",
+            "description_longue": "Ra'ed combine l'énergie pétillante des agrumes et des notes de fruits d'été à un cœur aromatique poivré, avant de s'épanouir sur une base douce et boisée très polyvalente.",
+            "description_ia": "Un vent de fraîcheur moderne et raffiné. Ra'ed Silver séduit par son équilibre parfait entre énergie fruitée et élégance boisée.",
+            "est_nouveau": False,
+            "est_bestseller": True
+        },
+        # 53. Suave / IS Intense
+        {
+            "sku": "PARFUM-FW-SUAVEINT-053",
+            "nom": "Suave / IS Intense",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "femme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("20000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Sirop de cassis, Bergamote, Mandarine",
+            "notes_coeur": "Rose de mai, Néroli, Davana, Osmanthus",
+            "notes_fond": "Patchouli, Vanille, Benjoin, Notes boisées",
+            "description_courte": "Un parfum féminin intense et sophistiqué dominé par le cassis et la rose sur fond ambré.",
+            "description_longue": "Version plus profonde et envoûtante du chypré classique, il capture l'essence d'une féminité affirmée avec un nectar de cassis riche et un cœur floral sublimé par le patchouli.",
+            "description_ia": "Incarnation de la grâce et de la puissance féminine. Un sillage fruité et boisé captivant qui marque les esprits.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 54. Musc Blanc
+        {
+            "sku": "PARFUM-LA-MUSCBLANC-054",
+            "nom": "Musk Blanc / Musc Blanc",
+            "marque": "Lattafa",
+            "categorie": cat_marque,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "moyenne",
+            "prix_unitaire": Decimal("15000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Musc blanc, Notes poudrées",
+            "notes_coeur": "Ylang-ylang, Fleur de lierre",
+            "notes_fond": "Musc, Notes boisées, Ambre",
+            "description_courte": "L'essence même de la propreté : un musc blanc pur, velouté, poudré et réconfortant.",
+            "description_longue": "Musc Blanc procure une sensation immédiate de fraîcheur et de bien-être, rappelant le linge frais et la peau adoucie. Parfait pour une utilisation quotidienne discrète et raffinée.",
+            "description_ia": "Un cocon de douceur et de propreté absolue. Musc Blanc vous enveloppe d'une fraîcheur délicate et poudrée tout au long de la journée.",
+            "est_nouveau": False,
+            "est_bestseller": True
+        },
+        # 55. Prohibit Rouge
+        {
+            "sku": "PARFUM-FW-PROHIBITROUGE-055",
+            "nom": "Prohibit Rouge",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "femme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "très forte",
+            "prix_unitaire": Decimal("20000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Orange sanguine, Gingembre",
+            "notes_coeur": "Tubéreuse, Jasmin, Feuille de piment",
+            "notes_fond": "Patchouli, Bois de santal, Vétiver",
+            "description_courte": "Un bouquet blanc charnel embrasé par l'orange sanguine et le gingembre poivré.",
+            "description_longue": "Prohibit Rouge transgresse les codes avec son cœur floral blanc incandescent. L'association de la tubéreuse et des épices chaudes crée un contraste rouge passion ultra-séduisant.",
+            "description_ia": "Sensuel, ténébreux et magnétique. Prohibit Rouge attire irrépressiblement les regards avec son sillage floral épicé.",
+            "est_nouveau": True,
+            "est_bestseller": False
+        },
+        # 56. Sceptre Amazonite
+        {
+            "sku": "PARFUM-PC-AMAZONITE-056",
+            "nom": "Sceptre : Amazonite",
+            "marque": "Maison Alhambra / Paris Corner",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("25000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Geranium, Feuilles vertes",
+            "notes_coeur": "Encens, Résines",
+            "notes_fond": "Oud (Bois d'agar), Bois de cèdre",
+            "description_courte": "Une composition boisée et résineuse noble articulée autour de l'encens et du geranium.",
+            "description_longue": "Sceptre Amazonite capture la puissance des bois précieux mystiques. L'envolée fraîche de geranium laisse place à un cœur fumé d'encens posé sur un fond sombre d'oud.",
+            "description_ia": "Une empreinte olfactive mystique et majestueuse. Conçu pour ceux qui recherchent un boisé oriental de haute prestance.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 57. Ramz Gold
+        {
+            "sku": "PARFUM-LA-RAMZGOLD-057",
+            "nom": "Ramz Gold",
+            "marque": "Lattafa",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("18000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Bergamote, Pomme, Ananas",
+            "notes_coeur": "Bois de santal, Gaïac, Jasmin, Patchouli",
+            "notes_fond": "Ambre, Musc, Vanille, Oud",
+            "description_courte": "Un parfum oriental fruité et boisé opulent infusé de pomme, d'ambre et de vanille.",
+            "description_longue": "Ramz Gold offre une ouverture riche et sucrée soutenue par des bois chauds. La vanille et l'ambre se mélangent au santal pour offrir un rendu luxueux et enveloppant.",
+            "description_ia": "L'opulence orientale à son apogée. Ramz Gold diffuse une aura dorée et boisée qui vous accompagne avec élégance.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 58. Scandant Homme Le Parfum
+        {
+            "sku": "PARFUM-FW-SCANDANTPARF-058",
+            "nom": "Scandant Homme : Le Parfum",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "très forte",
+            "prix_unitaire": Decimal("20000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Géranium",
+            "notes_coeur": "Fève tonka",
+            "notes_fond": "Bois de santal, Caramel chaud",
+            "description_courte": "Une frappe gourmande et virile : un caramel chaud salé enrobé de fève tonka.",
+            "description_longue": "Conçu pour séduire, Scandant Homme Le Parfum oppose la fraîcheur du géranium à la gourmandise extrême du caramel brun et du santal boisé.",
+            "description_ia": "Sensuel et décapant. Ce parfum gourmand masculin offre une tenue explosive taillée pour les soirées.",
+            "est_nouveau": True,
+            "est_bestseller": True
+        },
+        # 59. Now / RAVE Now
+        {
+            "sku": "PARFUM-LA-RAVENOW-059",
+            "nom": "Maintenant (Now / RAVE Now)",
+            "marque": "Lattafa / RAVE",
+            "categorie": cat_dupe,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("18000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Ananas juteux, Bergamote, Pomme",
+            "notes_coeur": "Bouleau, Patchouli, Jasmin",
+            "notes_fond": "Musc, Mousse de chêne, Ambergris, Vanille",
+            "description_courte": "Une bombe d'ananas frais et sucré posée sur un fond boisé fumé masculin.",
+            "description_longue": "Connu pour son ouverture ultra-juteuse d'ananas, Now/RAVE offre une fraîcheur immédiate qui évolue vers un bois de bouleau masculin et du musc très séduisant.",
+            "description_ia": "Une explosion fruitée irrésistible. Ce parfum vous apporte une dose d'énergie tropicale et boisée parfaite pour les beaux jours.",
+            "est_nouveau": False,
+            "est_bestseller": True
+        },
+        # 60. Hayaati Beau
+        {
+            "sku": "PARFUM-LA-HAYAATIBEAU-060",
+            "nom": "Hayaati (HAYAATI BEAU)",
+            "marque": "Lattafa",
+            "categorie": cat_dupe,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("18000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Pomme, Bergamote",
+            "notes_coeur": "Cannelle, Bois de rose",
+            "notes_fond": "Musc, Vanille, Bois de santal, Ambre",
+            "description_courte": "Un classique frais et polyvalent mariant la pomme croquante, la cannelle et le santal.",
+            "description_longue": "Hayaati est un passe-partout masculin très apprécié. Il associe la fraîcheur fruitée de la pomme à des notes d'épices douces sur une base ambrée et boisée.",
+            "description_ia": "Un sillage jeune, frais et charismatique. Hayaati est le compagnon idéal de l'homme moderne au quotidien.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 61. Wood Essence
+        {
+            "sku": "PARFUM-BV-WOODESSENCE-061",
+            "nom": "Wood Essence",
+            "marque": "Bvlgari",
+            "categorie": cat_marque,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("85000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Agrumes cristallisés, Citron vert, Feuille de coriandre",
+            "notes_coeur": "Cèdre, Vétiver, Cyprès",
+            "notes_fond": "Résine de benjoin",
+            "description_courte": "L'énergie urbaine associée à la force de la nature : un départ d'agrumes vifs sur un cœur boisé intense.",
+            "description_longue": "Wood Essence capture l'harmonie entre la ville et la nature. Il associe la vitalité des zestes d'agrumes à la structure noble de trois bois précieux (cèdre, cyprès et vétiver) soutenus par la chaleur du benjoin.",
+            "description_ia": "Une reconnexion avec les éléments. Bvlgari Man Wood Essence apporte une signature boisée moderne, fraîche et résolument masculine.",
+            "est_nouveau": False,
+            "est_bestseller": True
+        },
+        # 62. Khamrah Qahwa
+        {
+            "sku": "PARFUM-LA-KHAMRAHQAHWA-062",
+            "nom": "Khamrah Qahwa",
+            "marque": "Lattafa",
+            "categorie": cat_marque,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "très forte",
+            "prix_unitaire": Decimal("30000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Gingembre, Cannelle, Cardamome",
+            "notes_coeur": "Café Arabica, Praliné, Fruits confits, Fleurs blanches",
+            "notes_fond": "Café, Vanille, Fève tonka, Benjoin, Bois de santal",
+            "description_courte": "Une variation encore plus gourmande du célèbre Khamrah, enrichie d'une note de café torréfié.",
+            "description_longue": "Khamrah Qahwa conserve la base épicée et caramélisée de l'original en y injectant l'amertume chaleureuse d'un espresso Arabica. Le résultat est un oriental liquoreux, riche et terriblement réconfortant.",
+            "description_ia": "Un élixir d'une gourmandise absolue. Khamrah Qahwa marie l'intensité du café aux dattes sucrées pour un sillage inoubliable.",
+            "est_nouveau": True,
+            "est_bestseller": True
+        },
+        # 63. Supreme Vanilla
+        {
+            "sku": "PARFUM-ZA-SUPREMEVANILLA-063",
+            "nom": "Supreme Vanilla",
+            "marque": "Zara",
+            "categorie": cat_marque,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 80,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("25000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Bergamote, Fleur d'oranger",
+            "notes_coeur": "Sucre brun, Encre, Rose",
+            "notes_fond": "Vanille de Madagascar, Tonka, Cèdre",
+            "description_courte": "Une vanille sombre et sophistiquée relevée d'un accord d'encre et de sucre brun.",
+            "description_longue": "Loin de la vanille simpliste, Supreme Vanilla explore une facette plus texturée et mystérieuse. La douceur de la vanille s'oppose à des notes boisées et encrées qui lui donnent une profondeur contemporaine.",
+            "description_ia": "Moderne et intrigant, Supreme Vanilla réinvente la gourmandise avec un caractère affirmé et élégant.",
+            "est_nouveau": True,
+            "est_bestseller": False
+        },
+        # 64. Mazaaji Rose Gold
+        {
+            "sku": "PARFUM-MA-MAZAAJIROSE-064",
+            "nom": "Mazaaji (Rose Gold)",
+            "marque": "Maison Alhambra / Lattafa",
+            "categorie": cat_marque,
+            "genre_cible": "femme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("18000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Fleur d'oranger, Jasmin",
+            "notes_coeur": "Rose, Poudre de riz",
+            "notes_fond": "Miel, Musc blanc, Ambre",
+            "description_courte": "Un bouquet de fleurs blanches enrobé d'un voile poudré et d'un soupçon de miel.",
+            "description_longue": "Mazaaji se distingue par sa délicatesse. Les fleurs d'oranger et les pétales de rose se posent doucement sur un lit de musc blanc poudré pour un rendu propre, féminin et chaleureux.",
+            "description_ia": "Un hymne à la féminité et à la douceur. Mazaaji enveloppe celle qui le porte d'une aura florale lumineuse et raffinée.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 65. Barrakkat Rouge 540
+        {
+            "sku": "PARFUM-FW-BARRAKKAT540-065",
+            "nom": "Barrakkat Rouge 540",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "très forte",
+            "prix_unitaire": Decimal("20000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Safran, Jasmin de grandiflorum",
+            "notes_coeur": "Amberwood, Ambre gris",
+            "notes_fond": "Résine de sapin, Cèdre",
+            "description_courte": "La signature ambrée et minérale iconique : une alchimie entre le safran et le bois de cèdre.",
+            "description_longue": "Barrakkat Rouge 540 reproduit la magie du chef-d'œuvre de Francis Kurkdjian. L'envolée épicée du safran laisse place à la transparence cristalline du jasmin et à la chaleur enveloppante de l'amberwood.",
+            "description_ia": "Sophistiqué, aérien et hypnotique. Ce parfum diffuse une aura luxueuse qui suscite l'admiration sur son passage.",
+            "est_nouveau": False,
+            "est_bestseller": True
+        },
+        # 66. Velvet Rose
+        {
+            "sku": "PARFUM-LA-VELVETROSE-066",
+            "nom": "Velvet Rose",
+            "marque": "Lattafa",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("20000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Rose de Damas, Patchouli",
+            "notes_coeur": "Bois de gaiac, Labdanum",
+            "notes_fond": "Ambre, Musc, Oud doux",
+            "description_courte": "Une rose sombre et veloutée enlacée dans un bois de gaïac fumé et un ambre précieux.",
+            "description_longue": "Velvet Rose capture la beauté d'une rose épanouie à l'obscurité. Sa gourmandise florale est sublimée par les facettes boisées et ambrées de la parfumerie orientale classique.",
+            "description_ia": "Somptueux et envoûtant. Velvet Rose s'adresse aux amateurs de fragrances florales intenses et mystérieuses.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 67. Oud Satin
+        {
+            "sku": "PARFUM-PC-OUDSATIN-067",
+            "nom": "Oud Satin",
+            "marque": "Paris Corner",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "très forte",
+            "prix_unitaire": Decimal("25000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Violette, Rose de Bulgarie",
+            "notes_coeur": "Rose de Turquie, Oud du Laos",
+            "notes_fond": "Vanille, Ambre, Benjoin",
+            "description_courte": "Une caresse de soie orientale : l'alliance somptueuse de la rose, de la vanille et d'un oud délicat.",
+            "description_longue": "Ce parfum transpose le toucher du satin en senteur. La violette et les deux roses enveloppent un fond boisé d'oud fondu dans une vanille ambrée et sucrée.",
+            "description_ia": "L'élégance à l'état pur. Oud Satin diffuse une chaleur voluptueuse et aristocratique idéale pour les soirées.",
+            "est_nouveau": True,
+            "est_bestseller": True
+        },
+        # 68. Maître de Blue
+        {
+            "sku": "PARFUM-FW-MAITREBLUE-068",
+            "nom": "Maître de Blue",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("18000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Citron, Pamplemousse, Menthe, Poivre rose",
+            "notes_coeur": "Gingembre, Iso E Super, Muscade, Jasmin",
+            "notes_fond": "Encens, Vétiver, Cèdre, Bois de santal, Patchouli",
+            "description_courte": "Le grand classique masculin : un élan d'agrumes frais s'ouvrant sur un fond boisé et fumé.",
+            "description_longue": "Maître de Blue incarne la liberté masculine. Il offre une ouverture fraîche et dynamique de pamplemousse et menthe, stabilisée par un cœur de gingembre et un fond boisé à l'encens.",
+            "description_ia": "Atemporel et charismatique. Maître de Blue apporte une touche de fraîcheur élégante pour toutes les occasions.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 69. Nebras
+        {
+            "sku": "PARFUM-LA-NEBRAS-069",
+            "nom": "Nebras",
+            "marque": "Lattafa (Gamme Pride)",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("28000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Baies rouges, Mandarine",
+            "notes_coeur": "Cacao, Rose, Vanille",
+            "notes_fond": "Sucre, Fève tonka, Amberwood, Musc",
+            "description_courte": "Un délice gourmand aux notes de chocolat chaud, baies rouges et vanille poudrée.",
+            "description_longue": "Nebras est une création enveloppante qui associe la fraîcheur des baies à l'opulence du cacao et du sucre vanillé. Son fond ambré apporte une tenue exceptionnelle sur la peau.",
+            "description_ia": "Addictif et réconfortant. Nebras agit comme un cocon sucré aux nuances de chocolat riche et sensuel.",
+            "est_nouveau": True,
+            "est_bestseller": True
+        },
+        # 70. Riggs Oud
+        {
+            "sku": "PARFUM-RG-RIGGSOUD-070",
+            "nom": "Riggs Oud",
+            "marque": "Riggs London",
+            "categorie": cat_marque,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum / Brume",
+            "contenance_ml": 100,
+            "intensite": "moyenne",
+            "prix_unitaire": Decimal("8000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Épices douces, Bergamote",
+            "notes_coeur": "Bois de cèdre, Notes cuirées",
+            "notes_fond": "Oud léger, Ambre gris, Musc",
+            "description_courte": "Une interprétation légère et accessible du bois d'oud pour un usage quotidien.",
+            "description_longue": "Riggs Oud propose une porte d'entrée facile dans l'univers de l'oud. Il associe des touches épicées à un fond boisé ambré très propre et agréable pour la journée.",
+            "description_ia": "Pratique et masculin. Riggs Oud offre une fraîcheur boisée quotidienne à un tarif très accessible.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 71. Cedar Shield
+        {
+            "sku": "PARFUM-PC-CEDARSHIELD-071",
+            "nom": "Cedar Shield",
+            "marque": "Paris Corner (Gamme Emir)",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("25000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Sève de cèdre, Bergamote",
+            "notes_coeur": "Feuille de violette, Vétiver, Cyprès",
+            "notes_fond": "Bois de cèdre de l'Atlas, Amberwood, Musc",
+            "description_courte": "Une immersion en forêt résineuse : un cèdre majestueux rafraîchi par des feuilles vertes.",
+            "description_longue": "Cedar Shield célèbre la puissance noble du cèdre. L'alliance de la violette et du cyprès apporte une sensation de fraîcheur sous-bois, sublimée par une base boisée et ambrée élégante.",
+            "description_ia": "Naturel, pur et apaisant. Cedar Shield offre un souffle boisé et vert d'un grand raffinement.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 72. Honor & Glory
+        {
+            "sku": "PARFUM-LA-HONORGLORY-072",
+            "nom": "Honor & Glory (Bade'e Al Oud Blanc/Jaune)",
+            "marque": "Lattafa",
+            "categorie": cat_marque,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "très forte",
+            "prix_unitaire": Decimal("25000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Crème brûlée à l'ananas, Brûlé de sucre",
+            "notes_coeur": "Cannelle, Benjoin, Turmeric, Poivre noir",
+            "notes_fond": "Vanille, Cachemire, Bois de santal, Amber",
+            "description_courte": "Un dessert oriental audacieux : ananas caramélisé, cannelle et crème brûlée sur fond vanillé.",
+            "description_longue": "Dernier-né de la saga Bade'e Al Oud, Honor & Glory surprend par son accord gourmand unique d'ananas chaud et de crème brûlée, associé aux épices orientales et au bois de santal.",
+            "description_ia": "Une créativité olfactive saisissante. Un parfum gourmand luxueux qui laisse un sillage vanillé et fruité inoubliable.",
+            "est_nouveau": True,
+            "est_bestseller": True
+        },
+        # 73. Noir Afghan
+        {
+            "sku": "PARFUM-FW-NOIRAFGHAN-073",
+            "nom": "Noir Afghan",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "très forte",
+            "prix_unitaire": Decimal("20000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Cannabis, Notes vertes",
+            "notes_coeur": "Résines, Notes boisées, Tabac, Café",
+            "notes_fond": "Oud (Bois d'agar), Encens",
+            "description_courte": "L'intensité à l'état pur : un élixir sombre et fumé d'encens, de tabac et d'oud mystique.",
+            "description_longue": "Noir Afghan s'adresse aux amateurs de parfums complexes et ténébreux. Il capture l'odeur du hashish végétal, du café torréfié et du tabac dans une brume d'encens d'une ténacité incroyable.",
+            "description_ia": "Mystique, puissant et hypnotique. Un parfum d'exception réservé à ceux qui osent imposer leur présence.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 74. Shaheen Silver
+        {
+            "sku": "PARFUM-LA-SHAHEENSILVER-074",
+            "nom": "Shaheen Silver",
+            "marque": "Lattafa (Gamme Pride)",
+            "categorie": cat_dupe,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("28000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Cassis, Bergamote",
+            "notes_coeur": "Patchouli, Rose",
+            "notes_fond": "Mousse de chêne, Musc, Ambergris",
+            "description_courte": "Un départ fruité et vif suivi d'une structure chyprée et boisée très royale.",
+            "description_longue": "Shaheen Silver (le Faucon Argenté) incarne l'élégance et la prestance. Le cassis pétillant s'associe au patchouli et à une mousse de chêne terreuse pour un rendu noble et très masculin.",
+            "description_ia": "Statut, élégance et fraîcheur. Shaheen Silver vous drape d'une aura charismatique taillée pour les leaders.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 75. Posh Malt
+        {
+            "sku": "PARFUM-FW-POSHMALT-075",
+            "nom": "Posh Malt",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("20000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Notes fruitières, Orange, Bergamote",
+            "notes_coeur": "Malt, Whisky, Patchouli, Café",
+            "notes_fond": "Peat (Tourbe), Vanille, Ambre, Musk",
+            "description_courte": "Une composition chaleureuse et liquoreuse inspirée des whiskies maltés vieillis en fût de chêne.",
+            "description_longue": "Posh Malt marie la rondeur fruitée du départ à des effluves de barrique de malt, de café et de vanille. Un parfum masculin suave et réconfortant pour les soirées fraîches.",
+            "description_ia": "Chaleureux et distingué. Posh Malt offre une signature gourmande et boisée idéale pour l'homme épicurien.",
+            "est_nouveau": True,
+            "est_bestseller": False
+        },
+        # 76. Jean Lowe Immortal
+        {
+            "sku": "PARFUM-MA-JEANLOWEIMM-076",
+            "nom": "Jean Lowe Immortal",
+            "marque": "Maison Alhambra",
+            "categorie": cat_dupe,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("24000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Gingembre, Pamplemousse, Bergamote",
+            "notes_coeur": "Romarin, Sauge, Géranium, Notes aquatiques",
+            "notes_fond": "Ambroxan, Ambergris, Labdanum",
+            "description_courte": "L'énergie piquante du gingembre associée à un pamplemousse juteux et un ambroxan luxueux.",
+            "description_longue": "Succès phénoménal de Maison Alhambra, Immortal procure une sensation de fraîcheur infinie. Le gingembre frais tranche avec l'amertume du pamplemousse sur un fond ambré moderne.",
+            "description_ia": "Une fraîcheur vibrante et luxueuse. L'allié parfait de l'homme moderne en quête d'un sillage propre et dynamique.",
+            "est_nouveau": True,
+            "est_bestseller": True
+        },
+        # 77. Musamam White Intense
+        {
+            "sku": "PARFUM-LA-MUSAMAMWHITE-077",
+            "nom": "Musamam White Intense",
+            "marque": "Lattafa",
+            "categorie": cat_marque,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("30000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Bergamote, Épices douces, Cardamome",
+            "notes_coeur": "Ylang-ylang, Mahonial, Bois de santal, Thé",
+            "notes_fond": "Amberwood, Benzoin, Musc",
+            "description_courte": "Un bois de santal crémeux et épicé, rafraîchi par une touche de thé et d'agrumes.",
+            "description_longue": "Présenté dans son flacon orné du serpent d'argent, Musamam White Intense propose un santal ultra-raffiné. La cardamome et le thé apportent une élégance poudrée et moderne.",
+            "description_ia": "Un luxe contemporain. Ce parfum diffuse une aura sophistiquée, douce et chaleureuse qui ne laisse personne indifférent.",
+            "est_nouveau": True,
+            "est_bestseller": False
+        },
+        # 78. Amber & Leather
+        {
+            "sku": "PARFUM-FW-AMBERLEATHER-078",
+            "nom": "Amber & Leather",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("20000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Cardamome",
+            "notes_coeur": "Cuir noir, Jasmin Sambac",
+            "notes_fond": "Patchouli, Amber, Mousse de chêne",
+            "description_courte": "La sensation du cuir brut et souple réchauffé par l'ambre et la cardamome.",
+            "description_longue": "Amber & Leather évoque les grands espaces du Far West. Le cuir intense est adouci par la délicatesse du jasmin floral et la chaleur enveloppante de l'ambre.",
+            "description_ia": "Texturé, viril et captivant. Un cuir d'une élégance absolue pour affirmer sa personnalité.",
+            "est_nouveau": False,
+            "est_bestseller": True
+        },
+        # 79. Violet Blossom
+        {
+            "sku": "PARFUM-ZA-VIOLETBLOSS-079",
+            "nom": "Violet Blossom",
+            "marque": "Zara",
+            "categorie": cat_marque,
+            "genre_cible": "femme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 90,
+            "intensite": "moyenne",
+            "prix_unitaire": Decimal("20000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Fleur de cerisier",
+            "notes_coeur": "Magnolia, Violette",
+            "notes_fond": "Fève tonka, Vanille",
+            "description_courte": "Un bouquet floral nocturne où la violette et le magnolia se fondent dans la fève tonka.",
+            "description_longue": "Violet Blossom est une fragrance féminine douce et envoûtante. La fleur de cerisier apporte un départ fruité qui glisse vers un cœur poudré de violette et un fond d'amande tonka.",
+            "description_ia": "Une douceur florale et amandée irrésistible, parfaite pour ajouter une touche de mystère au quotidien.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 80. Riggs Voyage
+        {
+            "sku": "PARFUM-RG-RIGGSVOYAGE-080",
+            "nom": "Riggs Voyage",
+            "marque": "Riggs London",
+            "categorie": cat_marque,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum / Brume",
+            "contenance_ml": 100,
+            "intensite": "moyenne",
+            "prix_unitaire": Decimal("8000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Notes marines, Melon, Bergamote",
+            "notes_coeur": "Menthe, Cardamome, Lavande",
+            "notes_fond": "Bois de cèdre, Ambergris",
+            "description_courte": "Une vague d'air marin et d'agrumes énergisante pour l'homme d'action.",
+            "description_longue": "Riggs Voyage offre une fraîcheur océanique instantanée. Les notes aquatiques et la menthe apportent une sensation coup de fouet idéale après le sport ou lors des journées chaudes.",
+            "description_ia": "Dynamique et tonique. Le parfum du grand large accessible à tous les instants de la journée.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 81. Qaed Al Fursan
+        {
+            "sku": "PARFUM-LA-QAEDFURSAN-081",
+            "nom": "Qaed Al Fursan",
+            "marque": "Lattafa",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("18000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Ananas, Saffron",
+            "notes_coeur": "Jasmine, Sapin baumier",
+            "notes_fond": "Amber, Bois de cèdre, Agarwood (Oud)",
+            "description_courte": "Un ananas caramélisé et safrané posé sur un fond boisé résineux.",
+            "description_longue": "Qaed Al Fursan séduit immédiatement par son départ d'ananas mûr et sucré relevé d'une pointe de safran. L'évolution se fait plus boisée et masculine grâce au cèdre et au sapin baumier.",
+            "description_ia": "Chaleureux, fruité et charismatique. Qaed Al Fursan apporte une gourmandise boisée unique qui attire les compliments.",
+            "est_nouveau": False,
+            "est_bestseller": True
+        },
+        # 82. Berries Sample
+        {
+            "sku": "PARFUM-FW-BERRIESSAMPLE-082",
+            "nom": "Berries Sample",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "femme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "moyenne",
+            "prix_unitaire": Decimal("15000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Framboise, Mûre, Fraise des bois",
+            "notes_coeur": "Pivoine, Rose, Violette",
+            "notes_fond": "Vanille, Musc blanc, Amberwood",
+            "description_courte": "Un panier de fruits rouges acidulés enrobé de pétales de rose et de vanille.",
+            "description_longue": "Berries Sample est une fragrance joyeuse et pétillante. La gourmandise des baies sauvages s'équilibre avec la fraîcheur de la pivoine pour offrir un sillage jeune et sucré.",
+            "description_ia": "Pétillant, gourmand et plein de fraîcheur. Une véritable caresse fruitée idéale pour sublimer vos journées.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 83. Sceptre Malachite
+        {
+            "sku": "PARFUM-MA-MALACHITE-083",
+            "nom": "Sceptre : Malachite",
+            "marque": "Maison Alhambra",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("25000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Bitter Orange, Petitgrain",
+            "notes_coeur": "Tubéreuse, Ylang-ylang, Jasmin Sambac",
+            "notes_fond": "Vanille, Benjoin, Ambergris",
+            "description_courte": "Une tubéreuse incandescente et solaire enveloppée dans un benjoin résineux et vanillé.",
+            "description_longue": "Sceptre Malachite rend hommage aux fleurs blanches opulentes. La tubéreuse et l'ylang-ylang créent une sensation crémeuse et luxueuse soutenue par un fond ambré chaleureux.",
+            "description_ia": "L'opulence florale à son sommet. Un sillage solaire, élégant et envoûtant pour marquer votre présence.",
+            "est_nouveau": True,
+            "est_bestseller": False
+        },
+        # 84. Al Qiam Silver
+        {
+            "sku": "PARFUM-LA-ALQIAMSILVER-084",
+            "nom": "Al Qiam Silver",
+            "marque": "Lattafa (Gamme Pride)",
+            "categorie": cat_dupe,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("28000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Grapefruit, Gingembre",
+            "notes_coeur": "Ambrosia, Bois de santal",
+            "notes_fond": "Ambroxan, Vetiver, Cèdre",
+            "description_courte": "Un pamplemousse tonique et amer amplifié par une overdose d'ambroxan et de vétiver.",
+            "description_longue": "Al Qiam Silver délivre une fraîcheur saisissante d'agrumes épicés au gingembre. Le fond ambré et boisé apporte une tenue remarquable et une signature masculine raffinée.",
+            "description_ia": "Énergique, luxueux et vibrant. Le parfum idéal pour l'homme d'affaires moderne qui cherche un sillage propre et puissant.",
+            "est_nouveau": False,
+            "est_bestseller": True
+        },
+        # 85. Des Tentaion
+        {
+            "sku": "PARFUM-FW-DESTENTAION-085",
+            "nom": "Des Tentaion",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "très forte",
+            "prix_unitaire": Decimal("18000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Menthe fraîche, Pomme verte, Citron",
+            "notes_coeur": "Fève tonka, Ambrosia, Géranium",
+            "notes_fond": "Vanille de Madagascar, Vétiver, Mousse de chêne, Cèdre",
+            "description_courte": "L'ardeur de la passion : menthe fraîche, pomme croquante et vanille passionnée.",
+            "description_longue": "Des Tentaion joue sur le contraste entre la fraîcheur glacée de la menthe et la chaleur sucrée de la vanille et de la tonka. Un parfum de séduction taillé pour les sorties nocturnes.",
+            "description_ia": "Un pouvoir d'attraction irrésistible. Une fragrance masculine intense qui combine fraîcheur et gourmandise.",
+            "est_nouveau": False,
+            "est_bestseller": True
+        },
+        # 86. Hayaati Al Maleky
+        {
+            "sku": "PARFUM-LA-HAYAATIMAL-086",
+            "nom": "Hayaati Al Maleky",
+            "marque": "Lattafa",
+            "categorie": cat_dupe,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("18000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Muscade, Cardamome, Baies de genièvre",
+            "notes_coeur": "Lavande, Noisette, Notes boisées",
+            "notes_fond": "Amber, Vétiver, Vanille",
+            "description_courte": "Un accord aromatique et boisé agrémenté de notes épicées et gourmandes.",
+            "description_longue": "Hayaati Al Maleky offre une ouverture épicée chaleureuse qui glisse vers un cœur lavandé et boisé. La noisette et la vanille apportent une touche gourmande moderne en fond.",
+            "description_ia": "Aromatique et enveloppant, Hayaati Al Maleky apporte une signature masculine distinguée et contemporaine.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 87. Khair Pistachio
+        {
+            "sku": "PARFUM-PC-KHAIRPISTACHIO-087",
+            "nom": "Khair Pistachio",
+            "marque": "Paris Corner",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("25000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Pistache, Glace italienne, Bergamote, Noisette, Cardamome",
+            "notes_coeur": "Muguet, Poire, Géranium, Jasmine",
+            "notes_fond": "Crème fouettée, Guimauve, Pierre de coton, Tonka, Cèdre",
+            "description_courte": "Une glace à la pistache onctueuse garnie de crème fouettée et de guimauve.",
+            "description_longue": "Khair Pistachio est la définition même du gourmand ludique. La pistache croquante s'associe à la fraîcheur de la poire et à la rondeur de la crème chantilly pour un résultat irrésistible.",
+            "description_ia": "Gourmand, doux et réconfortant. Un parfum dessert captivant qui fait sensation dès les premières secondes.",
+            "est_nouveau": True,
+            "est_bestseller": True
+        },
+        # 88. Musamam
+        {
+            "sku": "PARFUM-LA-MUSAMAM-088",
+            "nom": "Musamam",
+            "marque": "Lattafa",
+            "categorie": cat_marque,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "très forte",
+            "prix_unitaire": Decimal("28000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Mandarine d'Italie, Cardamome, Saffron",
+            "notes_coeur": "Géranium, Bois de cèdre, Amberwood",
+            "notes_fond": "Cuir noir, Bois d'Agar (Oud), Patchouli",
+            "description_courte": "Un cuir obscur et épicé relevé de mandarine et de bois de cèdre noble.",
+            "description_longue": "Musamam (présenté dans son flacon noir au serpent) s'adresse aux amateurs de senteurs affirmées. Le cuir brut et l'oud sont contrebalancés par la fraîcheur de la mandarine et du safran.",
+            "description_ia": "Sombre, viril et sophistiqué. Musamam est un parfum de caractère conçu pour marquer une empreinte inoubliable.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 89. Amber & Spice
+        {
+            "sku": "PARFUM-FW-AMBERSPICE-089",
+            "nom": "Amber & Spice",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("20000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Amber, Encens",
+            "notes_coeur": "Bois de santal, Cannelle, Épices d'Orient",
+            "notes_fond": "Benjoin, Labdanum, Vanilla",
+            "description_courte": "L'ambre résineux dans toute sa pureté : fumé, épicé et profondément chaleureux.",
+            "description_longue": "Amber & Spice transporte dans un atelier de résines orientales. La richesse du labdanum et de l'encens est adoucie par la vanille et le bois de santal pour un sillage enveloppant.",
+            "description_ia": "Opulent et mystérieux. Un ambre majestueux qui apporte chaleur et élégance lors des moments d'exception.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 90. Art of Arabia I
+        {
+            "sku": "PARFUM-LA-ARTOFARABIA1-090",
+            "nom": "Art of Arabia I",
+            "marque": "Lattafa (Gamme Pride)",
+            "categorie": cat_marque,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("30000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Bergamote, Menthe fraîche",
+            "notes_coeur": "Thé noir, Gingembre, Lavender",
+            "notes_fond": "Ambrosia, Cinnamon, Bois de cèdre",
+            "description_courte": "Une tasse de thé noir au gingembre et à la menthe infusée d'épices d'Arabie.",
+            "description_longue": "Première création de la collection Art of Arabia, ce parfum marie la fraîcheur aromatique de la menthe et du thé noir à des épices chaudes posées sur un fond boisé séduisant.",
+            "description_ia": "Raffiné, frais et complexe. Un hommage moderne à la tradition de l'hospitalité orientale.",
+            "est_nouveau": True,
+            "est_bestseller": False
+        },
+        # 91. Art of Arabia II
+        {
+            "sku": "PARFUM-LA-ARTOFARABIA2-091",
+            "nom": "Art of Arabia II",
+            "marque": "Lattafa (Gamme Pride)",
+            "categorie": cat_marque,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("30000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Cardamome, Heliotrope, Pink Pepper",
+            "notes_coeur": "Jasmine, Lavender, Patchouli",
+            "notes_fond": "Vanilla, Amber, Agarwood (Oud), Sandalwood",
+            "description_courte": "Un oriental poudré et boisé sublimé par la cardamome et la vanille.",
+            "description_longue": "Ce second volet met en avant la richesse des bois précieux. La cardamome poivrée s'adoucit au contact de l'héliotrope avant de se poser sur un lit d'oud vanillé.",
+            "description_ia": "Chaud et majestueux. Une création équilibrée qui capture l'essence du luxe oriental contemporain.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 92. Supreme Amber
+        {
+            "sku": "PARFUM-FW-SUPREMEAMBER-092",
+            "nom": "Supreme Amber",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("20000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Amber, Bergamote",
+            "notes_coeur": "Cinnamon, Coriandre, Rose",
+            "notes_fond": "Vanilla, Tonka, Benzoin, Patchouli",
+            "description_courte": "Un ambre liquoreux et vanillé d'une grande rondeur.",
+            "description_longue": "Supreme Amber enveloppe la peau d'un voile doré. L'ouverture légèrement agrumée laisse vite place à des résines chaudes de benjoin et de vanille.",
+            "description_ia": "Chaleureux et réconfortant. Un parfum ambré idéal pour les moments d'élégance nocturne.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 93. Sheikh Al Shuyukh Lux Edition
+        {
+            "sku": "PARFUM-LA-SHEIKHLUXE-093",
+            "nom": "Sheikh Al Shuyukh (Édition Luxe)",
+            "marque": "Lattafa",
+            "categorie": cat_marque,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "très forte",
+            "prix_unitaire": Decimal("18000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Écorce de cannelle, Rose, Safran",
+            "notes_coeur": "Caramel, Patchouli",
+            "notes_fond": "Vanilla, Ambre, Bois de santal, Ambrosia",
+            "description_courte": "Une gourmandise épicée mêlant cannelle, caramel chaud et bois précieux.",
+            "description_longue": "Ce grand classique Lattafa combine la puissance de la cannelle et du safran à un cœur de caramel fondant sur un fond ambré et vanillé.",
+            "description_ia": "Opulent et gourmand. Un parfum qui affirme votre prestance avec un sillage épicé et caramélisé.",
+            "est_nouveau": False,
+            "est_bestseller": True
+        },
+        # 94. Strictly Oud
+        {
+            "sku": "PARFUM-PC-STRICTLYOUD-094",
+            "nom": "Strictly Oud",
+            "marque": "Paris Corner",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "très forte",
+            "prix_unitaire": Decimal("25000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Labdanum",
+            "notes_coeur": "Patchouli, Rose de Damas",
+            "notes_fond": "Oud (Bois d'agar), Sandalwood, Cèdre",
+            "description_courte": "L'accord oriental royal par excellence : rose intense et bois d'oud fumé.",
+            "description_longue": "Strictly Oud reproduit la dualité entre la délicatesse d'une rose de caractère et la puissance d'un bois d'oud d'Orient posé sur du labdanum.",
+            "description_ia": "Noblesse et caractère. Un sillage puissant et raffiné conçu pour les amateurs d'oud traditionnel.",
+            "est_nouveau": True,
+            "est_bestseller": False
+        },
+        # 95. Khaltaat Al Arabia
+        {
+            "sku": "PARFUM-LA-KHALTAATARAB-095",
+            "nom": "Khaltaat Al Arabia",
+            "marque": "Lattafa",
+            "categorie": cat_marque,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("18000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Pomme, Ananas, Épices douces",
+            "notes_coeur": "Cannelle, Muscade, Jasmine",
+            "notes_fond": "Amber, Musk, Vanilla, Sandalwood",
+            "description_courte": "Une compotée de pommes aux épices et à la cannelle sur fond ambré.",
+            "description_longue": "Ce parfum offre une sensation de tarte aux pommes chaude saupoudrée de cannelle et de muscade, soutenue par de l'ambre et du musc.",
+            "description_ia": "Gourmand et épicé. Une fragrance chaleureuse parfaite pour créer une atmosphère accueillante.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 96. Emerald Green
+        {
+            "sku": "PARFUM-FW-EMERALDGREEN-096",
+            "nom": "Emerald Green",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("20000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Bitter Orange, Petitgrain",
+            "notes_coeur": "Jasmine Sambac, Ylang-Ylang, Pink Pepper",
+            "notes_fond": "Lily, Vanilla, Benzoin",
+            "description_courte": "Un bouquet de jasmin et de fleurs blanches relevé par l'orange amère.",
+            "description_longue": "Emerald Green capture l'élégance des fleurs blanches solaires. Le jasmin sambac et le lys s'y fondent dans une vanille résineuse.",
+            "description_ia": "Solaire et sophistiqué. Une empreinte florale lumineuse d'une grande distinction.",
+            "est_nouveau": True,
+            "est_bestseller": False
+        },
+        # 97. Confidential Private Gold
+        {
+            "sku": "PARFUM-LA-CONFIDENTIAL-097",
+            "nom": "Confidential Private Gold",
+            "marque": "Lattafa",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "très forte",
+            "prix_unitaire": Decimal("18000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Pêche, Fruit de la passion, Poire, Cassis",
+            "notes_coeur": "Muguet",
+            "notes_fond": "Musk, Vanilla, Sandalwood, Patchouli",
+            "description_courte": "Une explosion de fruits tropicaux juteux sur un lit de musc blanc puissant.",
+            "description_longue": "Très apprécié pour son caractère fruité intense, Confidential Private Gold associe la pêche et le fruit de la passion à un musc d'une ténacité remarquable.",
+            "description_ia": "Vibrant et magnétique. Un cocktail de fruits exotiques qui laisse un sillage poudré et frais.",
+            "est_nouveau": False,
+            "est_bestseller": True
+        },
+        # 98. Intense Wood
+        {
+            "sku": "PARFUM-FW-INTENSEWOOD-098",
+            "nom": "Intense Wood",
+            "marque": "Fragrance World",
+            "categorie": cat_dupe,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("18000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Violette, Feuille de violette, Eau de mer",
+            "notes_coeur": "Vétiver, Cèdre",
+            "notes_fond": "Ambre, Musc, Sapin",
+            "description_courte": "Un boisé vert et aquatique dominé par la feuille de violette et le cèdre.",
+            "description_longue": "Intense Wood rappelle une forêt mouillée après la pluie. La fraîcheur de la violette rencontre la structure séchante du cèdre et du vétiver.",
+            "description_ia": "Élégant, propre et naturel. La fragrance idéale pour l'homme connecté à la nature.",
+            "est_nouveau": False,
+            "est_bestseller": False
+        },
+        # 99. Musamam Dark Intense
+        {
+            "sku": "PARFUM-LA-MUSAMAMDARK-099",
+            "nom": "Musamam Dark Intense",
+            "marque": "Lattafa",
+            "categorie": cat_marque,
+            "genre_cible": "homme",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "très forte",
+            "prix_unitaire": Decimal("30000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Bergamote, Poivre noir, Oliban",
+            "notes_coeur": "Cuir, Cacao, Patchouli",
+            "notes_fond": "Amberwood, Oud, Vanilla",
+            "description_courte": "Une interprétation sombre et cacao-cuirée de la collection Musamam.",
+            "description_longue": "Ce parfum offre une signature mystérieuse. Le cacao amer et le cuir s'y marient à l'encens et au poivre pour un résultat ténébreux.",
+            "description_ia": "Captivant et ténébreux. Un parfum de caractère taillé pour s'imposer en soirée.",
+            "est_nouveau": True,
+            "est_bestseller": False
+        },
+        # 100. Charuto Tobacco Vanille
+        {
+            "sku": "PARFUM-PC-CHARUTOVAN-100",
+            "nom": "Charuto Tobacco Vanille",
+            "marque": "Paris Corner / Pendora Scents",
+            "categorie": cat_dupe,
+            "genre_cible": "mixte",
+            "duree": "Eau de Parfum (EDP)",
+            "contenance_ml": 100,
+            "intensite": "forte",
+            "prix_unitaire": Decimal("24000.00"),
+            "prix_promotionnel": None,
+            "notes_tete": "Feuilles de tabac, Épices",
+            "notes_coeur": "Vanille, Cacao, Fève tonka, Fleur de tabac",
+            "notes_fond": "Fruits secs, Notes boisées",
+            "description_courte": "L'accord légendaire entre le tabac à pipe opulent et la vanille gourmande.",
+            "description_longue": "Charuto restitue l'ambiance chaleureuse d'un club privé. Le tabac séché est adouci par la tonka, le cacao et les fruits secs dans une vanille riche.",
+            "description_ia": "Chaleureux, aristocratique et gourmand. Un grand classique ambré à la tenue irréprochable.",
+            "est_nouveau": True,
+            "est_bestseller": True
         }
     ]
 
-    print("\n--- Importation des parfums 4 à 50 dans la base de données ---")
+    print("\n--- Importation des parfums 4 à 100 dans la base de données ---")
     created_count = 0
     updated_count = 0
 
