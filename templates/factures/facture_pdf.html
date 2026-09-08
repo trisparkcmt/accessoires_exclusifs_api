@@ -299,17 +299,17 @@
 
         {% if commande.remise_code_promo > 0 %}
         <tr>
-          <td class="text-center">1</td>
-          <td>Remise de promotion {% if commande.code_promo_utilise %}({{ commande.code_promo_utilise }}){% endif %}</td>
-          <td class="text-right">-{{ commande.remise_code_promo|floatformat:0 }}</td>
-          <td class="text-right">-{{ commande.remise_code_promo|floatformat:0 }}</td>
+          <td class="text-center">—</td>
+          <td><em>Remise de promotion {% if commande.code_promo_utilise %}({{ commande.code_promo_utilise }}){% endif %}</em></td>
+          <td class="text-right" style="color: #cc0000;">-{{ commande.remise_code_promo|floatformat:0 }}</td>
+          <td class="text-right" style="color: #cc0000;">-{{ commande.remise_code_promo|floatformat:0 }}</td>
         </tr>
         {% endif %}
 
         {% if commande.frais_livraison > 0 %}
         <tr>
-          <td class="text-center">1</td>
-          <td>Frais de livraison</td>
+          <td class="text-center">—</td>
+          <td><em>Frais de livraison</em></td>
           <td class="text-right">{{ commande.frais_livraison|floatformat:0 }}</td>
           <td class="text-right">{{ commande.frais_livraison|floatformat:0 }}</td>
         </tr>
@@ -321,6 +321,32 @@
           <td colspan="2" class="text-right">{{ commande.total_ttc|floatformat:0 }} {{ DEVISE }}</td>
         </tr>
       </tbody>
+    </table>
+
+    <!-- Bloc récapitulatif des montants -->
+    <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #000000; border-top: none; margin-bottom: 5px; font-size: 9.5pt;">
+      <tr style="border-bottom: 1px solid #cccccc;">
+        <td style="padding: 5px 8px; width: 65%;"><strong>Sous-total (articles) :</strong></td>
+        <td style="padding: 5px 8px; text-align: right;">{{ commande.sous_total|floatformat:0 }} {{ DEVISE }}</td>
+      </tr>
+      {% if commande.remise_code_promo > 0 %}
+      <tr style="border-bottom: 1px solid #cccccc;">
+        <td style="padding: 5px 8px; color: #cc0000;">
+          Remise{% if commande.code_promo_utilise %} — Code <strong>{{ commande.code_promo_utilise }}</strong>{% endif %} :
+        </td>
+        <td style="padding: 5px 8px; text-align: right; color: #cc0000;"><strong>- {{ commande.remise_code_promo|floatformat:0 }} {{ DEVISE }}</strong></td>
+      </tr>
+      {% endif %}
+      {% if commande.frais_livraison > 0 %}
+      <tr style="border-bottom: 1px solid #cccccc;">
+        <td style="padding: 5px 8px;">Frais de livraison :</td>
+        <td style="padding: 5px 8px; text-align: right;">{{ commande.frais_livraison|floatformat:0 }} {{ DEVISE }}</td>
+      </tr>
+      {% endif %}
+      <tr style="background-color: #efefef;">
+        <td style="padding: 7px 8px; font-weight: bold; font-size: 10pt;"><strong>TOTAL NET À PAYER :</strong></td>
+        <td style="padding: 7px 8px; text-align: right; font-weight: bold; font-size: 10pt;"><strong>{{ commande.total_ttc|floatformat:0 }} {{ DEVISE }}</strong></td>
+      </tr>
     </table>
 
     <!-- Arrêté à la somme de -->
