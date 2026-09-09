@@ -422,6 +422,10 @@ SPECTACULAR_SETTINGS = {
 
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AQ.Ab8RN6Iq8YW3z9UjZr6hqbk0Y_kqub1urxxHsMwueAYngM8RRA')
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
+GROQ_MODEL = os.getenv('GROQ_MODEL', 'qwen/qwen3.8-27b')
+HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY', os.getenv('HF_API_KEY', ''))
+HUGGINGFACE_MODEL = os.getenv('HUGGINGFACE_MODEL', 'Qwen/Qwen2.5-72B-Instruct')
 LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'gemini').lower()
 OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://127.0.0.1:11434')
 OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen2.5:3b')
@@ -457,6 +461,7 @@ else:
         "https://www.accessoiresexclusifs.com",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "https://dev.accessoiresexclusifs.com",
     ]
 
 for local_origin in ["http://localhost:3000", "http://127.0.0.1:3000"]:
