@@ -1,7 +1,7 @@
 # catalogue/urls.py
 from rest_framework.routers import DefaultRouter
 
-from .views import EssenceLaboViewSet, IngredientViewSet, LotEssenceViewSet, ParfumViewSet, EssenceViewSet, AccessoireViewSet, FlaconViewSet, FavoriViewSet, ProduitFiniEssenceViewSet, PromotionViewSet, BeneficesViewSet, TagEssenceSelectViewSet, TagParfumSelectViewSet, TagViewSet, NotificationCatalogueViewSet, MouvementStockViewSet, BestsellerViewSet, HotsellerViewSet, DiffuseurParfumViewSet, EntrepriseInfoViewSet
+from .views import EssenceLaboViewSet, IngredientViewSet, LotEssenceViewSet, ParfumViewSet, EssenceViewSet, AccessoireViewSet, FlaconViewSet, FavoriViewSet, ProduitFiniEssenceViewSet, PromotionViewSet, BeneficesViewSet, TagEssenceSelectViewSet, TagParfumSelectViewSet, TagAccessoireSelectViewSet, TagViewSet, NotificationCatalogueViewSet, MouvementStockViewSet, BestsellerViewSet, HotsellerViewSet, DiffuseurParfumViewSet, EntrepriseInfoViewSet
 from .views import CategorieParfumViewSet, TypeAccessoireViewSet, TypeFlaconViewSet
 
 # ============================================================
@@ -16,6 +16,7 @@ shop_router.register(r'favoris', FavoriViewSet, basename='favori')
 shop_router.register(r'tags', TagViewSet, basename='tag') 
 shop_router.register(r'tags-parfum', TagParfumSelectViewSet, basename='tagparfum-select')
 shop_router.register(r'tags-essence', TagEssenceSelectViewSet, basename='tagessence-select')
+shop_router.register(r'tags-accessoire', TagAccessoireSelectViewSet, basename='tagaccessoire-select')
 shop_router.register(r'categories-parfum', CategorieParfumViewSet, basename='categorieparfum')
 shop_router.register(r'types-accessoire', TypeAccessoireViewSet, basename='typeaccessoire')
 shop_router.register(r'types-flacon', TypeFlaconViewSet, basename='typeflacon')

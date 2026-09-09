@@ -103,23 +103,15 @@ class Favori(models.Model):
 # ============================================================
 # TAGS CENTRALISÉS
 # ============================================================
+# TAGS CENTRALISÉS
+# ============================================================
 class Tag(models.Model):
     """
-    Table centralisée pour tous les tags
-    Types : famille_olfactive, signe_astrologique, humeur, saison, moment_journee, occasion
+    Table centralisée pour les types/catégories de tags définis par l'administrateur
+    Exemples de nom : Sillage, Tenue, Famille olfactive, Saison, Occasion, Matériau
     """
-    TYPE_CHOICES = [
-        ('famille_olfactive', 'Famille olfactive'),
-        ('signe_astrologique', 'Signe astrologique'),
-        ('humeur', 'Humeur compatible'),
-        ('saison', 'Saison compatible'),
-        ('moment_journee', 'Moment de la journée'),
-        ('occasion', 'Occasion'),
-    ]
-    
-    nom = models.CharField(max_length=100)
+    nom = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=120, unique=True, null=True, blank=True)
-    type = models.CharField(max_length=30, choices=TYPE_CHOICES)
     actif = models.BooleanField(default=True)
     date_creation = models.DateTimeField(auto_now_add=True)
     date_modification = models.DateTimeField(auto_now=True)
@@ -128,24 +120,24 @@ class Tag(models.Model):
         db_table = 'tag'
         verbose_name = 'Tag'
         verbose_name_plural = 'Tags'
-        unique_together = [['nom', 'type']]  # Un tag unique par type
     
     def __str__(self):
-        return f"{self.nom} ({self.get_type_display()})"
+        return self.nom
 
     def save(self, *args, **kwargs):
         if not self.slug:
             random_suffix = ''.join(random.choices(string.digits, k=5))
-            self.slug = f"{slugify(f'{self.nom}-{self.type}')}-{random_suffix}"
+            self.slug = f"{slugify(self.nom)}-{random_suffix}"
         super().save(*args, **kwargs)
 
 
 class TagParfum(models.Model):
     """
-    Table de liaison entre Parfum et Tag (ManyToMany)
+    Table de liaison entre Parfum et Tag (ManyToMany avec valeur spécifique au parfum)
     """
     parfum = models.ForeignKey('Parfum', on_delete=models.CASCADE, related_name='tags_associes')
     tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name='parfums_associes')
+    valeur = models.CharField(max_length=255, blank=True, default='', help_text="Valeur du tag pour ce parfum (ex: Élevée, Gourmand, etc.)")
     date_creation = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -155,15 +147,16 @@ class TagParfum(models.Model):
         unique_together = [['parfum', 'tag']]
     
     def __str__(self):
-        return f"{self.parfum.nom} → {self.tag.nom}"
+        return f"{self.parfum.nom} → {self.tag.nom}: {self.valeur}"
 
 
 class TagEssence(models.Model):
     """
-    Table de liaison entre Essence et Tag (ManyToMany)
+    Table de liaison entre Essence et Tag (ManyToMany avec valeur spécifique à l'essence)
     """
     essence = models.ForeignKey('Essence', on_delete=models.CASCADE, related_name='tags_associes')
     tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name='essences_associes')
+    valeur = models.CharField(max_length=255, blank=True, default='', help_text="Valeur du tag pour cette essence")
     date_creation = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -173,7 +166,26 @@ class TagEssence(models.Model):
         unique_together = [['essence', 'tag']]
     
     def __str__(self):
-        return f"{self.essence.nom} → {self.tag.nom}"
+        return f"{self.essence.nom} → {self.tag.nom}: {self.valeur}"
+
+
+class TagAccessoire(models.Model):
+    """
+    Table de liaison entre Accessoire et Tag (ManyToMany avec valeur spécifique à l'accessoire)
+    """
+    accessoire = models.ForeignKey('Accessoire', on_delete=models.CASCADE, related_name='tags_associes')
+    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name='accessoires_associes')
+    valeur = models.CharField(max_length=255, blank=True, default='', help_text="Valeur du tag pour cet accessoire")
+    date_creation = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'tag_accessoire'
+        verbose_name = 'Tag d\'accessoire'
+        verbose_name_plural = 'Tags d\'accessoires'
+        unique_together = [['accessoire', 'tag']]
+    
+    def __str__(self):
+        return f"{self.accessoire.nom} → {self.tag.nom}: {self.valeur}"
 
 
 # ============================================================
@@ -703,6 +715,7 @@ class Accessoire(models.Model):
     date_modification = models.DateTimeField(auto_now=True)
     est_bestseller = models.BooleanField(default=False)
     est_hotseller = models.BooleanField(default=False)
+    tags = models.ManyToManyField('Tag', through='TagAccessoire', related_name='accessoires', blank=True)
     
     class Meta:
         db_table = 'accessoire'

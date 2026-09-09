@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from .models import (
-    Favori, Tag, TagParfum, TagEssence,
+    Favori, Tag, TagParfum, TagEssence, TagAccessoire,
     CategorieParfum, Parfum, Essence, Ingredient,
     LotEssence, ProduitFiniEssence,
     TypeAccessoire, Accessoire, TypeFlacon, Flacon, NotificationCatalogue,
@@ -56,77 +56,42 @@ def badge_reduction(taux):
 
 
 # ============================================================
-# FILTRES PERSONNALISÉS PAR TYPE DE TAG
-# Un filtre par type → une classe → réutilisable sur Parfum et Essence
-# ============================================================
-def creer_filtre_tag(type_tag, titre):
-    """
-    Factory qui crée dynamiquement un filtre admin pour un type de tag donné.
-    Usage : FamilleOlfactiveFilter = creer_filtre_tag('famille_olfactive', 'Famille olfactive')
-    """
-    class FiltreTag(admin.SimpleListFilter):
-        title        = titre
-        parameter_name = f'tag_{type_tag}'
-
-        def lookups(self, request, model_admin):
-            """Retourne tous les tags actifs du type concerné."""
-            tags = Tag.objects.filter(type=type_tag, actif=True).order_by('nom')
-            return [(tag.pk, tag.nom) for tag in tags]
-
-        def queryset(self, request, queryset):
-            if self.value():
-                return queryset.filter(tags__pk=self.value()).distinct()
-            return queryset
-
-    FiltreTag.__name__ = f'Filtre_{type_tag}'
-    return FiltreTag
-
-
-# Filtres pour Parfum
-FamilleOlfactiveParfumFilter = creer_filtre_tag('famille_olfactive', 'Famille olfactive')
-HumeurParfumFilter           = creer_filtre_tag('humeur',            'Humeur compatible')
-SaisonParfumFilter           = creer_filtre_tag('saison',            'Saison compatible')
-OccasionParfumFilter         = creer_filtre_tag('occasion',          'Occasion')
-
-# Filtres pour Essence (inclut signes astro et moments journée)
-FamilleOlfactiveEssenceFilter  = creer_filtre_tag('famille_olfactive',  'Famille olfactive')
-HumeurEssenceFilter            = creer_filtre_tag('humeur',             'Humeur compatible')
-SaisonEssenceFilter            = creer_filtre_tag('saison',             'Saison compatible')
-OccasionEssenceFilter          = creer_filtre_tag('occasion',           'Occasion')
-SigneAstroEssenceFilter        = creer_filtre_tag('signe_astrologique', 'Signe astrologique')
-MomentJourneeEssenceFilter     = creer_filtre_tag('moment_journee',     'Moment de la journée')
-
-
-# ============================================================
 # TAGS
 # ============================================================
 @admin.register(Tag)
 class TagAdmin(admin.ModelAdmin):
-    list_display  = ('id', 'nom', 'type', 'actif', 'date_creation')
-    list_filter   = ('type', 'actif')
+    list_display  = ('id', 'nom', 'actif', 'date_creation')
+    list_filter   = ('actif',)
     search_fields = ('nom',)
     list_editable = ('actif',)
     list_per_page = 50
 
     fieldsets = (
         ('Informations', {
-            'fields': ('nom', 'type', 'actif')
+            'fields': ('nom', 'actif')
         }),
     )
 
 
 @admin.register(TagParfum)
 class TagParfumAdmin(admin.ModelAdmin):
-    list_display = ('id', 'parfum', 'tag')
-    search_fields = ('parfum__nom', 'tag__nom')
+    list_display = ('id', 'parfum', 'tag', 'valeur')
+    search_fields = ('parfum__nom', 'tag__nom', 'valeur')
     autocomplete_fields = ('parfum', 'tag')
 
 
 @admin.register(TagEssence)
 class TagEssenceAdmin(admin.ModelAdmin):
-    list_display = ('id', 'essence', 'tag')
-    search_fields = ('essence__nom', 'tag__nom')
+    list_display = ('id', 'essence', 'tag', 'valeur')
+    search_fields = ('essence__nom', 'tag__nom', 'valeur')
     autocomplete_fields = ('essence', 'tag')
+
+
+@admin.register(TagAccessoire)
+class TagAccessoireAdmin(admin.ModelAdmin):
+    list_display = ('id', 'accessoire', 'tag', 'valeur')
+    search_fields = ('accessoire__nom', 'tag__nom', 'valeur')
+    autocomplete_fields = ('accessoire', 'tag')
 
 
 @admin.register(EntrepriseInfo)
@@ -151,6 +116,12 @@ class TagParfumInline(admin.TabularInline):
 
 class TagEssenceInline(admin.TabularInline):
     model               = TagEssence
+    extra               = 1
+    autocomplete_fields = ('tag',)
+
+
+class TagAccessoireInline(admin.TabularInline):
+    model               = TagAccessoire
     extra               = 1
     autocomplete_fields = ('tag',)
 
@@ -220,13 +191,7 @@ class ParfumAdmin(admin.ModelAdmin):
     )
     list_filter = (
         'marque', 'categorie', 'actif', 'est_nouveau', 'est_bestseller',
-        'genre_cible', 'intensite',
-        # ← Filtres par tags
-        FamilleOlfactiveParfumFilter,
-        HumeurParfumFilter,
-        SaisonParfumFilter,
-        OccasionParfumFilter,
-        'date_creation',
+        'genre_cible', 'intensite', 'date_creation',
     )
     search_fields       = ('marque', 'nom', 'slug', 'reference_sku', 'description_courte')
     readonly_fields     = ('date_creation', 'date_modification')
@@ -325,15 +290,7 @@ class EssenceAdmin(admin.ModelAdmin):
         'prix_par_ml', 'seuil_alerte_ml', 'intensite', 'genre_cible', 'actif', 'date_creation'
     )
     list_filter = (
-        'categorie', 'intensite', 'genre_cible', 'actif',
-        'date_creation',
-        # Filtres par tags
-        FamilleOlfactiveEssenceFilter,
-        HumeurEssenceFilter,
-        SaisonEssenceFilter,
-        OccasionEssenceFilter,
-        SigneAstroEssenceFilter,
-        MomentJourneeEssenceFilter,
+        'categorie', 'intensite', 'genre_cible', 'actif', 'date_creation',
     )
 
     search_fields = ('nom', 'code_reference', 'marque', 'fournisseur', 'origine_pays')
@@ -506,6 +463,7 @@ class AccessoireAdmin(admin.ModelAdmin):
     prepopulated_fields = {'slug': ('nom',)}
     list_editable       = ('prix_unitaire', 'prix_promotionnel', 'actif')
     list_per_page       = 50
+    inlines             = [TagAccessoireInline]
 
     fieldsets = (
         ('Informations générales', {

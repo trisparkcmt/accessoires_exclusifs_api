@@ -8,7 +8,7 @@ from drf_spectacular.types import OpenApiTypes
 from django.db import transaction
 from .utils import get_similar_products
 
-from .models import CategorieParfum, LotEssence, ProduitFiniEssence, Tag, Parfum, Essence, Accessoire, Flacon, TypeAccessoire, TypeFlacon, Favori, Ingredient, NotificationCatalogue, MouvementStock, DiffuseurParfum, EntrepriseInfo
+from .models import CategorieParfum, LotEssence, ProduitFiniEssence, Tag, TagParfum, TagEssence, TagAccessoire, Parfum, Essence, Accessoire, Flacon, TypeAccessoire, TypeFlacon, Favori, Ingredient, NotificationCatalogue, MouvementStock, DiffuseurParfum, EntrepriseInfo
 
 
 # catalogue/serializers.py (ajouter après les imports existants)
@@ -80,7 +80,57 @@ def get_image_url(request, image_field):
 class TagSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Tag
-        fields = ['id', 'nom', 'slug', 'type']
+        fields = ['id', 'nom', 'slug']
+
+
+class TagParfumSerializer(serializers.ModelSerializer):
+    tag_nom = serializers.CharField(source='tag.nom', read_only=True)
+
+    class Meta:
+        model = TagParfum
+        fields = ['id', 'tag', 'tag_nom', 'valeur']
+
+
+class TagEssenceSerializer(serializers.ModelSerializer):
+    tag_nom = serializers.CharField(source='tag.nom', read_only=True)
+
+    class Meta:
+        model = TagEssence
+        fields = ['id', 'tag', 'tag_nom', 'valeur']
+
+
+class TagAccessoireSerializer(serializers.ModelSerializer):
+    tag_nom = serializers.CharField(source='tag.nom', read_only=True)
+
+    class Meta:
+        model = TagAccessoire
+        fields = ['id', 'tag', 'tag_nom', 'valeur']
+
+
+def _sauvegarder_tags(instance, tags_input, model_liaison, fk_field_name):
+    if tags_input is None:
+        return
+    model_liaison.objects.filter(**{fk_field_name: instance}).delete()
+    for item in tags_input:
+        if isinstance(item, dict):
+            tag_id = item.get('tag') or item.get('tag_id')
+            if isinstance(tag_id, Tag):
+                tag_id = tag_id.id
+            valeur = item.get('valeur', '')
+            if tag_id:
+                model_liaison.objects.create(**{fk_field_name: instance, 'tag_id': tag_id, 'valeur': valeur})
+        elif isinstance(item, Tag):
+            model_liaison.objects.create(**{fk_field_name: instance, 'tag': item, 'valeur': ''})
+        elif isinstance(item, int):
+            model_liaison.objects.create(**{fk_field_name: instance, 'tag_id': item, 'valeur': ''})
+
+
+class TagSelectSerializer(serializers.ModelSerializer):
+    libelle = serializers.CharField(source='nom', read_only=True)
+
+    class Meta:
+        model = Tag
+        fields = ['id', 'libelle', 'nom', 'slug']
 
 
 class JourOuvertureSerializer(serializers.Serializer):
@@ -118,26 +168,11 @@ class EntrepriseInfoSerializer(serializers.ModelSerializer):
         ]
 
 
-class TagSelectSerializer(serializers.ModelSerializer):
-    libelle = serializers.CharField(source='nom', read_only=True)
-
-    class Meta:
-        model = Tag
-        fields = ['id', 'libelle', 'nom', 'slug', 'type']
-
-    def validate_type(self, value):
-        allowed_types = self.context.get('allowed_types')
-        if allowed_types and value not in allowed_types:
-            allowed = ', '.join(allowed_types)
-            raise serializers.ValidationError(f"Type de tag non autorisé ici. Types autorisés : {allowed}.")
-        return value
-
-
 
 # PARFUMS
 
 class ParfumSerializer(serializers.ModelSerializer):
-    tags = serializers.PrimaryKeyRelatedField(many=True, queryset=Tag.objects.all(), required=False)
+    tags = serializers.JSONField(required=False, allow_null=True)
     famille_olfactive   = serializers.ListField(child=serializers.CharField(), read_only=True)
     humeurs_compatibles = serializers.ListField(child=serializers.CharField(), read_only=True)
     occasions           = serializers.ListField(child=serializers.CharField(), read_only=True)
@@ -170,9 +205,23 @@ class ParfumSerializer(serializers.ModelSerializer):
             'date_creation','produits_similaires', 'is_favori', 'categorie','description_longue','description_ia',
         ]
 
+    def create(self, validated_data):
+        tags_data = validated_data.pop('tags', None)
+        parfum = super().create(validated_data)
+        if tags_data is not None:
+            _sauvegarder_tags(parfum, tags_data, TagParfum, 'parfum')
+        return parfum
+
+    def update(self, instance, validated_data):
+        tags_data = validated_data.pop('tags', None)
+        parfum = super().update(instance, validated_data)
+        if tags_data is not None:
+            _sauvegarder_tags(parfum, tags_data, TagParfum, 'parfum')
+        return parfum
+
     def to_representation(self, instance):
         representation = super().to_representation(instance)
-        representation['tags'] = TagSerializer(instance.tags.all(), many=True).data
+        representation['tags'] = TagParfumSerializer(instance.tags_associes.all(), many=True).data
         representation['image_principale'] = get_image_url(self.context.get('request'), instance.image_principale)
         for i in range(1, 5):
             img_field = f'image_supp_{i}'
@@ -297,14 +346,7 @@ class IngredientAdminSerializer(serializers.ModelSerializer):
 # ESSENCES (catalogue complet pour admin)
 # ============================================================
 class EssenceSerializer(serializers.ModelSerializer):
-    tags = TagSerializer(many=True, read_only=True)
-    tag_ids = serializers.PrimaryKeyRelatedField(
-        source='tags',
-        many=True,
-        queryset=Tag.objects.all(),
-        required=False,
-        write_only=True
-    )
+    tags = serializers.JSONField(required=False, allow_null=True)
     famille_olfactive = serializers.ListField(child=serializers.CharField(), read_only=True)
     humeurs_compatibles = serializers.ListField(child=serializers.CharField(), read_only=True)
     occasions = serializers.ListField(child=serializers.CharField(), read_only=True)
@@ -320,28 +362,29 @@ class EssenceSerializer(serializers.ModelSerializer):
             'concentration_max', 'couleur', 'duree',
             'intensite', 'genre_cible',
             'notes_tete', 'notes_coeur', 'notes_fond',
-            'tags', 'tag_ids', 'famille_olfactive', 'humeurs_compatibles',
+            'tags', 'famille_olfactive', 'humeurs_compatibles',
             'occasions', 'saisons_compatibles',
             'signes_astrologiques_compatibles', 'moments_journee',
             'prix_par_ml', 'seuil_alerte_ml', 'actif', 'date_creation', 'date_modification'
         ]
 
     def create(self, validated_data):
-        tags = validated_data.pop('tags', [])
+        tags_data = validated_data.pop('tags', None) or validated_data.pop('tag_ids', None)
         essence = super().create(validated_data)
-        if tags:
-            essence.tags.set(tags)
+        if tags_data is not None:
+            _sauvegarder_tags(essence, tags_data, TagEssence, 'essence')
         return essence
 
     def update(self, instance, validated_data):
-        tags = validated_data.pop('tags', None)
+        tags_data = validated_data.pop('tags', None) or validated_data.pop('tag_ids', None)
         essence = super().update(instance, validated_data)
-        if tags is not None:
-            essence.tags.set(tags)
+        if tags_data is not None:
+            _sauvegarder_tags(essence, tags_data, TagEssence, 'essence')
         return essence
 
     def to_representation(self, instance):
         ret = super().to_representation(instance)
+        ret['tags'] = TagEssenceSerializer(instance.tags_associes.all(), many=True).data
         ret['stock_total_ml'] = instance.stock_total_ml()
         ret['produits_finis'] = ProduitFiniEssenceInlineSerializer(
             instance.produits_finis.all(),
@@ -703,6 +746,7 @@ class TypeAccessoireSerializer(serializers.ModelSerializer):
 
 class AccessoireSerializer(serializers.ModelSerializer):
     type_accessoire = serializers.PrimaryKeyRelatedField(queryset=TypeAccessoire.objects.all())
+    tags            = serializers.JSONField(required=False, allow_null=True)
     prix_actuel     = serializers.SerializerMethodField()
     taux_reduction  = serializers.SerializerMethodField()
     en_promotion    = serializers.SerializerMethodField()
@@ -718,7 +762,7 @@ class AccessoireSerializer(serializers.ModelSerializer):
         model  = Accessoire
         fields = [
             'id', 'marque', 'nom', 'slug', 'reference_sku',
-            'type_accessoire',
+            'type_accessoire', 'tags',
             'description_courte', 'description_longue',
             'matiere', 'couleur', 'taille',
             'prix_unitaire', 'prix_promotionnel', 'prix_actuel',
@@ -731,8 +775,23 @@ class AccessoireSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['date_creation', 'date_modification']
 
+    def create(self, validated_data):
+        tags_data = validated_data.pop('tags', None)
+        accessoire = super().create(validated_data)
+        if tags_data is not None:
+            _sauvegarder_tags(accessoire, tags_data, TagAccessoire, 'accessoire')
+        return accessoire
+
+    def update(self, instance, validated_data):
+        tags_data = validated_data.pop('tags', None)
+        accessoire = super().update(instance, validated_data)
+        if tags_data is not None:
+            _sauvegarder_tags(accessoire, tags_data, TagAccessoire, 'accessoire')
+        return accessoire
+
     def to_representation(self, instance):
         representation = super().to_representation(instance)
+        representation['tags'] = TagAccessoireSerializer(instance.tags_associes.all(), many=True).data
         if instance.type_accessoire:
             representation['type_accessoire'] = TypeAccessoireSerializer(instance.type_accessoire, context=self.context).data
         representation['image_principale'] = get_image_url(self.context.get('request'), instance.image_principale)

@@ -634,10 +634,10 @@ class ParfumAPITest(APITestCase):
 
     def setUp(self):
         self.categorie   = CategorieParfum.objects.create(nom="Oriental", slug="oriental")
-        self.tag_floral  = Tag.objects.create(nom="Floral",     type="famille_olfactive")
-        self.tag_boise   = Tag.objects.create(nom="Boisé",      type="famille_olfactive")
-        self.tag_ete     = Tag.objects.create(nom="Été",        type="saison")
-        self.tag_romance = Tag.objects.create(nom="Romantique", type="humeur")
+        self.tag_floral  = Tag.objects.create(nom="Floral")
+        self.tag_boise   = Tag.objects.create(nom="Boisé")
+        self.tag_ete     = Tag.objects.create(nom="Été")
+        self.tag_romance = Tag.objects.create(nom="Romantique")
         self.parfum_visible = Parfum.objects.create(
             nom="Rose Éternelle", slug="rose-eternelle",
             reference_sku="SKU001", contenance_ml=50,
@@ -715,8 +715,8 @@ class ParfumAPITest(APITestCase):
 class EssenceAPITest(APITestCase):
 
     def setUp(self):
-        self.tag_floral = Tag.objects.create(nom="Floral", type="famille_olfactive")
-        self.tag_lion   = Tag.objects.create(nom="Lion",   type="signe_astrologique")
+        self.tag_floral = Tag.objects.create(nom="Floral")
+        self.tag_lion   = Tag.objects.create(nom="Lion")
         self.essence_active = Essence.objects.create(
             marque="Maison Test", nom="Oud Royal", code_reference="ESS001",
             categorie="premium", prix_par_ml=Decimal('500.00'), actif=True
@@ -997,9 +997,9 @@ class FlaconAPITest(APITestCase):
 class SimilarProductsUtilsTest(TestCase):
     def setUp(self):
         self.cat = CategorieParfum.objects.create(nom="Test", slug="test")
-        self.tag_floral = Tag.objects.create(nom="Floral", type="famille_olfactive")
-        self.tag_boise  = Tag.objects.create(nom="Boisé", type="famille_olfactive")
-        self.tag_oriental = Tag.objects.create(nom="Oriental", type="famille_olfactive")
+        self.tag_floral = Tag.objects.create(nom="Floral")
+        self.tag_boise  = Tag.objects.create(nom="Boisé")
+        self.tag_oriental = Tag.objects.create(nom="Oriental")
 
         # Parfum A : floral + boisé
         self.p1 = Parfum.objects.create(

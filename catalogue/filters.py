@@ -5,17 +5,14 @@ from .models import Parfum, Essence, Accessoire, Flacon, DiffuseurParfum
 
 
 # ============================================================
-# HELPER — filtre par type de tag
+# HELPER — filtre par tag
 # ============================================================
-def filtrer_par_tag_type(queryset, tag_type, valeur):
+def filtrer_par_tag(queryset, valeur):
     """
-    Filtre un queryset par nom de tag ET type de tag.
-    Utilise icontains pour la recherche partielle.
-    Ex: filtrer_par_tag_type(qs, 'famille_olfactive', 'Floral')
+    Filtre un queryset par nom de tag OU par la valeur du tag associée au produit.
     """
     return queryset.filter(
-        tags__nom__icontains=valeur,
-        tags__type=tag_type
+        models.Q(tags__nom__icontains=valeur) | models.Q(tags_associes__valeur__icontains=valeur)
     ).distinct()
 
 
@@ -26,10 +23,11 @@ class ParfumFilter(django_filters.FilterSet):
 
     # --- Filtres par tags ---
     tags              = django_filters.BaseInFilter(field_name='tags__id', lookup_expr='in')
-    famille_olfactive = django_filters.CharFilter(method='filter_famille_olfactive')
-    humeur            = django_filters.CharFilter(method='filter_humeur')
-    saison            = django_filters.CharFilter(method='filter_saison')
-    occasion          = django_filters.CharFilter(method='filter_occasion')
+    famille_olfactive = django_filters.CharFilter(method='filter_by_tag')
+    humeur            = django_filters.CharFilter(method='filter_by_tag')
+    saison            = django_filters.CharFilter(method='filter_by_tag')
+    occasion          = django_filters.CharFilter(method='filter_by_tag')
+    tag               = django_filters.CharFilter(method='filter_by_tag')
 
     # --- Autres filtres ---
     categorie     = django_filters.NumberFilter(field_name='categorie__id')
@@ -42,17 +40,8 @@ class ParfumFilter(django_filters.FilterSet):
     est_nouveau      = django_filters.BooleanFilter(field_name='est_nouveau')
     est_bestseller   = django_filters.BooleanFilter(field_name='est_bestseller')
 
-    def filter_famille_olfactive(self, queryset, name, value):
-        return filtrer_par_tag_type(queryset, 'famille_olfactive', value)
-
-    def filter_humeur(self, queryset, name, value):
-        return filtrer_par_tag_type(queryset, 'humeur', value)
-
-    def filter_saison(self, queryset, name, value):
-        return filtrer_par_tag_type(queryset, 'saison', value)
-
-    def filter_occasion(self, queryset, name, value):
-        return filtrer_par_tag_type(queryset, 'occasion', value)
+    def filter_by_tag(self, queryset, name, value):
+        return filtrer_par_tag(queryset, value)
 
     class Meta:
         model  = Parfum
@@ -66,12 +55,13 @@ class EssenceFilter(django_filters.FilterSet):
 
     # --- Filtres par tags ---
     tags               = django_filters.BaseInFilter(field_name='tags__id', lookup_expr='in')
-    famille_olfactive  = django_filters.CharFilter(method='filter_famille_olfactive')
-    humeur             = django_filters.CharFilter(method='filter_humeur')
-    saison             = django_filters.CharFilter(method='filter_saison')
-    occasion           = django_filters.CharFilter(method='filter_occasion')
-    signe_astrologique = django_filters.CharFilter(method='filter_signe_astrologique')
-    moment_journee     = django_filters.CharFilter(method='filter_moment_journee')
+    famille_olfactive  = django_filters.CharFilter(method='filter_by_tag')
+    humeur             = django_filters.CharFilter(method='filter_by_tag')
+    saison             = django_filters.CharFilter(method='filter_by_tag')
+    occasion           = django_filters.CharFilter(method='filter_by_tag')
+    signe_astrologique = django_filters.CharFilter(method='filter_by_tag')
+    moment_journee     = django_filters.CharFilter(method='filter_by_tag')
+    tag                = django_filters.CharFilter(method='filter_by_tag')
 
     # --- Autres filtres ---
     genre     = django_filters.CharFilter(field_name='genre_cible')
@@ -80,23 +70,8 @@ class EssenceFilter(django_filters.FilterSet):
     prix_max  = django_filters.NumberFilter(field_name='prix_par_ml', lookup_expr='lte')
     stock_min = django_filters.NumberFilter(field_name='stock_ml_total_reel', lookup_expr='gte')
 
-    def filter_famille_olfactive(self, queryset, name, value):
-        return filtrer_par_tag_type(queryset, 'famille_olfactive', value)
-
-    def filter_humeur(self, queryset, name, value):
-        return filtrer_par_tag_type(queryset, 'humeur', value)
-
-    def filter_saison(self, queryset, name, value):
-        return filtrer_par_tag_type(queryset, 'saison', value)
-
-    def filter_occasion(self, queryset, name, value):
-        return filtrer_par_tag_type(queryset, 'occasion', value)
-
-    def filter_signe_astrologique(self, queryset, name, value):
-        return filtrer_par_tag_type(queryset, 'signe_astrologique', value)
-
-    def filter_moment_journee(self, queryset, name, value):
-        return filtrer_par_tag_type(queryset, 'moment_journee', value)
+    def filter_by_tag(self, queryset, name, value):
+        return filtrer_par_tag(queryset, value)
 
     class Meta:
         model  = Essence
@@ -108,6 +83,8 @@ class EssenceFilter(django_filters.FilterSet):
 # ============================================================
 class AccessoireFilter(django_filters.FilterSet):
 
+    tags            = django_filters.BaseInFilter(field_name='tags__id', lookup_expr='in')
+    tag             = django_filters.CharFilter(method='filter_by_tag')
     marque          = django_filters.CharFilter(field_name='marque', lookup_expr='icontains')
     type_accessoire = django_filters.NumberFilter(field_name='type_accessoire__id')
     type_nom        = django_filters.CharFilter(
@@ -120,6 +97,9 @@ class AccessoireFilter(django_filters.FilterSet):
     matiere   = django_filters.CharFilter(field_name='matiere',  lookup_expr='icontains')
     taille    = django_filters.CharFilter(field_name='taille',   lookup_expr='icontains')
     en_stock  = django_filters.BooleanFilter(method='filter_en_stock')
+
+    def filter_by_tag(self, queryset, name, value):
+        return filtrer_par_tag(queryset, value)
 
     def filter_en_stock(self, queryset, name, value):
         if value:

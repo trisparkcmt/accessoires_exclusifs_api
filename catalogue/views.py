@@ -1628,41 +1628,42 @@ class TagViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrServeuseOrReadOnly]
     serializer_class = TagSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    search_fields = ['nom', 'type']
-    ordering_fields = ['nom', 'type', 'date_creation']
+    search_fields = ['nom']
+    ordering_fields = ['nom', 'date_creation']
     ordering = ['nom']
     lookup_field = 'slug'
 
 class TagParfumSelectViewSet(viewsets.ModelViewSet):
-    allowed_types = ['famille_olfactive', 'humeur', 'saison', 'occasion']
     serializer_class = TagSelectSerializer
     permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['type']
-    search_fields = ['nom', 'type']
-    ordering_fields = ['nom', 'type']
-    ordering = ['type', 'nom']
+    search_fields = ['nom']
+    ordering_fields = ['nom']
+    ordering = ['nom']
     lookup_field = 'slug'
 
     def get_queryset(self):
-        return Tag.objects.filter(
-            actif=True,
-            type__in=self.allowed_types
-        )
-
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context['allowed_types'] = self.allowed_types
-        return context
+        return Tag.objects.filter(actif=True)
 
 class TagEssenceSelectViewSet(viewsets.ModelViewSet):
     serializer_class = TagSelectSerializer
     permission_classes = [IsAdminOrServeuseOrReadOnly]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['type']
-    search_fields = ['nom', 'type']
-    ordering_fields = ['nom', 'type']
-    ordering = ['type', 'nom']
+    search_fields = ['nom']
+    ordering_fields = ['nom']
+    ordering = ['nom']
+    lookup_field = 'slug'
+
+    def get_queryset(self):
+        return Tag.objects.filter(actif=True)
+
+class TagAccessoireSelectViewSet(viewsets.ModelViewSet):
+    serializer_class = TagSelectSerializer
+    permission_classes = [IsAdminOrServeuseOrReadOnly]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    search_fields = ['nom']
+    ordering_fields = ['nom']
+    ordering = ['nom']
     lookup_field = 'slug'
 
     def get_queryset(self):
