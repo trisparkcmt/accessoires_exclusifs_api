@@ -167,7 +167,7 @@ class ParfumSerializer(serializers.ModelSerializer):
             'occasions', 'saisons_compatibles',
             'est_nouveau', 'est_bestseller',
             'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',  'stock_quantite', 'seuil_alerte_stock',
-            'date_creation','produits_similaires', 'is_favori', 'categorie'
+            'date_creation','produits_similaires', 'is_favori', 'categorie','description_longue','description_ia',
         ]
 
     def to_representation(self, instance):
