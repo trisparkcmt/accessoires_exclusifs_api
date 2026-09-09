@@ -60,38 +60,86 @@ def badge_reduction(taux):
 # ============================================================
 @admin.register(Tag)
 class TagAdmin(admin.ModelAdmin):
-    list_display  = ('id', 'nom', 'actif', 'date_creation')
-    list_filter   = ('actif',)
-    search_fields = ('nom',)
+    list_display  = ('id', 'nom', 'slug', 'actif', 'date_creation', 'date_modification')
+    list_filter   = ('actif', 'date_creation')
+    search_fields = ('nom', 'slug')
     list_editable = ('actif',)
     list_per_page = 50
+    readonly_fields = ('slug', 'date_creation', 'date_modification')
 
     fieldsets = (
-        ('Informations', {
-            'fields': ('nom', 'actif')
+        ('Informations du type de tag', {
+            'description': 'Le nom définit le type de tag que l\'admin crée librement (ex: "Sillage", "Famille olfactive", "Matériau").',
+            'fields': ('nom', 'slug', 'actif')
+        }),
+        ('Dates', {
+            'fields': ('date_creation', 'date_modification'),
+            'classes': ('collapse',)
         }),
     )
 
 
 @admin.register(TagParfum)
 class TagParfumAdmin(admin.ModelAdmin):
-    list_display = ('id', 'parfum', 'tag', 'valeur')
+    list_display  = ('id', 'parfum', 'tag', 'valeur', 'date_creation')
+    list_filter   = ('tag', 'date_creation')
     search_fields = ('parfum__nom', 'tag__nom', 'valeur')
     autocomplete_fields = ('parfum', 'tag')
+    readonly_fields = ('date_creation',)
+    list_per_page = 50
+
+    fieldsets = (
+        ('Association', {
+            'description': 'Lie un tag (type) à un parfum avec une valeur spécifique.',
+            'fields': ('parfum', 'tag', 'valeur')
+        }),
+        ('Dates', {
+            'fields': ('date_creation',),
+            'classes': ('collapse',)
+        }),
+    )
 
 
 @admin.register(TagEssence)
 class TagEssenceAdmin(admin.ModelAdmin):
-    list_display = ('id', 'essence', 'tag', 'valeur')
+    list_display  = ('id', 'essence', 'tag', 'valeur', 'date_creation')
+    list_filter   = ('tag', 'date_creation')
     search_fields = ('essence__nom', 'tag__nom', 'valeur')
     autocomplete_fields = ('essence', 'tag')
+    readonly_fields = ('date_creation',)
+    list_per_page = 50
+
+    fieldsets = (
+        ('Association', {
+            'description': 'Lie un tag (type) à une essence avec une valeur spécifique.',
+            'fields': ('essence', 'tag', 'valeur')
+        }),
+        ('Dates', {
+            'fields': ('date_creation',),
+            'classes': ('collapse',)
+        }),
+    )
 
 
 @admin.register(TagAccessoire)
 class TagAccessoireAdmin(admin.ModelAdmin):
-    list_display = ('id', 'accessoire', 'tag', 'valeur')
+    list_display  = ('id', 'accessoire', 'tag', 'valeur', 'date_creation')
+    list_filter   = ('tag', 'date_creation')
     search_fields = ('accessoire__nom', 'tag__nom', 'valeur')
     autocomplete_fields = ('accessoire', 'tag')
+    readonly_fields = ('date_creation',)
+    list_per_page = 50
+
+    fieldsets = (
+        ('Association', {
+            'description': 'Lie un tag (type) à un accessoire avec une valeur spécifique.',
+            'fields': ('accessoire', 'tag', 'valeur')
+        }),
+        ('Dates', {
+            'fields': ('date_creation',),
+            'classes': ('collapse',)
+        }),
+    )
 
 
 @admin.register(EntrepriseInfo)
@@ -111,19 +159,28 @@ class FavoriAdmin(admin.ModelAdmin):
 class TagParfumInline(admin.TabularInline):
     model               = TagParfum
     extra               = 1
+    fields              = ('tag', 'valeur')
     autocomplete_fields = ('tag',)
+    verbose_name        = 'Tag'
+    verbose_name_plural = 'Tags du parfum'
 
 
 class TagEssenceInline(admin.TabularInline):
     model               = TagEssence
     extra               = 1
+    fields              = ('tag', 'valeur')
     autocomplete_fields = ('tag',)
+    verbose_name        = 'Tag'
+    verbose_name_plural = 'Tags de l\'essence'
 
 
 class TagAccessoireInline(admin.TabularInline):
     model               = TagAccessoire
     extra               = 1
+    fields              = ('tag', 'valeur')
     autocomplete_fields = ('tag',)
+    verbose_name        = 'Tag'
+    verbose_name_plural = 'Tags de l\'accessoire'
 
 
 # ============================================================
@@ -202,7 +259,7 @@ class ParfumAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('Informations générales', {
-            'fields': ('categorie', 'nom', 'slug', 'reference_sku')
+            'fields': ('categorie', 'marque', 'nom', 'slug', 'reference_sku')
         }),
         ('Descriptions', {
             'fields': ('description_courte', 'description_longue', 'description_ia')
@@ -226,7 +283,7 @@ class ParfumAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
         ('Images', {
-            'fields': ('image_principale', 'image_supp_1',"image_supp_2","image_supp_3", 'image_supp_4')
+            'fields': ('image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')
         }),
         ('Statut', {
             'fields': ('actif', 'est_nouveau', 'est_bestseller')
