@@ -349,29 +349,31 @@ class Parfum(models.Model):
         return promo if promo is not None else self.prix_unitaire
     
     # Méthodes pour récupérer les tags par type
-    def get_tags_by_type(self, tag_type):
-        """Récupère tous les tags d'un type donné pour ce parfum"""
-        return self.tags.filter(type=tag_type)
-    
+    # Le champ 'type' n'existe plus — Tag.nom EST le type (ex: "Sillage", "Famille olfactive")
+    # Ces propriétés retournent les valeurs depuis la table de liaison TagParfum
+    def get_tags_by_type(self, tag_nom):
+        """Récupère les valeurs des tags dont le nom de type correspond à tag_nom."""
+        return (
+            self.tags_associes
+            .filter(tag__nom__iexact=tag_nom)
+            .select_related('tag')
+        )
+
     @property
     def famille_olfactive(self):
-        tags = self.get_tags_by_type('famille_olfactive')
-        return [tag.nom for tag in tags]
-    
+        return [tp.valeur for tp in self.get_tags_by_type('Famille olfactive') if tp.valeur]
+
     @property
     def humeurs_compatibles(self):
-        tags = self.get_tags_by_type('humeur')
-        return [tag.nom for tag in tags]
-    
+        return [tp.valeur for tp in self.get_tags_by_type('Humeur') if tp.valeur]
+
     @property
     def occasions(self):
-        tags = self.get_tags_by_type('occasion')
-        return [tag.nom for tag in tags]
-    
+        return [tp.valeur for tp in self.get_tags_by_type('Occasion') if tp.valeur]
+
     @property
     def saisons_compatibles(self):
-        tags = self.get_tags_by_type('saison')
-        return [tag.nom for tag in tags]
+        return [tp.valeur for tp in self.get_tags_by_type('Saison') if tp.valeur]
 
 
 class Ingredient(models.Model):
@@ -500,27 +502,39 @@ class Essence(models.Model):
     def nom_complet(self):
         return f"{self.marque} - {self.nom}"
 
-    def get_tags_by_type(self, tag_type):
-        return self.tags.filter(type=tag_type)
+    # Le champ 'type' n'existe plus — Tag.nom EST le type (ex: "Sillage", "Famille olfactive")
+    # Ces propriétés retournent les valeurs depuis la table de liaison TagEssence
+    def get_tags_by_type(self, tag_nom):
+        """Récupère les valeurs des tags dont le nom de type correspond à tag_nom."""
+        return (
+            self.tags_associes
+            .filter(tag__nom__iexact=tag_nom)
+            .select_related('tag')
+        )
 
     @property
     def famille_olfactive(self):
-        return [tag.nom for tag in self.get_tags_by_type('famille_olfactive')]
+        return [te.valeur for te in self.get_tags_by_type('Famille olfactive') if te.valeur]
+
     @property
     def humeurs_compatibles(self):
-        return [tag.nom for tag in self.get_tags_by_type('humeur')]
+        return [te.valeur for te in self.get_tags_by_type('Humeur') if te.valeur]
+
     @property
     def moments_journee(self):
-        return [tag.nom for tag in self.get_tags_by_type('moment_journee')]
+        return [te.valeur for te in self.get_tags_by_type('Moment de la journée') if te.valeur]
+
     @property
     def occasions(self):
-        return [tag.nom for tag in self.get_tags_by_type('occasion')]
+        return [te.valeur for te in self.get_tags_by_type('Occasion') if te.valeur]
+
     @property
     def saisons_compatibles(self):
-        return [tag.nom for tag in self.get_tags_by_type('saison')]
+        return [te.valeur for te in self.get_tags_by_type('Saison') if te.valeur]
+
     @property
     def signes_astrologiques_compatibles(self):
-        return [tag.nom for tag in self.get_tags_by_type('signe_astrologique')]
+        return [te.valeur for te in self.get_tags_by_type('Signe astrologique') if te.valeur]
 
 
     def stock_total_ml(self):
