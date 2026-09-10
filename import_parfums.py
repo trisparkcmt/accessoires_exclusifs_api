@@ -3,6 +3,7 @@ import os
 import sys
 import django
 import csv
+import unicodedata
 from decimal import Decimal
 
 # Configuration de l'environnement Django
@@ -124,15 +125,18 @@ def import_parfums():
         }.get(intensite_normalisee, "")
 
     def categorie_pour_statut(statut):
-        statuts = {
-            "parfum de marque": "Parfum de marque",
-            "marque": "Parfum de marque",
-            "dupe": "Dupe",
-            "inspiration": "Inspiration",
-            "création": "Création",
-            "creation": "Création",
-        }
-        nom = statuts.get(statut.lower(), statut) if statut else "Non classé"
+        statut_normalise = unicodedata.normalize("NFKD", statut.lower()).encode("ascii", "ignore").decode()
+        if "dupe" in statut_normalise:
+            nom = "DUPE"
+        elif "marque" in statut_normalise:
+            nom = "PARFUMS DE MARQUE"
+        else:
+            # Les créations et les inspirations sont regroupées dans la catégorie Inspiration.
+            nom = "INSPIRATION"
+
+        categorie = CategorieParfum.objects.filter(nom__iexact=nom).first()
+        if categorie:
+            return categorie
         categorie, _ = CategorieParfum.objects.get_or_create(
             nom=nom,
             defaults={"description": f"Parfums : {nom}"},
