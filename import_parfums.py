@@ -54,31 +54,54 @@ def get_or_create_categories():
 def import_parfums():
     """Importe le catalogue CSV et conserve les attributs sans champ dédié en tags."""
     csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalogue_parfums_complet.csv")
-    champs_parfum = {
-        "Nom du produit": "nom",
-        "Marque / maison": "marque",
-        "Genre": "genre_cible",
-        "Notes de tête": "notes_tete",
-        "Notes de cœur": "notes_coeur",
-        "Notes de fond": "notes_fond",
-        "Description courte": "description_courte",
-        "Description longue": "description_longue",
-        "Description IA": "description_ia",
-    }
     colonnes_en_tags = [
-        "Statut / positionnement", "Type / concentration",
-        "Famille olfactive", "Durabilité annoncée", "Sillage", "Style",
+        "Famille olfactive", "Durabilité", "Sillage", "Style",
         "Humeur compatible", "Saisons compatibles", "Climat conseillé",
         "Occasions recommandées", "Niveau de certitude",
+        "Parfum original dont il s'inspire lorsqu'il est identifiable",
     ]
     noms_tags = {
         "Humeur compatible": "Humeur",
         "Saisons compatibles": "Saison",
         "Occasions recommandées": "Occasion",
+        "Parfum original dont il s'inspire lorsqu'il est identifiable": "Parfum original",
     }
 
-    def valeur(row, colonne):
-        return (row.get(colonne) or "").strip()
+    # Les alias permettent de lire l'ancien CSV pendant la transition des en-têtes.
+    aliases = {
+        "nom": ["Nom du produit"],
+        "prix": ["Prix (FCFA)"],
+        "prix_affiche": ["Prix affiché"],
+        "marque": ["Marque / maison"],
+        "statut": ["Statut", "Statut / positionnement"],
+        "concentration": ["Type / concentration"],
+        "genre": ["Genre"],
+        "famille": ["Famille olfactive"],
+        "notes_tete": ["Notes de tête"],
+        "notes_coeur": ["Notes de cœur"],
+        "notes_fond": ["Notes de fond"],
+        "duree_annoncee": ["Durabilité", "Durabilité annoncée"],
+        "sillage": ["Sillage"],
+        "intensite": ["Intensité"],
+        "style": ["Style"],
+        "humeur": ["Humeur compatible"],
+        "saisons": ["Saisons compatibles"],
+        "climat": ["Climat conseillé"],
+        "occasions": ["Occasions recommandées"],
+        "original": [
+            "Parfum original dont il s'inspire lorsqu'il est identifiable",
+            "Parfum original dont il s’inspire lorsqu’il est identifiable",
+        ],
+        "description_courte": ["Description courte"],
+        "description_longue": ["Description longue"],
+        "description_ia": ["Description IA"],
+    }
+
+    def valeur(row, cle):
+        for colonne in aliases.get(cle, [cle]):
+            if colonne in row:
+                return (row.get(colonne) or "").strip()
+        return ""
 
     def prix_depuis_valeur(prix_brut):
         prix_nettoye = prix_brut.replace("FCFA", "").replace(" ", "").replace(",", ".").strip()
@@ -89,8 +112,27 @@ def import_parfums():
             genre.lower(), "mixte"
         )
 
+    def intensite_valide(intensite):
+        intensite_normalisee = intensite.lower().strip()
+        return {
+            "légère": "légère",
+            "legere": "légère",
+            "moyenne": "moyenne",
+            "forte": "forte",
+            "très forte": "très forte",
+            "tres forte": "très forte",
+        }.get(intensite_normalisee, "")
+
     def categorie_pour_statut(statut):
-        nom = statut or "Non classé"
+        statuts = {
+            "parfum de marque": "Parfum de marque",
+            "marque": "Parfum de marque",
+            "dupe": "Dupe",
+            "inspiration": "Inspiration",
+            "création": "Création",
+            "creation": "Création",
+        }
+        nom = statuts.get(statut.lower(), statut) if statut else "Non classé"
         categorie, _ = CategorieParfum.objects.get_or_create(
             nom=nom,
             defaults={"description": f"Parfums : {nom}"},
@@ -109,33 +151,33 @@ def import_parfums():
     with open(csv_path, "r", encoding="utf-8-sig", newline="") as csv_file:
         rows = csv.DictReader(csv_file)
         for index, row in enumerate(rows, start=1):
-            nom = valeur(row, "Nom du produit")
+            nom = valeur(row, "nom")
             if not nom:
                 continue
             sku = f"PARFUM-CSV-{index:03d}"
             imported_skus.append(sku)
-            statut = valeur(row, "Statut / positionnement")
-            prix = prix_depuis_valeur(valeur(row, "Prix (FCFA)"))
-            prix_affiche = prix_depuis_valeur(valeur(row, "Prix affiché"))
+            statut = valeur(row, "statut")
+            prix = prix_depuis_valeur(valeur(row, "prix"))
+            prix_affiche = prix_depuis_valeur(valeur(row, "prix_affiche"))
             prix = prix or prix_affiche
             if prix is None:
                 raise ValueError(f"Prix manquant pour le parfum {nom} (ligne {index})")
             defaults = {
                 "nom": nom,
-                "marque": valeur(row, "Marque / maison"),
+                "marque": valeur(row, "marque"),
                 "categorie": categorie_pour_statut(statut),
-                "genre_cible": genre_valide(valeur(row, "Genre")),
-                "duree": valeur(row, "Type / concentration"),
+                "genre_cible": genre_valide(valeur(row, "genre")),
+                "duree": valeur(row, "concentration"),
                 "contenance_ml": 100,
-                "intensite": "",
+                "intensite": intensite_valide(valeur(row, "intensite")),
                 "prix_unitaire": prix,
                 "prix_promotionnel": None,
-                "notes_tete": valeur(row, "Notes de tête"),
-                "notes_coeur": valeur(row, "Notes de cœur"),
-                "notes_fond": valeur(row, "Notes de fond"),
-                "description_courte": valeur(row, "Description courte"),
-                "description_longue": valeur(row, "Description longue"),
-                "description_ia": valeur(row, "Description IA"),
+                "notes_tete": valeur(row, "notes_tete"),
+                "notes_coeur": valeur(row, "notes_coeur"),
+                "notes_fond": valeur(row, "notes_fond"),
+                "description_courte": valeur(row, "description_courte"),
+                "description_longue": valeur(row, "description_longue"),
+                "description_ia": valeur(row, "description_ia"),
                 "est_nouveau": False,
                 "est_bestseller": False,
                 "stock_quantite": 20,
@@ -156,7 +198,21 @@ def import_parfums():
 
             TagParfum.objects.filter(parfum=parfum).delete()
             for colonne in colonnes_en_tags:
-                tag_valeur = valeur(row, colonne)
+                cle = {
+                    "Famille olfactive": "famille",
+                    "Durabilité": "duree_annoncee",
+                    "Sillage": "sillage",
+                    "Style": "style",
+                    "Humeur compatible": "humeur",
+                    "Saisons compatibles": "saisons",
+                    "Climat conseillé": "climat",
+                    "Occasions recommandées": "occasions",
+                    "Niveau de certitude": "__ignore__",
+                    "Parfum original dont il s'inspire lorsqu'il est identifiable": "original",
+                }[colonne]
+                if cle == "__ignore__":
+                    continue
+                tag_valeur = valeur(row, cle)
                 if tag_valeur:
                     TagParfum.objects.create(
                         parfum=parfum,
