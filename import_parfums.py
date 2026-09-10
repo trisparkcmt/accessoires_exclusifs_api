@@ -66,7 +66,7 @@ def import_parfums():
         "Description IA": "description_ia",
     }
     colonnes_en_tags = [
-        "Prix affiché", "Statut / positionnement", "Type / concentration",
+        "Statut / positionnement", "Type / concentration",
         "Famille olfactive", "Durabilité annoncée", "Sillage", "Style",
         "Humeur compatible", "Saisons compatibles", "Climat conseillé",
         "Occasions recommandées", "Niveau de certitude",
@@ -79,6 +79,10 @@ def import_parfums():
 
     def valeur(row, colonne):
         return (row.get(colonne) or "").strip()
+
+    def prix_depuis_valeur(prix_brut):
+        prix_nettoye = prix_brut.replace("FCFA", "").replace(" ", "").replace(",", ".").strip()
+        return Decimal(prix_nettoye) if prix_nettoye else None
 
     def genre_valide(genre):
         return {"homme": "homme", "femme": "femme", "unisexe": "mixte", "mixte": "mixte"}.get(
@@ -111,7 +115,11 @@ def import_parfums():
             sku = f"PARFUM-CSV-{index:03d}"
             imported_skus.append(sku)
             statut = valeur(row, "Statut / positionnement")
-            prix = Decimal(valeur(row, "Prix (FCFA)").replace(" ", "").replace(",", "."))
+            prix = prix_depuis_valeur(valeur(row, "Prix (FCFA)"))
+            prix_affiche = prix_depuis_valeur(valeur(row, "Prix affiché"))
+            prix = prix or prix_affiche
+            if prix is None:
+                raise ValueError(f"Prix manquant pour le parfum {nom} (ligne {index})")
             defaults = {
                 "nom": nom,
                 "marque": valeur(row, "Marque / maison"),
