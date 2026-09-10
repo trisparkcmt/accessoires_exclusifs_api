@@ -1,0 +1,22 @@
+[Unit]
+Description=Gunicorn Dev — Accessoires Exclusifs API (branche main)
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/accessoiresexclusifs_dev
+EnvironmentFile=/var/www/accessoiresexclusifs_dev/.env
+
+ExecStart=/var/www/accessoiresexclusifs_dev/env/bin/gunicorn \
+    --workers 2 \
+    --bind unix:/run/gunicorn_dev.sock \
+    --access-logfile /var/log/gunicorn/dev_access.log \
+    --error-logfile /var/log/gunicorn/dev_error.log \
+    backend.wsgi:application
+
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

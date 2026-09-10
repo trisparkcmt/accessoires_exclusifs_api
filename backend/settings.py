@@ -34,8 +34,9 @@ if env_file.exists():
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# Sur la branche master (déploiement production), DEBUG est False par défaut.
-DEBUG = os.getenv('DJANGO_DEBUG', 'False').lower() in ('true', '1', 'yes')
+# Sur la branche main (environnement de développement), DEBUG est True par défaut.
+# Surcharger via DJANGO_DEBUG=False dans le .env VPS si besoin.
+DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-prod-key-change-in-env-file-accessoires-exclusifs!')
@@ -45,24 +46,22 @@ allowed_hosts_env = os.getenv('ALLOWED_HOSTS')
 if allowed_hosts_env:
     ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_env.split(',') if h.strip()]
 else:
+    # Branche main — environnement de développement
     ALLOWED_HOSTS = [
-        "api.accessoiresexclusifs.com",
-        "accessoiresexclusifs.com",
-        "www.accessoiresexclusifs.com",
+        "dev-api.accessoiresexclusifs.com",
         "localhost",
         "127.0.0.1",
     ]
 
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://accessoiresexclusifs.com')
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://dev.accessoiresexclusifs.com')
 
 csrf_trusted_env = os.getenv('CSRF_TRUSTED_ORIGINS')
 if csrf_trusted_env:
     CSRF_TRUSTED_ORIGINS = [o.strip() for o in csrf_trusted_env.split(',') if o.strip()]
 else:
+    # Branche main — environnement de développement
     CSRF_TRUSTED_ORIGINS = [
-        "https://api.accessoiresexclusifs.com",
-        "https://accessoiresexclusifs.com",
-        "https://www.accessoiresexclusifs.com",
+        "https://dev-api.accessoiresexclusifs.com",
         "https://dev.accessoiresexclusifs.com",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -456,13 +455,12 @@ if cors_origins_env:
     CORS_ALLOW_ALL_ORIGINS = False
     CORS_ALLOWED_ORIGINS = [o.strip() for o in cors_origins_env.split(',') if o.strip()]
 else:
+    # Branche main — environnement de développement
     CORS_ALLOW_ALL_ORIGINS = False
-    CORS_ALLOWED_ORIGINS = [ 
-        "https://accessoiresexclusifs.com",
-        "https://www.accessoiresexclusifs.com",
+    CORS_ALLOWED_ORIGINS = [
+        "https://dev.accessoiresexclusifs.com",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "https://dev.accessoiresexclusifs.com",
     ]
 
 for local_origin in ["http://localhost:3000", "http://127.0.0.1:3000"]:
