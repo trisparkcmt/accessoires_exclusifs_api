@@ -2,6 +2,7 @@
 import os
 import sys
 import django
+import csv
 from decimal import Decimal
 
 # Configuration de l'environnement Django
@@ -10,7 +11,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
 django.setup()
 
 from django.contrib.auth import get_user_model
-from catalogue.models import Parfum, CategorieParfum
+from catalogue.models import Parfum, CategorieParfum, Tag, TagParfum
 from django.utils.text import slugify
 
 User = get_user_model()
@@ -51,6 +52,117 @@ def get_or_create_categories():
     return categories
 
 def import_parfums():
+    """Importe le catalogue CSV et conserve les attributs sans champ dédié en tags."""
+    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalogue_parfums_complet.csv")
+    champs_parfum = {
+        "Nom du produit": "nom",
+        "Marque / maison": "marque",
+        "Genre": "genre_cible",
+        "Notes de tête": "notes_tete",
+        "Notes de cœur": "notes_coeur",
+        "Notes de fond": "notes_fond",
+        "Description courte": "description_courte",
+        "Description longue": "description_longue",
+        "Description IA": "description_ia",
+    }
+    colonnes_en_tags = [
+        "Prix affiché", "Statut / positionnement", "Type / concentration",
+        "Famille olfactive", "Durabilité annoncée", "Sillage", "Style",
+        "Humeur compatible", "Saisons compatibles", "Climat conseillé",
+        "Occasions recommandées", "Niveau de certitude",
+    ]
+    noms_tags = {
+        "Humeur compatible": "Humeur",
+        "Saisons compatibles": "Saison",
+        "Occasions recommandées": "Occasion",
+    }
+
+    def valeur(row, colonne):
+        return (row.get(colonne) or "").strip()
+
+    def genre_valide(genre):
+        return {"homme": "homme", "femme": "femme", "unisexe": "mixte", "mixte": "mixte"}.get(
+            genre.lower(), "mixte"
+        )
+
+    def categorie_pour_statut(statut):
+        nom = statut or "Non classé"
+        categorie, _ = CategorieParfum.objects.get_or_create(
+            nom=nom,
+            defaults={"description": f"Parfums : {nom}"},
+        )
+        return categorie
+
+    def tag_pour_colonne(colonne):
+        tag, _ = Tag.objects.get_or_create(nom=noms_tags.get(colonne, colonne))
+        return tag
+
+    print(f"\n--- Importation du catalogue {os.path.basename(csv_path)} ---")
+    imported_skus = []
+    created_count = 0
+    updated_count = 0
+
+    with open(csv_path, "r", encoding="utf-8-sig", newline="") as csv_file:
+        rows = csv.DictReader(csv_file)
+        for index, row in enumerate(rows, start=1):
+            nom = valeur(row, "Nom du produit")
+            if not nom:
+                continue
+            sku = f"PARFUM-CSV-{index:03d}"
+            imported_skus.append(sku)
+            statut = valeur(row, "Statut / positionnement")
+            prix = Decimal(valeur(row, "Prix (FCFA)").replace(" ", "").replace(",", "."))
+            defaults = {
+                "nom": nom,
+                "marque": valeur(row, "Marque / maison"),
+                "categorie": categorie_pour_statut(statut),
+                "genre_cible": genre_valide(valeur(row, "Genre")),
+                "duree": valeur(row, "Type / concentration"),
+                "contenance_ml": 100,
+                "intensite": "",
+                "prix_unitaire": prix,
+                "prix_promotionnel": None,
+                "notes_tete": valeur(row, "Notes de tête"),
+                "notes_coeur": valeur(row, "Notes de cœur"),
+                "notes_fond": valeur(row, "Notes de fond"),
+                "description_courte": valeur(row, "Description courte"),
+                "description_longue": valeur(row, "Description longue"),
+                "description_ia": valeur(row, "Description IA"),
+                "est_nouveau": False,
+                "est_bestseller": False,
+                "stock_quantite": 20,
+                "actif": True,
+            }
+            parfum = Parfum.objects.filter(reference_sku=sku).first() or Parfum.objects.filter(nom__iexact=nom).first()
+            if parfum:
+                operation = "*"
+                for key, val in defaults.items():
+                    setattr(parfum, key, val)
+                parfum.reference_sku = sku
+                parfum.save()
+                updated_count += 1
+            else:
+                operation = "+"
+                parfum = Parfum.objects.create(reference_sku=sku, **defaults)
+                created_count += 1
+
+            TagParfum.objects.filter(parfum=parfum).delete()
+            for colonne in colonnes_en_tags:
+                tag_valeur = valeur(row, colonne)
+                if tag_valeur:
+                    TagParfum.objects.create(
+                        parfum=parfum,
+                        tag=tag_pour_colonne(colonne),
+                        valeur=tag_valeur,
+                    )
+            print(f"[{operation}] {nom}")
+
+    # Remplace le catalogue visible sans supprimer les produits liés à l'historique des commandes.
+    Parfum.objects.exclude(reference_sku__in=imported_skus).update(actif=False)
+    print(f"\nImportation terminée : {created_count} créés, {updated_count} mis à jour.")
+    return
+
+    # Ancien catalogue codé en dur conservé temporairement ci-dessous pour référence historique.
     categories = get_or_create_categories()
     cat_marque = categories["MARQUE"]
     cat_dupe = categories["DUPE"]
