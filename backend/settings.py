@@ -63,6 +63,7 @@ else:
         "https://api.accessoiresexclusifs.com",
         "https://accessoiresexclusifs.com",
         "https://www.accessoiresexclusifs.com",
+        "https://dev.accessoiresexclusifs.com",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
