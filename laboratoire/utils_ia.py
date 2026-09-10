@@ -664,6 +664,35 @@ def generer_resume_conversation(messages_recents, resume_existant=''):
             print(f"[RESUME IA] Nouveau résumé généré (Groq/{groq_model}): '{nouveau_resume[:100]}...'", flush=True)
             return nouveau_resume if nouveau_resume else resume_existant
 
+        elif provider in ('huggingface', 'hf'):
+            hf_api_key = os.environ.get('HUGGINGFACE_API_KEY') or os.environ.get('HF_API_KEY') or getattr(settings, 'HUGGINGFACE_API_KEY', None)
+            hf_model = os.environ.get('HUGGINGFACE_MODEL') or getattr(settings, 'HUGGINGFACE_MODEL', 'Qwen/Qwen2.5-72B-Instruct')
+            if not hf_api_key:
+                print(f"[RESUME IA] Clé HUGGINGFACE_API_KEY manquante.", flush=True)
+                return resume_existant
+            payload = {
+                'model': hf_model,
+                'messages': [
+                    {'role': 'system', 'content': 'Tu es un assistant qui génère des résumés courts et factuels de conversations.'},
+                    {'role': 'user', 'content': prompt_resume},
+                ],
+                'temperature': 0.1,
+            }
+            resp = requests.post(
+                'https://router.huggingface.co/v1/chat/completions',
+                headers={
+                    'Authorization': f'Bearer {hf_api_key}',
+                    'Content-Type': 'application/json',
+                },
+                json=payload,
+                timeout=(10, 30),
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            nouveau_resume = data.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+            print(f"[RESUME IA] Nouveau résumé généré (HuggingFace/{hf_model}): '{nouveau_resume[:100]}...'", flush=True)
+            return nouveau_resume if nouveau_resume else resume_existant
+
         else:
             api_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
             gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash'))
@@ -1091,6 +1120,175 @@ Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSO
             print(f"[IA-RECOMMANDATION] ERREUR critique lors de l'appel a Groq: {str(e)}", flush=True)
             logger.exception('Erreur Groq Function Calling')
             return {"error": f"Erreur de l'API Groq : {str(e)}"}
+
+    elif provider in ('huggingface', 'hf'):
+        hf_api_key = os.environ.get('HUGGINGFACE_API_KEY') or os.environ.get('HF_API_KEY') or getattr(settings, 'HUGGINGFACE_API_KEY', None)
+        hf_model = os.environ.get('HUGGINGFACE_MODEL') or getattr(settings, 'HUGGINGFACE_MODEL', 'Qwen/Qwen2.5-72B-Instruct')
+
+        if not hf_api_key:
+            return {"error": "Clé API Hugging Face manquante (HUGGINGFACE_API_KEY ou HF_API_KEY)."}
+
+        hf_headers = {
+            'Authorization': f'Bearer {hf_api_key}',
+            'Content-Type': 'application/json',
+        }
+
+        def _post_hf(payload, retries=3):
+            urls = [
+                'https://router.huggingface.co/v1/chat/completions',
+                'https://api-inference.huggingface.co/v1/chat/completions',
+            ]
+            last_resp = None
+            for url in urls:
+                for attempt in range(1, retries + 1):
+                    try:
+                        resp = requests.post(
+                            url,
+                            headers=hf_headers,
+                            json=payload,
+                            timeout=(15, 60),
+                        )
+                        if resp.status_code in (500, 502, 503, 504) and attempt < retries:
+                            print(f"[IA-RECOMMANDATION] HuggingFace ({url}) HTTP {resp.status_code}, tentative {attempt}/{retries}...", flush=True)
+                            import time
+                            time.sleep(0.8 * attempt)
+                            continue
+                        if resp.status_code in (200, 400, 422, 429):
+                            return resp
+                        last_resp = resp
+                    except (requests.exceptions.RequestException, Exception) as err:
+                        print(f"[IA-RECOMMANDATION] Tentative HuggingFace {attempt}/{retries} ({url}) échouée: {err}", flush=True)
+                        if attempt == retries:
+                            last_resp = err
+                        import time
+                        time.sleep(0.8 * attempt)
+            if isinstance(last_resp, requests.Response):
+                return last_resp
+            raise last_resp or Exception("Impossible de contacter l'API HuggingFace.")
+
+        messages = [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': f"Demande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"}
+        ]
+
+        llm_payload = {
+            'model': hf_model,
+            'messages': messages,
+            'tools': OLLAMA_TOOLS_DEFINITIONS,
+            'tool_choice': 'auto',
+            'temperature': 0.2,
+        }
+
+        print(f"[IA-RECOMMANDATION] Hugging Face: Envoi du premier appel (modele: {hf_model})...", flush=True)
+        logger.info('[LLM_CALL] HuggingFace request Function Calling', extra={'model': hf_model})
+
+        try:
+            response = _post_hf(llm_payload)
+
+            # Si tools non supportés sur ce modèle HF, fallback avec injection du catalogue
+            if response.status_code in (400, 422):
+                print(f"[IA-RECOMMANDATION] HuggingFace tools non supportés directement, fallback avec injection du catalogue...", flush=True)
+                catalogue_fb = get_catalogue_context()
+                contents_hf = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fb}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
+                llm_payload = {
+                    'model': hf_model,
+                    'messages': [
+                        {'role': 'system', 'content': system_prompt},
+                        {'role': 'user', 'content': contents_hf}
+                    ],
+                    'response_format': {'type': 'json_object'},
+                    'temperature': 0.2,
+                }
+                response = _post_hf(llm_payload)
+
+            if response.status_code == 429:
+                print(f"[IA-RECOMMANDATION] Rate limit / Quota dépassé sur HuggingFace (HTTP 429). Fallback Gemini...", flush=True)
+                gemini_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
+                gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash'))
+                if gemini_key:
+                    try:
+                        client_g = genai.Client(api_key=gemini_key)
+                        catalogue_fb = get_catalogue_context()
+                        contents_g = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fb}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
+                        response_g = _generate_gemini_with_fallback(
+                            client=client_g,
+                            contents=contents_g,
+                            config=types.GenerateContentConfig(
+                                temperature=0.2,
+                                response_mime_type='application/json',
+                            ),
+                            requested_model=gemini_model,
+                        )
+                        reponse_texte = response_g.text.strip()
+                    except Exception as gem_err:
+                        print(f"[IA-RECOMMANDATION] Fallback Gemini a aussi échoué après 429 HuggingFace: {gem_err}", flush=True)
+                        return {"error": "Quota d'IA temporairement atteint. Réessayez plus tard."}
+                else:
+                    return {"error": "Quota d'IA temporairement atteint. Réessayez plus tard."}
+
+            else:
+                response.raise_for_status()
+                data = response.json()
+
+                if isinstance(data, dict) and 'choices' in data and data['choices']:
+                    choice = data['choices'][0]
+                    message_obj = choice.get('message', {})
+                    tool_calls = message_obj.get('tool_calls')
+
+                    if tool_calls:
+                        print(f"[IA-RECOMMANDATION] HuggingFace a demandé des outils: {[t.get('function', {}).get('name') for t in tool_calls]}", flush=True)
+                        logger.info('[LLM_TOOL_CALL] HuggingFace a demandé des outils', extra={'tool_calls': tool_calls})
+
+                        messages.append({
+                            'role': 'assistant',
+                            'content': message_obj.get('content') or None,
+                            'tool_calls': tool_calls,
+                        })
+
+                        for tool_call in tool_calls:
+                            fn_name = tool_call.get('function', {}).get('name')
+                            raw_args = tool_call.get('function', {}).get('arguments', '{}')
+                            try:
+                                fn_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                            except json.JSONDecodeError:
+                                fn_args = {}
+
+                            print(f"[IA-RECOMMANDATION] Execution de l'outil local (HuggingFace): {fn_name}(**{fn_args})...", flush=True)
+                            if fn_name in TOOLS_REGISTRY:
+                                tool_result = TOOLS_REGISTRY[fn_name](**fn_args)
+                            else:
+                                tool_result = {"error": f"Outil inconnu : {fn_name}"}
+
+                            messages.append({
+                                'role': 'tool',
+                                'tool_call_id': tool_call.get('id', 'call_1'),
+                                'content': json.dumps(tool_result, ensure_ascii=False)
+                            })
+
+                        messages.append({
+                            'role': 'user',
+                            'content': "Toutes les recherches d'outils ont été effectuées avec succès. Génère MAINTENANT la réponse finale sous la forme d'un objet JSON strict respectant le schéma demandé. Ne fais plus d'appels d'outils."
+                        })
+
+                        second_payload = {
+                            'model': hf_model,
+                            'messages': messages,
+                            'response_format': {'type': 'json_object'},
+                            'temperature': 0.2,
+                        }
+                        second_resp = _post_hf(second_payload)
+                        second_resp.raise_for_status()
+                        second_data = second_resp.json()
+                        reponse_texte = second_data['choices'][0].get('message', {}).get('content')
+                    else:
+                        reponse_texte = message_obj.get('content')
+                else:
+                    reponse_texte = response.text
+
+        except Exception as e:
+            print(f"[IA-RECOMMANDATION] ERREUR critique lors de l'appel a HuggingFace: {str(e)}", flush=True)
+            logger.exception('Erreur HuggingFace Function Calling')
+            return {"error": f"Erreur de l'API Hugging Face : {str(e)}"}
 
     else:
         # Provider Gemini (defaut)
