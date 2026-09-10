@@ -198,6 +198,18 @@ class ParfumPersonnaliseAPITest(APITestCase):
 
 
 class IACompositionRulesTests(TestCase):
+    def setUp(self):
+        for eid in [1, 2, 8, 11, 12]:
+            Essence.objects.get_or_create(
+                id=eid,
+                defaults={
+                    'nom': f'Essence test {eid}',
+                    'code_reference': f'ESS_TEST_{eid}',
+                    'prix_par_ml': Decimal('10.00'),
+                    'actif': True
+                }
+            )
+
     def test_normaliser_reponse_composition_keeps_only_essences_and_deduplicates_suggestions(self):
         response = {
             'message': 'Voici une proposition personnalisée',
