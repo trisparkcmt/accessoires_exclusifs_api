@@ -1,7 +1,87 @@
 # catalogue/filters.py
 import django_filters
 from django.db import models
+from rest_framework.filters import SearchFilter, OrderingFilter
+from django.db.models import Q, Case, When, Value, IntegerField
 from .models import Parfum, Essence, Accessoire, Flacon, DiffuseurParfum
+
+
+# ============================================================
+# RECHERCHE & TRI PERSONNALISÉS (Recherche ordonnée / priorisée)
+# ============================================================
+class OrderedSearchFilter(SearchFilter):
+    """
+    Filtre de recherche textuelle avec ordre de priorité strict :
+    1. Nom commence par le terme recherché
+    2. Nom contient le terme recherché
+    3. Marque contient le terme recherché
+    4. Catégorie / Type contient le terme recherché
+    5. Tags (nom ou valeur associée) contiennent le terme recherché
+    """
+    def filter_queryset(self, request, queryset, view):
+        params = getattr(request, 'query_params', getattr(request, 'GET', {}))
+        search_query = params.get(self.search_param, '').strip()
+        if not search_query:
+            return queryset
+
+        model = queryset.model
+
+        # 1. Nom commence par
+        q_nom_start = Q(nom__istartswith=search_query)
+        # 2. Nom contient (hors startswith)
+        q_nom_contains = Q(nom__icontains=search_query) & ~q_nom_start
+        # 3. Marque
+        q_marque = Q(marque__icontains=search_query) if hasattr(model, 'marque') else Q()
+
+        # 4. Catégorie / Type
+        q_categorie = Q()
+        if hasattr(model, 'categorie'):
+            try:
+                field = model._meta.get_field('categorie')
+                if field.is_relation:
+                    q_categorie = Q(categorie__nom__icontains=search_query)
+                else:
+                    q_categorie = Q(categorie__icontains=search_query)
+            except Exception:
+                q_categorie = Q()
+        elif hasattr(model, 'type_accessoire'):
+            q_categorie = Q(type_accessoire__nom__icontains=search_query)
+
+        # 5. Tags (nom ou valeur associée)
+        q_tags = Q()
+        if hasattr(model, 'tags'):
+            q_tags = Q(tags__nom__icontains=search_query) | Q(tags_associes__valeur__icontains=search_query)
+
+        combined_filter = q_nom_start | q_nom_contains | q_marque | q_categorie | q_tags
+
+        queryset = queryset.filter(combined_filter).annotate(
+            search_priority=Case(
+                When(q_nom_start, then=Value(1)),
+                When(q_nom_contains, then=Value(2)),
+                When(q_marque, then=Value(3)),
+                When(q_categorie, then=Value(4)),
+                When(q_tags, then=Value(5)),
+                default=Value(6),
+                output_field=IntegerField()
+            )
+        ).distinct()
+
+        if not params.get('ordering'):
+            queryset = queryset.order_by('search_priority', 'nom')
+
+        return queryset
+
+
+class CustomOrderingFilter(OrderingFilter):
+    """
+    Conserve le tri par priorité de recherche lorsque `search` est utilisé sans paramètre `ordering` explicite.
+    """
+    def filter_queryset(self, request, queryset, view):
+        params = getattr(request, 'query_params', getattr(request, 'GET', {}))
+        if params.get('search') and not params.get(self.ordering_param):
+            return queryset
+        return super().filter_queryset(request, queryset, view)
+
 
 
 # ============================================================

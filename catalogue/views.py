@@ -36,6 +36,7 @@ from django.db.models import Case, When
 from .filters import (
     ParfumFilter, EssenceFilter,
     AccessoireFilter, FlaconFilter,
+    OrderedSearchFilter, CustomOrderingFilter,
 )
 from .pagination import StandardPagination
 
@@ -229,7 +230,7 @@ class ParfumViewSet(viewsets.ModelViewSet):
     serializer_class   = ParfumSerializer
     pagination_class   = StandardPagination
     permission_classes = [IsAdminOrServeuseOrReadOnly]
-    filter_backends    = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filter_backends    = [DjangoFilterBackend, OrderedSearchFilter, CustomOrderingFilter]
     parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = ParfumFilter
     search_fields      = ['marque', 'nom', 'description_courte', 'notes_tete', 'notes_coeur', 'notes_fond']
@@ -458,7 +459,7 @@ class EssenceViewSet(viewsets.ModelViewSet):
     serializer_class = EssenceSerializer
     pagination_class = StandardPagination
     permission_classes = [IsAdminOrServeuseOrReadOnly]
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filter_backends = [DjangoFilterBackend, OrderedSearchFilter, CustomOrderingFilter]
     filterset_class = EssenceFilter   # vous devrez adapter EssenceFilter plus tard
     search_fields = ['marque', 'nom', 'code_reference']
     ordering_fields = ['marque', 'nom', 'date_creation']
@@ -1388,7 +1389,7 @@ class AccessoireViewSet(viewsets.ModelViewSet):
     serializer_class   = AccessoireSerializer
     pagination_class   = StandardPagination
     permission_classes = [IsAdminOrServeuseOrReadOnly]
-    filter_backends    = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filter_backends    = [DjangoFilterBackend, OrderedSearchFilter, CustomOrderingFilter]
     parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = AccessoireFilter
     search_fields      = ['marque', 'nom', 'description_courte', 'matiere', 'couleur']
