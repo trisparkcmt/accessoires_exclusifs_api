@@ -1396,7 +1396,7 @@ class OrderedSearchFilterTest(APITestCase):
     def test_parfum_ordered_search_hierarchy(self):
         response = self.client.get('/api/v1/shop/parfums/?search=pu')
         self.assertEqual(response.status_code, 200)
-        data = response.data.get('results', response.data)
+        data = response.data.get('resultats', response.data.get('results', response.data))
         noms = [item['nom'] for item in data]
         self.assertEqual(len(noms), 5)
         self.assertEqual(noms[0], "Pure Oud")          # Prio 1: istartswith
