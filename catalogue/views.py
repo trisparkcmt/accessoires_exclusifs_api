@@ -235,7 +235,7 @@ class ParfumViewSet(viewsets.ModelViewSet):
     filterset_class    = ParfumFilter
     search_fields      = ['marque', 'nom', 'description_courte', 'notes_tete', 'notes_coeur', 'notes_fond']
     ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'contenance_ml']
-    ordering           = ['?']
+    ordering           = ['-date_creation', '-id']
     lookup_field       = 'slug'
 
     def get_queryset(self):
@@ -463,7 +463,7 @@ class EssenceViewSet(viewsets.ModelViewSet):
     filterset_class = EssenceFilter   # vous devrez adapter EssenceFilter plus tard
     search_fields = ['marque', 'nom', 'code_reference']
     ordering_fields = ['marque', 'nom', 'date_creation']
-    ordering = ['marque', 'nom']
+    ordering = ['-date_creation', '-id']
     lookup_field = 'slug'
 
     def get_queryset(self):
@@ -1395,7 +1395,7 @@ class AccessoireViewSet(viewsets.ModelViewSet):
     search_fields      = ['marque', 'nom', 'description_courte', 'matiere', 'couleur']
     ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'poids_grammes']
     # L'attribut 'ordering' par défaut est maintenant géré dynamiquement dans get_queryset
-    ordering           = [] 
+    ordering           = ['-date_creation', '-id']
     lookup_field       = 'slug'
 
     def get_queryset(self):
@@ -1403,13 +1403,13 @@ class AccessoireViewSet(viewsets.ModelViewSet):
         from django.db.models import F
         if is_privileged_dashboard_user(self.request):
             # Pour l'admin, afficher tous les accessoires, triés par date de création (du plus récent au plus ancien)
-            return Accessoire.objects.all().select_related('type_accessoire').order_by('-date_creation')
-        # Pour les utilisateurs non-admin, afficher uniquement les accessoires actifs, en stock (> seuil d'alerte) et avec prix > 0, triés aléatoirement
+            return Accessoire.objects.all().select_related('type_accessoire').order_by('-date_creation', '-id')
+        # Pour les utilisateurs non-admin, triés par date de création du plus récent au plus ancien
         return Accessoire.objects.filter(
             actif=True,
             stock_quantite__gt=F('seuil_alerte_stock'),
             prix_unitaire__gt=0
-        ).select_related('type_accessoire').order_by('?')
+        ).select_related('type_accessoire').order_by('-date_creation', '-id')
 
     def get_object(self):
         queryset = self.filter_queryset(self.get_queryset())
