@@ -1357,3 +1357,53 @@ class EssenceCreateFullSerializerTest(APITestCase):
         self.assertEqual(essence.produits_finis.count(), 1)
 
 
+# ============================================================
+# TESTS RECHERCHE ORDONNÉE & PRIORISÉE
+# ============================================================
+class OrderedSearchFilterTest(APITestCase):
+    def setUp(self):
+        self.cat1 = CategorieParfum.objects.create(nom="Catégorie Ordinaire")
+        self.cat_pu = CategorieParfum.objects.create(nom="Catégorie Pura")
+        self.tag_pu = Tag.objects.create(nom="Puissant")
+
+        # Priorité 1: Nom commence par 'pu'
+        self.p1 = Parfum.objects.create(
+            nom="Pure Oud", marque="Lattafa", categorie=self.cat1, contenance_ml=100,
+            prix_unitaire=10000, stock_quantite=50, seuil_alerte_stock=2, actif=True
+        )
+        # Priorité 2: Nom contient 'pu'
+        self.p2 = Parfum.objects.create(
+            nom="Bavaria Lapurd", marque="Lattafa", categorie=self.cat1, contenance_ml=100,
+            prix_unitaire=10000, stock_quantite=50, seuil_alerte_stock=2, actif=True
+        )
+        # Priorité 3: Marque contient 'pu'
+        self.p3 = Parfum.objects.create(
+            nom="Royal Sillage", marque="Puma Fragrances", categorie=self.cat1, contenance_ml=100,
+            prix_unitaire=10000, stock_quantite=50, seuil_alerte_stock=2, actif=True
+        )
+        # Priorité 4: Catégorie contient 'pu'
+        self.p4 = Parfum.objects.create(
+            nom="Velvet Rose", marque="Armani", categorie=self.cat_pu, contenance_ml=100,
+            prix_unitaire=10000, stock_quantite=50, seuil_alerte_stock=2, actif=True
+        )
+        # Priorité 5: Tag contient 'pu'
+        self.p5 = Parfum.objects.create(
+            nom="Noir Extreme", marque="Tom Ford", categorie=self.cat1, contenance_ml=100,
+            prix_unitaire=10000, stock_quantite=50, seuil_alerte_stock=2, actif=True
+        )
+        self.p5.tags.add(self.tag_pu)
+
+    def test_parfum_ordered_search_hierarchy(self):
+        response = self.client.get('/api/v1/shop/parfums/?search=pu')
+        self.assertEqual(response.status_code, 200)
+        data = response.data.get('results', response.data)
+        noms = [item['nom'] for item in data]
+        self.assertEqual(len(noms), 5)
+        self.assertEqual(noms[0], "Pure Oud")          # Prio 1: istartswith
+        self.assertEqual(noms[1], "Bavaria Lapurd")     # Prio 2: icontains
+        self.assertEqual(noms[2], "Royal Sillage")      # Prio 3: marque
+        self.assertEqual(noms[3], "Velvet Rose")        # Prio 4: categorie
+        self.assertEqual(noms[4], "Noir Extreme")       # Prio 5: tag
+
+
+
