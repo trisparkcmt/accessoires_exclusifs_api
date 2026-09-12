@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
 django.setup()
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from catalogue.models import Parfum, CategorieParfum, Tag, TagParfum
 from django.utils.text import slugify
@@ -53,15 +54,16 @@ def get_or_create_categories():
     return categories
 
 def import_parfums():
-    """Importe le catalogue CSV et conserve les attributs sans champ dédié en tags."""
+    """Importe le catalogue CSV, affecte l'image principale et conserve les attributs en tags (y compris Type/concentration)."""
     csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalogue_parfums_complet.csv")
     colonnes_en_tags = [
-        "Famille olfactive", "Durabilité", "Sillage", "Style",
+        "Type / concentration", "Famille olfactive", "Durabilité", "Sillage", "Style",
         "Humeur compatible", "Saisons compatibles", "Climat conseillé",
         "Occasions recommandées", "Niveau de certitude",
         "Parfum original dont il s'inspire lorsqu'il est identifiable",
     ]
     noms_tags = {
+        "Type / concentration": "Concentration",
         "Humeur compatible": "Humeur",
         "Saisons compatibles": "Saison",
         "Occasions recommandées": "Occasion",
@@ -75,7 +77,7 @@ def import_parfums():
         "prix_affiche": ["Prix affiché"],
         "marque": ["Marque / maison"],
         "statut": ["Statut", "Statut / positionnement"],
-        "concentration": ["Type / concentration"],
+        "concentration": ["Type / concentration", "Type (Concentration)", "Type", "Concentration"],
         "genre": ["Genre"],
         "famille": ["Famille olfactive"],
         "notes_tete": ["Notes de tête"],
@@ -96,17 +98,87 @@ def import_parfums():
         "description_courte": ["Description courte"],
         "description_longue": ["Description longue"],
         "description_ia": ["Description IA"],
+        "image": ["Images", "Image", "image_url", "image", "Image principale"],
+        "image_supp_1": [
+            "Images secondaire 1",
+            "Image secondaire 1",
+            "Images secondaires 1",
+            "Image secondaire 1",
+            "image_supp_1",
+            "image_secondaire_1",
+            "Image Supp 1",
+            "Images Supp 1",
+        ],
+        "image_supp_2": [
+            "Images secondaire 2",
+            "Image secondaire 2",
+            "Images secondaires 2",
+            "Image secondaire 2",
+            "image_supp_2",
+            "image_secondaire_2",
+            "Image Supp 2",
+            "Images Supp 2",
+        ],
+        "image_supp_3": [
+            "Images secondaire 3",
+            "Image secondaire 3",
+            "Images secondaires 3",
+            "Image secondaire 3",
+            "image_supp_3",
+            "image_secondaire_3",
+            "Image Supp 3",
+            "Images Supp 3",
+        ],
+        "image_supp_4": [
+            "Images secondaire 4",
+            "Image secondaire 4",
+            "Images secondaires 4",
+            "Image secondaire 4",
+            "image_supp_4",
+            "image_secondaire_4",
+            "Image Supp 4",
+            "Images Supp 4",
+        ],
     }
 
     def valeur(row, cle):
         for colonne in aliases.get(cle, [cle]):
             if colonne in row:
                 return (row.get(colonne) or "").strip()
+        row_lower = {k.strip().lower(): v for k, v in row.items() if k}
+        for colonne in aliases.get(cle, [cle]):
+            if colonne.strip().lower() in row_lower:
+                return (row_lower.get(colonne.strip().lower()) or "").strip()
         return ""
 
+    def attacher_image(parfum, field_name, image_val):
+        if not image_val:
+            return False
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        candidates = [
+            os.path.join(backend_dir, image_val),
+            os.path.join(backend_dir, "images_parfum", os.path.basename(image_val)),
+            os.path.join(getattr(settings, "MEDIA_ROOT", backend_dir), image_val),
+        ]
+        img_full_path = next((p for p in candidates if os.path.exists(p)), None)
+        if img_full_path:
+            from django.core.files import File
+            field = getattr(parfum, field_name)
+            with open(img_full_path, "rb") as img_file:
+                filename = os.path.basename(img_full_path)
+                field.save(filename, File(img_file), save=False)
+            return True
+        return False
+
     def prix_depuis_valeur(prix_brut):
-        prix_nettoye = prix_brut.replace("FCFA", "").replace(" ", "").replace(",", ".").strip()
-        return Decimal(prix_nettoye) if prix_nettoye else None
+        if not prix_brut:
+            return None
+        import re
+        prix_clean = re.sub(r'[^\d.]', '', prix_brut.replace(",", ".").replace(" ", "").replace("FCFA", "").strip())
+        try:
+            return Decimal(prix_clean) if prix_clean else None
+        except Exception:
+            return None
 
     def genre_valide(genre):
         return {"homme": "homme", "femme": "femme", "unisexe": "mixte", "mixte": "mixte"}.get(
@@ -164,8 +236,9 @@ def import_parfums():
             prix = prix_depuis_valeur(valeur(row, "prix"))
             prix_affiche = prix_depuis_valeur(valeur(row, "prix_affiche"))
             prix = prix or prix_affiche
-            if prix is None:
-                raise ValueError(f"Prix manquant pour le parfum {nom} (ligne {index})")
+            if not prix or prix <= Decimal("0"):
+                prix = Decimal("18000.00")
+
             defaults = {
                 "nom": nom,
                 "marque": valeur(row, "marque"),
@@ -192,6 +265,9 @@ def import_parfums():
                 operation = "*"
                 for key, val in defaults.items():
                     setattr(parfum, key, val)
+                if parfum.stock_quantite <= 0:
+                    parfum.stock_quantite = 20
+                parfum.actif = True
                 parfum.reference_sku = sku
                 parfum.save()
                 updated_count += 1
@@ -200,9 +276,24 @@ def import_parfums():
                 parfum = Parfum.objects.create(reference_sku=sku, **defaults)
                 created_count += 1
 
+            # Gestion des images principales et secondaires (1 à 4)
+            img_modifiee = False
+            image_val = valeur(row, "image")
+            if attacher_image(parfum, "image_principale", image_val):
+                img_modifiee = True
+
+            for i in range(1, 5):
+                img_supp_val = valeur(row, f"image_supp_{i}")
+                if attacher_image(parfum, f"image_supp_{i}", img_supp_val):
+                    img_modifiee = True
+
+            if img_modifiee:
+                parfum.save()
+
             TagParfum.objects.filter(parfum=parfum).delete()
             for colonne in colonnes_en_tags:
                 cle = {
+                    "Type / concentration": "concentration",
                     "Famille olfactive": "famille",
                     "Durabilité": "duree_annoncee",
                     "Sillage": "sillage",
