@@ -1,6 +1,9 @@
 [Unit]
 Description=Gunicorn — Serveur WSGI pour Accessoires Exclusifs
-After=network.target
+# network-online.target garantit que la pile réseau ET le DNS sont opérationnels
+# avant le démarrage (network.target = interface UP seulement, pas DNS).
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 User=www-data
@@ -34,7 +37,9 @@ RestartSec=5s
 
 # Limites de sécurité
 NoNewPrivileges=true
-PrivateTmp=true
+# PrivateTmp=true est retiré car il peut bloquer la résolution DNS
+# (isole /tmp dans un namespace privé, parfois en conflit avec systemd-resolved).
+# PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
