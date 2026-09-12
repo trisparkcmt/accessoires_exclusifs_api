@@ -810,6 +810,360 @@ def _generate_gemini_with_fallback(client, contents, config, requested_model=Non
 
 
 
+def _appel_provider_ollama(prompt_utilisateur, system_prompt):
+    ollama_url = os.environ.get('OLLAMA_URL', getattr(settings, 'OLLAMA_URL', 'http://127.0.0.1:11434')).rstrip('/')
+    model_name = os.environ.get('OLLAMA_MODEL', getattr(settings, 'OLLAMA_MODEL', 'qwen2.5:3b'))
+
+    messages = [
+        {'role': 'system', 'content': system_prompt},
+        {'role': 'user', 'content': f"Demande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"}
+    ]
+
+    llm_payload = {
+        'model': model_name,
+        'messages': messages,
+        'tools': OLLAMA_TOOLS_DEFINITIONS,
+        'temperature': 0.2,
+        'stream': False,
+    }
+
+    print(f"[IA-RECOMMANDATION] Ollama: Envoi du premier appel (URL: {ollama_url}/v1/chat/completions)...", flush=True)
+
+    response = requests.post(
+        f"{ollama_url}/v1/chat/completions",
+        json=llm_payload,
+        timeout=(20, 180),
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    if isinstance(data, dict) and 'choices' in data and data['choices']:
+        choice = data['choices'][0]
+        message_obj = choice.get('message', {})
+        tool_calls = message_obj.get('tool_calls')
+
+        if tool_calls:
+            print(f"[IA-RECOMMANDATION] Ollama a demandé des outils: {[t.get('function', {}).get('name') for t in tool_calls]}", flush=True)
+            messages.append(message_obj)
+
+            for tool_call in tool_calls:
+                fn_name = tool_call.get('function', {}).get('name')
+                raw_args = tool_call.get('function', {}).get('arguments', '{}')
+                try:
+                    fn_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                except json.JSONDecodeError:
+                    fn_args = {}
+
+                tool_result = TOOLS_REGISTRY[fn_name](**fn_args) if fn_name in TOOLS_REGISTRY else {"error": f"Outil inconnu : {fn_name}"}
+
+                messages.append({
+                    'role': 'tool',
+                    'tool_call_id': tool_call.get('id', 'call_1'),
+                    'content': json.dumps(tool_result, ensure_ascii=False)
+                })
+
+            messages.append({
+                'role': 'user',
+                'content': "Toutes les recherches d'outils ont été effectuées avec succès. Génère MAINTENANT la réponse finale sous la forme d'un objet JSON strict respectant le schéma demandé. Ne fais plus d'appels d'outils."
+            })
+
+            second_payload = {
+                'model': model_name,
+                'messages': messages,
+                'response_format': {'type': 'json_object'},
+                'temperature': 0.2,
+                'stream': False,
+            }
+            second_resp = requests.post(
+                f"{ollama_url}/v1/chat/completions",
+                json=second_payload,
+                timeout=(20, 180),
+            )
+            second_resp.raise_for_status()
+            second_data = second_resp.json()
+            if 'choices' in second_data and second_data['choices']:
+                return second_data['choices'][0].get('message', {}).get('content')
+        else:
+            return message_obj.get('content')
+    return response.text
+
+
+def _appel_provider_groq(prompt_utilisateur, system_prompt):
+    groq_api_key = os.environ.get('GROQ_API_KEY') or getattr(settings, 'GROQ_API_KEY', None)
+    groq_model = os.environ.get('GROQ_MODEL', getattr(settings, 'GROQ_MODEL', 'deepseek-r1-distill-llama-70b'))
+
+    if not groq_api_key:
+        raise ValueError("Clé API Groq manquante (GROQ_API_KEY).")
+
+    groq_headers = {
+        'Authorization': f'Bearer {groq_api_key}',
+        'Content-Type': 'application/json',
+        'Connection': 'close',
+    }
+
+    def _post_groq(payload, retries=2):
+        for attempt in range(1, retries + 1):
+            try:
+                resp = requests.post(
+                    'https://api.groq.com/openai/v1/chat/completions',
+                    headers=groq_headers,
+                    json=payload,
+                    timeout=(15, 60),
+                )
+                if resp.status_code in (500, 502, 503, 504, 429) and attempt < retries:
+                    print(f"[IA-RECOMMANDATION] Groq retourné HTTP {resp.status_code}, tentative {attempt}/{retries}...", flush=True)
+                    import time
+                    time.sleep(0.8 * attempt)
+                    continue
+                return resp
+            except (requests.exceptions.RequestException, Exception) as err:
+                print(f"[IA-RECOMMANDATION] Tentative Groq {attempt}/{retries} échouée: {err}", flush=True)
+                if attempt == retries:
+                    raise
+                import time
+                time.sleep(0.8 * attempt)
+
+    messages = [
+        {'role': 'system', 'content': system_prompt},
+        {'role': 'user', 'content': f"Demande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"}
+    ]
+
+    llm_payload = {
+        'model': groq_model,
+        'messages': messages,
+        'tools': OLLAMA_TOOLS_DEFINITIONS,
+        'tool_choice': 'auto',
+        'parallel_tool_calls': True,
+        'temperature': 0.2,
+    }
+
+    print(f"[IA-RECOMMANDATION] Groq: Envoi du premier appel (modele: {groq_model})...", flush=True)
+    response = _post_groq(llm_payload)
+
+    # Si Groq renvoie HTTP 400 ou 422 (ex: modèle comme DeepSeek R1 qui ne supporte pas Function Calling),
+    # fallback immédiat sur l'injection de catalogue directe !
+    if response.status_code in (400, 422):
+        print(f"[IA-RECOMMANDATION] Groq ({groq_model}) HTTP {response.status_code} avec tools (modèle sans support tool calling). Fallback injection catalogue...", flush=True)
+        catalogue_fb = get_catalogue_context()
+        contents_fb = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fb}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
+        fallback_payload = {
+            'model': groq_model,
+            'messages': [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': contents_fb}
+            ],
+            'response_format': {'type': 'json_object'},
+            'temperature': 0.2,
+        }
+        response = _post_groq(fallback_payload)
+        if response.status_code in (400, 422):
+            print(f"[IA-RECOMMANDATION] Groq: Fallback sans response_format...", flush=True)
+            fallback_payload.pop('response_format', None)
+            response = _post_groq(fallback_payload)
+
+    response.raise_for_status()
+    data = response.json()
+
+    if isinstance(data, dict) and 'choices' in data and data['choices']:
+        choice = data['choices'][0]
+        message_obj = choice.get('message', {})
+        tool_calls = message_obj.get('tool_calls')
+
+        if tool_calls:
+            print(f"[IA-RECOMMANDATION] Groq a demandé des outils: {[t.get('function', {}).get('name') for t in tool_calls]}", flush=True)
+            messages.append({
+                'role': 'assistant',
+                'content': message_obj.get('content') or None,
+                'tool_calls': tool_calls,
+            })
+
+            for tool_call in tool_calls:
+                fn_name = tool_call.get('function', {}).get('name')
+                raw_args = tool_call.get('function', {}).get('arguments', '{}')
+                try:
+                    fn_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                except json.JSONDecodeError:
+                    fn_args = {}
+
+                tool_result = TOOLS_REGISTRY[fn_name](**fn_args) if fn_name in TOOLS_REGISTRY else {"error": f"Outil inconnu : {fn_name}"}
+
+                messages.append({
+                    'role': 'tool',
+                    'tool_call_id': tool_call.get('id', 'call_1'),
+                    'content': json.dumps(tool_result, ensure_ascii=False)
+                })
+
+            messages.append({
+                'role': 'user',
+                'content': "Toutes les recherches d'outils ont été effectuées avec succès. Génère MAINTENANT la réponse finale sous la forme d'un objet JSON strict respectant le schéma demandé. Ne fais plus d'appels d'outils."
+            })
+
+            second_payload = {
+                'model': groq_model,
+                'messages': messages,
+                'response_format': {'type': 'json_object'},
+                'temperature': 0.2,
+            }
+            second_resp = _post_groq(second_payload)
+            if second_resp.status_code == 200:
+                second_data = second_resp.json()
+                return second_data['choices'][0].get('message', {}).get('content')
+            else:
+                try:
+                    err_json = second_resp.json()
+                    failed_gen = err_json.get('error', {}).get('failed_generation')
+                    if failed_gen:
+                        return failed_gen
+                except Exception:
+                    pass
+                second_resp.raise_for_status()
+        else:
+            return message_obj.get('content')
+    return response.text
+
+
+def _appel_provider_huggingface(prompt_utilisateur, system_prompt):
+    hf_api_key = os.environ.get('HUGGINGFACE_API_KEY') or os.environ.get('HF_API_KEY') or getattr(settings, 'HUGGINGFACE_API_KEY', None)
+    hf_model = os.environ.get('HUGGINGFACE_MODEL') or getattr(settings, 'HUGGINGFACE_MODEL', 'Qwen/Qwen2.5-72B-Instruct')
+
+    if not hf_api_key:
+        raise ValueError("Clé API Hugging Face manquante.")
+
+    hf_headers = {
+        'Authorization': f'Bearer {hf_api_key}',
+        'Content-Type': 'application/json',
+    }
+
+    def _post_hf(payload, retries=2):
+        urls = ['https://router.huggingface.co/v1/chat/completions']
+        last_resp = None
+        for url in urls:
+            for attempt in range(1, retries + 1):
+                try:
+                    resp = requests.post(
+                        url,
+                        headers=hf_headers,
+                        json=payload,
+                        timeout=(15, 60),
+                    )
+                    if resp.status_code in (500, 502, 503, 504) and attempt < retries:
+                        import time
+                        time.sleep(0.8 * attempt)
+                        continue
+                    if resp.status_code in (200, 400, 422, 429):
+                        return resp
+                    last_resp = resp
+                except Exception as err:
+                    if attempt == retries:
+                        last_resp = err
+                    import time
+                    time.sleep(0.8 * attempt)
+        if isinstance(last_resp, requests.Response):
+            return last_resp
+        raise last_resp or Exception("Impossible de contacter l'API HuggingFace.")
+
+    messages = [
+        {'role': 'system', 'content': system_prompt},
+        {'role': 'user', 'content': f"Demande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"}
+    ]
+
+    llm_payload = {
+        'model': hf_model,
+        'messages': messages,
+        'tools': OLLAMA_TOOLS_DEFINITIONS,
+        'tool_choice': 'auto',
+        'temperature': 0.2,
+    }
+
+    print(f"[IA-RECOMMANDATION] Hugging Face: Envoi du premier appel (modele: {hf_model})...", flush=True)
+    response = _post_hf(llm_payload)
+
+    if response.status_code in (400, 422):
+        print(f"[IA-RECOMMANDATION] HuggingFace tools non supportés directement, fallback avec injection du catalogue...", flush=True)
+        catalogue_fb = get_catalogue_context()
+        contents_hf = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fb}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
+        llm_payload = {
+            'model': hf_model,
+            'messages': [
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': contents_hf}
+            ],
+            'response_format': {'type': 'json_object'},
+            'temperature': 0.2,
+        }
+        response = _post_hf(llm_payload)
+
+    response.raise_for_status()
+    data = response.json()
+
+    if isinstance(data, dict) and 'choices' in data and data['choices']:
+        choice = data['choices'][0]
+        message_obj = choice.get('message', {})
+        tool_calls = message_obj.get('tool_calls')
+
+        if tool_calls:
+            messages.append({
+                'role': 'assistant',
+                'content': message_obj.get('content') or None,
+                'tool_calls': tool_calls,
+            })
+            for tool_call in tool_calls:
+                fn_name = tool_call.get('function', {}).get('name')
+                raw_args = tool_call.get('function', {}).get('arguments', '{}')
+                try:
+                    fn_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                except json.JSONDecodeError:
+                    fn_args = {}
+                tool_result = TOOLS_REGISTRY[fn_name](**fn_args) if fn_name in TOOLS_REGISTRY else {"error": f"Outil inconnu : {fn_name}"}
+                messages.append({
+                    'role': 'tool',
+                    'tool_call_id': tool_call.get('id', 'call_1'),
+                    'content': json.dumps(tool_result, ensure_ascii=False)
+                })
+
+            messages.append({
+                'role': 'user',
+                'content': "Toutes les recherches d'outils ont été effectuées avec succès. Génère MAINTENANT la réponse finale sous la forme d'un objet JSON strict respectant le schéma demandé. Ne fais plus d'appels d'outils."
+            })
+            second_payload = {
+                'model': hf_model,
+                'messages': messages,
+                'response_format': {'type': 'json_object'},
+                'temperature': 0.2,
+            }
+            second_resp = _post_hf(second_payload)
+            second_resp.raise_for_status()
+            second_data = second_resp.json()
+            return second_data['choices'][0].get('message', {}).get('content')
+        else:
+            return message_obj.get('content')
+    return response.text
+
+
+def _appel_provider_gemini(prompt_utilisateur, system_prompt):
+    api_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
+    gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash'))
+
+    if not api_key:
+        raise ValueError("Clé API Gemini manquante (GEMINI_API_KEY).")
+
+    print(f"[IA-RECOMMANDATION] Gemini: Envoi de la requête (modèle cible: {gemini_model})...", flush=True)
+    client = genai.Client(api_key=api_key)
+    catalogue_fallback = get_catalogue_context()
+    contents = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fallback}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
+
+    response = _generate_gemini_with_fallback(
+        client=client,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            temperature=0.2,
+            response_mime_type='application/json',
+        ),
+        requested_model=gemini_model,
+    )
+    return response.text.strip()
+
+
 def demander_recommandation_ia(prompt_utilisateur, history=None, client_info=None, resume=None):
     """
     Envoie le prompt à l'IA avec Function Calling (Tools API) et ajuste automatiquement
@@ -870,513 +1224,48 @@ Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSO
 }}
 """
 
+    providers_map = {
+        'groq': _appel_provider_groq,
+        'gemini': _appel_provider_gemini,
+        'huggingface': _appel_provider_huggingface,
+        'hf': _appel_provider_huggingface,
+        'ollama': _appel_provider_ollama,
+    }
+
+    primary_provider = os.environ.get('LLM_PROVIDER', getattr(settings, 'LLM_PROVIDER', 'gemini')).lower()
+    
+    # Ordre de basculement automatique des providers en cas d'erreur
+    default_order = ['groq', 'gemini', 'huggingface', 'ollama']
+    providers_chain = [primary_provider] if primary_provider in providers_map else ['gemini']
+    for prov in default_order:
+        if prov not in providers_chain and (prov == 'huggingface' and 'hf' in providers_chain):
+            continue
+        if prov not in providers_chain:
+            providers_chain.append(prov)
+
     reponse_texte = None
+    dernieres_erreurs = []
 
-    if provider == 'ollama':
-        ollama_url = os.environ.get('OLLAMA_URL', getattr(settings, 'OLLAMA_URL', 'http://127.0.0.1:11434')).rstrip('/')
-        model_name = os.environ.get('OLLAMA_MODEL', getattr(settings, 'OLLAMA_MODEL', 'qwen2.5:3b'))
-
-        messages = [
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': f"Demande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"}
-        ]
-
-        llm_payload = {
-            'model': model_name,
-            'messages': messages,
-            'tools': OLLAMA_TOOLS_DEFINITIONS,
-            'temperature': 0.2,
-            'stream': False,
-        }
-
-        print(f"[IA-RECOMMANDATION] Ollama: Envoi du premier appel (URL: {ollama_url}/v1/chat/completions)...", flush=True)
-        logger.info('[LLM_CALL] Ollama request Function Calling', extra={'model': model_name, 'url': f"{ollama_url}/v1/chat/completions"})
+    for current_provider in providers_chain:
+        runner_fn = providers_map.get(current_provider)
+        if not runner_fn:
+            continue
 
         try:
-            response = requests.post(
-                f"{ollama_url}/v1/chat/completions",
-                json=llm_payload,
-                timeout=(20, 180),
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            if isinstance(data, dict) and 'choices' in data and data['choices']:
-                choice = data['choices'][0]
-                message_obj = choice.get('message', {})
-                tool_calls = message_obj.get('tool_calls')
-
-                if tool_calls:
-                    print(f"[IA-RECOMMANDATION] Ollama a demande des outils: {[t.get('function', {}).get('name') for t in tool_calls]}", flush=True)
-                    logger.info('[LLM_TOOL_CALL] Ollama a demandé des outils', extra={'tool_calls': tool_calls})
-                    messages.append(message_obj)
-
-                    for tool_call in tool_calls:
-                        fn_name = tool_call.get('function', {}).get('name')
-                        raw_args = tool_call.get('function', {}).get('arguments', '{}')
-                        try:
-                            fn_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-                        except json.JSONDecodeError:
-                            fn_args = {}
-
-                        print(f"[IA-RECOMMANDATION] Execution de l'outil local: {fn_name}(**{fn_args})...", flush=True)
-                        if fn_name in TOOLS_REGISTRY:
-                            tool_result = TOOLS_REGISTRY[fn_name](**fn_args)
-                        else:
-                            tool_result = {"error": f"Outil inconnu : {fn_name}"}
-                        print(f"[IA-RECOMMANDATION] Resultat de l'outil {fn_name}: {tool_result}", flush=True)
-
-                        messages.append({
-                            'role': 'tool',
-                            'tool_call_id': tool_call.get('id', 'call_1'),
-                            'content': json.dumps(tool_result, ensure_ascii=False)
-                        })
-
-                    messages.append({
-                        'role': 'user',
-                        'content': "Toutes les recherches d'outils ont été effectuées avec succès. Génère MAINTENANT la réponse finale sous la forme d'un objet JSON strict respectant le schéma demandé (avec 'message', 'flacon_id', 'essences_pre_faites', etc.). Ne fais plus d'appels d'outils."
-                    })
-
-                    second_payload = {
-                        'model': model_name,
-                        'messages': messages,
-                        'response_format': {'type': 'json_object'},
-                        'temperature': 0.2,
-                        'stream': False,
-                    }
-                    print(f"[IA-RECOMMANDATION] Ollama: Envoi du deuxieme appel avec les resultats des outils...", flush=True)
-                    second_resp = requests.post(
-                        f"{ollama_url}/v1/chat/completions",
-                        json=second_payload,
-                        timeout=(20, 180),
-                    )
-                    second_resp.raise_for_status()
-                    second_data = second_resp.json()
-                    if 'choices' in second_data and second_data['choices']:
-                        reponse_texte = second_data['choices'][0].get('message', {}).get('content')
-                        print(f"[IA-RECOMMANDATION] Reponse finale recue d'Ollama: '{reponse_texte[:120]}...'", flush=True)
-                else:
-                    reponse_texte = message_obj.get('content')
-                    print(f"[IA-RECOMMANDATION] Reponse directe recue d'Ollama: '{reponse_texte[:120]}...'", flush=True)
-            else:
-                reponse_texte = response.text
-                print(f"[IA-RECOMMANDATION] Reponse inattendue d'Ollama: {reponse_texte}", flush=True)
-
-        except Exception as e:
-            print(f"[IA-RECOMMANDATION] ERREUR critique lors de l'appel a Ollama: {str(e)}", flush=True)
-            logger.exception('Erreur Ollama Function Calling')
-            return {"error": f"Erreur de l'API Ollama : {str(e)}"}
-
-    elif provider == 'groq':
-        groq_api_key = os.environ.get('GROQ_API_KEY') or getattr(settings, 'GROQ_API_KEY', None)
-        groq_model = os.environ.get('GROQ_MODEL', getattr(settings, 'GROQ_MODEL', 'qwen/qwen3.8-27b'))
-
-        if not groq_api_key:
-            return {"error": "Clé API Groq manquante (GROQ_API_KEY)."}
-
-        groq_headers = {
-            'Authorization': f'Bearer {groq_api_key}',
-            'Content-Type': 'application/json',
-            'Connection': 'close',
-        }
-
-        def _post_groq(payload, retries=3):
-            for attempt in range(1, retries + 1):
-                try:
-                    resp = requests.post(
-                        'https://api.groq.com/openai/v1/chat/completions',
-                        headers=groq_headers,
-                        json=payload,
-                        timeout=(15, 60),
-                    )
-                    if resp.status_code in (500, 502, 503, 504, 429) and attempt < retries:
-                        print(f"[IA-RECOMMANDATION] Groq retourné HTTP {resp.status_code}, tentative {attempt}/{retries}...", flush=True)
-                        import time
-                        time.sleep(0.8 * attempt)
-                        continue
-                    return resp
-                except (requests.exceptions.RequestException, Exception) as err:
-                    print(f"[IA-RECOMMANDATION] Tentative Groq {attempt}/{retries} échouée (déconnexion/erreur): {err}", flush=True)
-                    if attempt == retries:
-                        raise
-                    import time
-                    time.sleep(0.8 * attempt)
-
-        messages = [
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': f"Demande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"}
-        ]
-
-        llm_payload = {
-            'model': groq_model,
-            'messages': messages,
-            'tools': OLLAMA_TOOLS_DEFINITIONS,
-            'tool_choice': 'auto',
-            'parallel_tool_calls': True,
-            'temperature': 0.2,
-        }
-
-        print(f"[IA-RECOMMANDATION] Groq: Envoi du premier appel (modele: {groq_model})...", flush=True)
-        logger.info('[LLM_CALL] Groq request Function Calling', extra={'model': groq_model})
-
-        try:
-            response = _post_groq(llm_payload)
-            response.raise_for_status()
-            data = response.json()
-
-            if isinstance(data, dict) and 'choices' in data and data['choices']:
-                choice = data['choices'][0]
-                message_obj = choice.get('message', {})
-                tool_calls = message_obj.get('tool_calls')
-
-                if tool_calls:
-                    print(f"[IA-RECOMMANDATION] Groq a demande des outils: {[t.get('function', {}).get('name') for t in tool_calls]}", flush=True)
-                    logger.info('[LLM_TOOL_CALL] Groq a demandé des outils', extra={'tool_calls': tool_calls})
-                    
-                    messages.append({
-                        'role': 'assistant',
-                        'content': message_obj.get('content') or None,
-                        'tool_calls': tool_calls,
-                    })
-
-                    for tool_call in tool_calls:
-                        fn_name = tool_call.get('function', {}).get('name')
-                        raw_args = tool_call.get('function', {}).get('arguments', '{}')
-                        try:
-                            fn_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-                        except json.JSONDecodeError:
-                            fn_args = {}
-
-                        print(f"[IA-RECOMMANDATION] Execution de l'outil local (Groq): {fn_name}(**{fn_args})...", flush=True)
-                        if fn_name in TOOLS_REGISTRY:
-                            tool_result = TOOLS_REGISTRY[fn_name](**fn_args)
-                        else:
-                            tool_result = {"error": f"Outil inconnu : {fn_name}"}
-                        print(f"[IA-RECOMMANDATION] Resultat de l'outil {fn_name}: {tool_result}", flush=True)
-
-                        messages.append({
-                            'role': 'tool',
-                            'tool_call_id': tool_call.get('id', 'call_1'),
-                            'content': json.dumps(tool_result, ensure_ascii=False)
-                        })
-
-                    messages.append({
-                        'role': 'user',
-                        'content': "Toutes les recherches d'outils ont été effectuées avec succès. Génère MAINTENANT la réponse finale sous la forme d'un objet JSON strict respectant le schéma demandé (avec 'message', 'flacon_id', 'essences_pre_faites', etc.). Ne fais plus d'appels d'outils."
-                    })
-
-                    second_payload = {
-                        'model': groq_model,
-                        'messages': messages,
-                        'response_format': {'type': 'json_object'},
-                        'temperature': 0.2,
-                    }
-                    print(f"[IA-RECOMMANDATION] Groq: Envoi du deuxieme appel avec les resultats des outils...", flush=True)
-                    second_resp = _post_groq(second_payload)
-                    
-                    if second_resp.status_code != 200:
-                        print(f"[IA-RECOMMANDATION] ERREUR Groq 2eme appel ({second_resp.status_code}): {second_resp.text}", flush=True)
-                        # Tenter de récupérer 'failed_generation' si présent dans l'erreur 400 de Groq
-                        try:
-                            err_json = second_resp.json()
-                            failed_gen = err_json.get('error', {}).get('failed_generation')
-                            if failed_gen:
-                                extracted = _extract_json_from_text(failed_gen)
-                                if extracted:
-                                    print(f"[IA-RECOMMANDATION] JSON extrait avec succès depuis 'failed_generation' de Groq!", flush=True)
-                                    reponse_texte = json.dumps(extracted, ensure_ascii=False)
-                        except Exception as parse_err:
-                            print(f"[IA-RECOMMANDATION] Impossible d'analyser failed_generation: {parse_err}", flush=True)
-
-                        # Si toujours pas de réponse texte, faire une tentative fallback sans response_format
-                        if not reponse_texte:
-                            print(f"[IA-RECOMMANDATION] Groq: Tentative fallback du 2ème appel sans response_format...", flush=True)
-                            fallback_payload = {
-                                'model': groq_model,
-                                'messages': messages,
-                                'temperature': 0.2,
-                            }
-                            fb_resp = _post_groq(fallback_payload)
-                            if fb_resp.status_code == 200:
-                                fb_data = fb_resp.json()
-                                reponse_texte = fb_data.get('choices', [{}])[0].get('message', {}).get('content')
-                                print(f"[IA-RECOMMANDATION] Reponse fallback recue de Groq sans response_format: '{reponse_texte[:120] if reponse_texte else ''}...'", flush=True)
-                            else:
-                                second_resp.raise_for_status()
-                    else:
-                        second_data = second_resp.json()
-                        if 'choices' in second_data and second_data['choices']:
-                            reponse_texte = second_data['choices'][0].get('message', {}).get('content')
-                            print(f"[IA-RECOMMANDATION] Reponse finale recue de Groq: '{reponse_texte[:120] if reponse_texte else ''}...'", flush=True)
-                else:
-                    reponse_texte = message_obj.get('content')
-                    print(f"[IA-RECOMMANDATION] Reponse directe recue de Groq: '{reponse_texte[:120] if reponse_texte else ''}...'", flush=True)
-            else:
-                reponse_texte = response.text
-                print(f"[IA-RECOMMANDATION] Reponse inattendue de Groq: {reponse_texte}", flush=True)
-
-        except requests.exceptions.HTTPError as e:
-            status_code = getattr(e.response, 'status_code', None)
-            if status_code == 429:
-                print(f"[IA-RECOMMANDATION] Rate limit / Quota dépassé sur Groq (HTTP 429).", flush=True)
-                logger.warning('Groq Rate Limit 429')
-                gemini_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
-                gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash'))
-                if gemini_key:
-                    print(f"[IA-RECOMMANDATION] Fallback automatique sur Gemini suite au rate limit Groq (429)...", flush=True)
-                    try:
-                        client_g = genai.Client(api_key=gemini_key)
-                        catalogue_fb = get_catalogue_context()
-                        contents_g = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fb}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
-                        response_g = _generate_gemini_with_fallback(
-                            client=client_g,
-                            contents=contents_g,
-                            config=types.GenerateContentConfig(
-                                temperature=0.2,
-                                response_mime_type='application/json',
-                            ),
-                            requested_model=gemini_model,
-                        )
-                        reponse_texte = response_g.text.strip()
-                    except Exception as gem_err:
-                        print(f"[IA-RECOMMANDATION] Fallback Gemini a aussi échoué après 429 Groq: {gem_err}", flush=True)
-                        return {"error": "Quota d'IA temporairement atteint. Réessayez plus tard."}
-                else:
-                    return {"error": "Quota d'IA temporairement atteint. Réessayez plus tard."}
-            else:
-                print(f"[IA-RECOMMANDATION] ERREUR HTTP Groq ({status_code}): {str(e)}", flush=True)
-                logger.exception('Erreur HTTP Groq Function Calling')
-                return {"error": f"Erreur de l'API Groq : {str(e)}"}
-
-        except Exception as e:
-            print(f"[IA-RECOMMANDATION] ERREUR critique lors de l'appel a Groq: {str(e)}", flush=True)
-            logger.exception('Erreur Groq Function Calling')
-            return {"error": f"Erreur de l'API Groq : {str(e)}"}
-
-    elif provider in ('huggingface', 'hf'):
-        hf_api_key = os.environ.get('HUGGINGFACE_API_KEY') or os.environ.get('HF_API_KEY') or getattr(settings, 'HUGGINGFACE_API_KEY', None)
-        hf_model = os.environ.get('HUGGINGFACE_MODEL') or getattr(settings, 'HUGGINGFACE_MODEL', 'Qwen/Qwen2.5-72B-Instruct')
-
-        if not hf_api_key:
-            return {"error": "Clé API Hugging Face manquante (HUGGINGFACE_API_KEY ou HF_API_KEY)."}
-
-        hf_headers = {
-            'Authorization': f'Bearer {hf_api_key}',
-            'Content-Type': 'application/json',
-        }
-
-        def _post_hf(payload, retries=3):
-            # router.huggingface.co : DNS résout sur le serveur Hostinger, utilisé en priorité.
-            # api-inference.huggingface.co : DNS bloqué sur ce VPS (Hostinger), retiré de la liste.
-            urls = [
-                'https://router.huggingface.co/v1/chat/completions',
-            ]
-            last_resp = None
-            for url in urls:
-                for attempt in range(1, retries + 1):
-                    try:
-                        resp = requests.post(
-                            url,
-                            headers=hf_headers,
-                            json=payload,
-                            timeout=(15, 60),
-                        )
-                        if resp.status_code in (500, 502, 503, 504) and attempt < retries:
-                            print(f"[IA-RECOMMANDATION] HuggingFace ({url}) HTTP {resp.status_code}, tentative {attempt}/{retries}...", flush=True)
-                            import time
-                            time.sleep(0.8 * attempt)
-                            continue
-                        if resp.status_code in (200, 400, 422, 429):
-                            return resp
-                        last_resp = resp
-                    except (requests.exceptions.RequestException, Exception) as err:
-                        print(f"[IA-RECOMMANDATION] Tentative HuggingFace {attempt}/{retries} ({url}) échouée: {err}", flush=True)
-                        if attempt == retries:
-                            last_resp = err
-                        import time
-                        time.sleep(0.8 * attempt)
-            if isinstance(last_resp, requests.Response):
-                return last_resp
-            raise last_resp or Exception("Impossible de contacter l'API HuggingFace.")
-
-        messages = [
-            {'role': 'system', 'content': system_prompt},
-            {'role': 'user', 'content': f"Demande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"}
-        ]
-
-        llm_payload = {
-            'model': hf_model,
-            'messages': messages,
-            'tools': OLLAMA_TOOLS_DEFINITIONS,
-            'tool_choice': 'auto',
-            'temperature': 0.2,
-        }
-
-        print(f"[IA-RECOMMANDATION] Hugging Face: Envoi du premier appel (modele: {hf_model})...", flush=True)
-        logger.info('[LLM_CALL] HuggingFace request Function Calling', extra={'model': hf_model})
-
-        try:
-            response = _post_hf(llm_payload)
-
-            # Si tools non supportés sur ce modèle HF, fallback avec injection du catalogue
-            if response.status_code in (400, 422):
-                print(f"[IA-RECOMMANDATION] HuggingFace tools non supportés directement, fallback avec injection du catalogue...", flush=True)
-                catalogue_fb = get_catalogue_context()
-                contents_hf = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fb}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
-                llm_payload = {
-                    'model': hf_model,
-                    'messages': [
-                        {'role': 'system', 'content': system_prompt},
-                        {'role': 'user', 'content': contents_hf}
-                    ],
-                    'response_format': {'type': 'json_object'},
-                    'temperature': 0.2,
-                }
-                response = _post_hf(llm_payload)
-
-            if response.status_code == 429:
-                print(f"[IA-RECOMMANDATION] Rate limit / Quota dépassé sur HuggingFace (HTTP 429). Fallback Gemini...", flush=True)
-                gemini_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
-                gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash'))
-                if gemini_key:
-                    try:
-                        client_g = genai.Client(api_key=gemini_key)
-                        catalogue_fb = get_catalogue_context()
-                        contents_g = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fb}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
-                        response_g = _generate_gemini_with_fallback(
-                            client=client_g,
-                            contents=contents_g,
-                            config=types.GenerateContentConfig(
-                                temperature=0.2,
-                                response_mime_type='application/json',
-                            ),
-                            requested_model=gemini_model,
-                        )
-                        reponse_texte = response_g.text.strip()
-                    except Exception as gem_err:
-                        print(f"[IA-RECOMMANDATION] Fallback Gemini a aussi échoué après 429 HuggingFace: {gem_err}", flush=True)
-                        return {"error": "Quota d'IA temporairement atteint. Réessayez plus tard."}
-                else:
-                    return {"error": "Quota d'IA temporairement atteint. Réessayez plus tard."}
-
-            else:
-                response.raise_for_status()
-                data = response.json()
-
-                if isinstance(data, dict) and 'choices' in data and data['choices']:
-                    choice = data['choices'][0]
-                    message_obj = choice.get('message', {})
-                    tool_calls = message_obj.get('tool_calls')
-
-                    if tool_calls:
-                        print(f"[IA-RECOMMANDATION] HuggingFace a demandé des outils: {[t.get('function', {}).get('name') for t in tool_calls]}", flush=True)
-                        logger.info('[LLM_TOOL_CALL] HuggingFace a demandé des outils', extra={'tool_calls': tool_calls})
-
-                        messages.append({
-                            'role': 'assistant',
-                            'content': message_obj.get('content') or None,
-                            'tool_calls': tool_calls,
-                        })
-
-                        for tool_call in tool_calls:
-                            fn_name = tool_call.get('function', {}).get('name')
-                            raw_args = tool_call.get('function', {}).get('arguments', '{}')
-                            try:
-                                fn_args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
-                            except json.JSONDecodeError:
-                                fn_args = {}
-
-                            print(f"[IA-RECOMMANDATION] Execution de l'outil local (HuggingFace): {fn_name}(**{fn_args})...", flush=True)
-                            if fn_name in TOOLS_REGISTRY:
-                                tool_result = TOOLS_REGISTRY[fn_name](**fn_args)
-                            else:
-                                tool_result = {"error": f"Outil inconnu : {fn_name}"}
-
-                            messages.append({
-                                'role': 'tool',
-                                'tool_call_id': tool_call.get('id', 'call_1'),
-                                'content': json.dumps(tool_result, ensure_ascii=False)
-                            })
-
-                        messages.append({
-                            'role': 'user',
-                            'content': "Toutes les recherches d'outils ont été effectuées avec succès. Génère MAINTENANT la réponse finale sous la forme d'un objet JSON strict respectant le schéma demandé. Ne fais plus d'appels d'outils."
-                        })
-
-                        second_payload = {
-                            'model': hf_model,
-                            'messages': messages,
-                            'response_format': {'type': 'json_object'},
-                            'temperature': 0.2,
-                        }
-                        second_resp = _post_hf(second_payload)
-                        second_resp.raise_for_status()
-                        second_data = second_resp.json()
-                        reponse_texte = second_data['choices'][0].get('message', {}).get('content')
-                    else:
-                        reponse_texte = message_obj.get('content')
-                else:
-                    reponse_texte = response.text
-
+            print(f"[IA-RECOMMANDATION] Tentative d'appel avec le provider '{current_provider}'...", flush=True)
+            reponse_texte = runner_fn(prompt_utilisateur, system_prompt)
+            if reponse_texte:
+                print(f"[IA-RECOMMANDATION] Succès de la réponse obtenue via '{current_provider}' !", flush=True)
+                break
         except Exception as e:
             err_msg = str(e)
-            print(f"[IA-RECOMMANDATION] ERREUR critique lors de l'appel a HuggingFace: {err_msg}", flush=True)
-            logger.exception('Erreur HuggingFace Function Calling')
-            # Fallback automatique sur Gemini si HuggingFace est injoignable (DNS, réseau, timeout...)
-            gemini_key_fb = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
-            gemini_model_fb = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash'))
-            if gemini_key_fb:
-                print(f"[IA-RECOMMANDATION] Fallback automatique sur Gemini suite a l'indisponibilité HuggingFace...", flush=True)
-                try:
-                    client_g = genai.Client(api_key=gemini_key_fb)
-                    catalogue_fb = get_catalogue_context()
-                    contents_g = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fb}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
-                    response_g = _generate_gemini_with_fallback(
-                        client=client_g,
-                        contents=contents_g,
-                        config=types.GenerateContentConfig(
-                            temperature=0.2,
-                            response_mime_type='application/json',
-                        ),
-                        requested_model=gemini_model_fb,
-                    )
-                    reponse_texte = response_g.text.strip()
-                    print(f"[IA-RECOMMANDATION] Fallback Gemini reussi apres echec HuggingFace.", flush=True)
-                except Exception as gem_err:
-                    print(f"[IA-RECOMMANDATION] Fallback Gemini a aussi echoue apres echec HuggingFace: {gem_err}", flush=True)
-                    return {"error": f"Erreur de l'API Hugging Face : {err_msg}"}
-            else:
-                return {"error": f"Erreur de l'API Hugging Face : {err_msg}"}
+            print(f"[IA-RECOMMANDATION] ERREUR sur provider '{current_provider}': {err_msg}. Switch automatique vers le provider suivant...", flush=True)
+            logger.warning(f"Échec provider IA {current_provider}: {err_msg}")
+            dernieres_erreurs.append(f"{current_provider}: {err_msg}")
 
-    else:
-        # Provider Gemini (defaut)
-        api_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
-        gemini_model = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash'))
-        if not api_key:
-            return {"error": "Clé API Gemini manquante."}
-
-        print(f"[IA-RECOMMANDATION] Gemini: Envoi de la requete (modele cible: {gemini_model})...", flush=True)
-        try:
-            client = genai.Client(api_key=api_key)
-
-            catalogue_fallback = get_catalogue_context()
-            contents = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fallback}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
-
-            response = _generate_gemini_with_fallback(
-                client=client,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    temperature=0.2,
-                    response_mime_type='application/json',
-                ),
-                requested_model=gemini_model,
-            )
-            reponse_texte = response.text.strip()
-            print(f"[IA-RECOMMANDATION] Reponse recue de Gemini: '{reponse_texte[:120]}...'", flush=True)
-        except Exception as e:
-            print(f"[IA-RECOMMANDATION] ERREUR critique lors de l'appel a Gemini: {str(e)}", flush=True)
-            logger.exception('Erreur Gemini')
-            return {"error": f"Erreur de l'API Gemini : {str(e)}"}
+    if not reponse_texte:
+        print(f"[IA-RECOMMANDATION] TOUS les providers IA ont échoué : {dernieres_erreurs}", flush=True)
+        return {"error": "Tous les services d'IA sont actuellement indisponibles. Veuillez réessayer dans quelques instants."}
 
     if not reponse_texte:
         return {"error": "Aucune réponse texte reçue de l'IA."}
