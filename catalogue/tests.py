@@ -1406,4 +1406,41 @@ class OrderedSearchFilterTest(APITestCase):
         self.assertEqual(noms[4], "Noir Extreme")       # Prio 5: tag
 
 
+class SimilarProductsTest(TestCase):
+    def setUp(self):
+        from .models import TagParfum
+        self.tag_temps = Tag.objects.create(nom="Moment de la journée")
+
+        # Target parfum (Marque: Lattafa, Tag "Moment de la journée" = "Nuit")
+        self.p_target = Parfum.objects.create(
+            nom="Target Oud", marque="Lattafa", contenance_ml=100, prix_unitaire=10000, actif=True
+        )
+        TagParfum.objects.create(parfum=self.p_target, tag=self.tag_temps, valeur="Nuit")
+
+        # 5 items with matching tag value "Nuit" (Priority 1)
+        for i in range(5):
+            p = Parfum.objects.create(
+                nom=f"Night Fragrance {i}", marque="Dior", contenance_ml=100, prix_unitaire=10000, actif=True
+            )
+            TagParfum.objects.create(parfum=p, tag=self.tag_temps, valeur="Nuit")
+
+        # 3 items of same brand 'Lattafa' without matching tag value (Priority 2)
+        for i in range(3):
+            Parfum.objects.create(
+                nom=f"Lattafa Item {i}", marque="Lattafa", contenance_ml=100, prix_unitaire=10000, actif=True
+            )
+
+    def test_get_similar_products_tag_valeur_then_brand_max_6(self):
+        from .utils import get_similar_products
+        similaires = list(get_similar_products(self.p_target, Parfum, limit=6))
+        self.assertEqual(len(similaires), 6)
+        # First 5 items must have matching tag value "Nuit" (Priority 1)
+        for p in similaires[:5]:
+            self.assertEqual(p.marque, "Dior")
+        # 6th item must be same brand 'Lattafa' (Priority 2)
+        self.assertEqual(similaires[5].marque, "Lattafa")
+
+
+
+
 

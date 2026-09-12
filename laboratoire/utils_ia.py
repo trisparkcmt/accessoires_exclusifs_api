@@ -670,6 +670,10 @@ def generer_resume_conversation(messages_recents, resume_existant=''):
             if not hf_api_key:
                 print(f"[RESUME IA] Clé HUGGINGFACE_API_KEY manquante.", flush=True)
                 return resume_existant
+            hf_urls = [
+                'https://router.huggingface.co/v1/chat/completions',
+                'https://api-inference.huggingface.co/v1/chat/completions',
+            ]
             payload = {
                 'model': hf_model,
                 'messages': [
@@ -678,20 +682,48 @@ def generer_resume_conversation(messages_recents, resume_existant=''):
                 ],
                 'temperature': 0.1,
             }
-            resp = requests.post(
-                'https://router.huggingface.co/v1/chat/completions',
-                headers={
-                    'Authorization': f'Bearer {hf_api_key}',
-                    'Content-Type': 'application/json',
-                },
-                json=payload,
-                timeout=(10, 30),
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            nouveau_resume = data.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
-            print(f"[RESUME IA] Nouveau résumé généré (HuggingFace/{hf_model}): '{nouveau_resume[:100]}...'", flush=True)
-            return nouveau_resume if nouveau_resume else resume_existant
+            hf_resume = None
+            hf_error = None
+            for hf_url in hf_urls:
+                try:
+                    resp = requests.post(
+                        hf_url,
+                        headers={
+                            'Authorization': f'Bearer {hf_api_key}',
+                            'Content-Type': 'application/json',
+                        },
+                        json=payload,
+                        timeout=(10, 30),
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    hf_resume = data.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+                    print(f"[RESUME IA] Nouveau résumé généré (HuggingFace/{hf_model}): '{hf_resume[:100]}...'", flush=True)
+                    break
+                except Exception as hf_err:
+                    hf_error = hf_err
+                    print(f"[RESUME IA] HuggingFace ({hf_url}) inaccessible: {hf_err}", flush=True)
+            if hf_resume:
+                return hf_resume
+            # Fallback sur Gemini si HuggingFace est inaccessible
+            print(f"[RESUME IA] HuggingFace inaccessible, fallback sur Gemini pour le résumé...", flush=True)
+            api_key_fb = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
+            gemini_model_fb = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash'))
+            if api_key_fb:
+                try:
+                    client_gemini_fb = genai.Client(api_key=api_key_fb)
+                    response_fb = _generate_gemini_with_fallback(
+                        client=client_gemini_fb,
+                        contents=prompt_resume,
+                        config=types.GenerateContentConfig(temperature=0.1),
+                        requested_model=gemini_model_fb,
+                    )
+                    nouveau_resume_fb = response_fb.text.strip()
+                    print(f"[RESUME IA] Résumé généré via Gemini (fallback HF): '{nouveau_resume_fb[:100]}...'", flush=True)
+                    return nouveau_resume_fb if nouveau_resume_fb else resume_existant
+                except Exception as gem_fb_err:
+                    print(f"[RESUME IA] Fallback Gemini a aussi échoué: {gem_fb_err}", flush=True)
+            return resume_existant
 
         else:
             api_key = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
@@ -1286,9 +1318,34 @@ Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSO
                     reponse_texte = response.text
 
         except Exception as e:
-            print(f"[IA-RECOMMANDATION] ERREUR critique lors de l'appel a HuggingFace: {str(e)}", flush=True)
+            err_msg = str(e)
+            print(f"[IA-RECOMMANDATION] ERREUR critique lors de l'appel a HuggingFace: {err_msg}", flush=True)
             logger.exception('Erreur HuggingFace Function Calling')
-            return {"error": f"Erreur de l'API Hugging Face : {str(e)}"}
+            # Fallback automatique sur Gemini si HuggingFace est injoignable (DNS, réseau, timeout...)
+            gemini_key_fb = os.environ.get('GEMINI_API_KEY') or getattr(settings, 'GEMINI_API_KEY', None)
+            gemini_model_fb = os.environ.get('GEMINI_MODEL', getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash'))
+            if gemini_key_fb:
+                print(f"[IA-RECOMMANDATION] Fallback automatique sur Gemini suite a l'indisponibilité HuggingFace...", flush=True)
+                try:
+                    client_g = genai.Client(api_key=gemini_key_fb)
+                    catalogue_fb = get_catalogue_context()
+                    contents_g = f"{system_prompt}\n\nCatalogue disponible :\n{catalogue_fb}\n\nDemande du client (RÉPONDS STRICTEMENT DANS LA MÊME LANGUE QUE CETTE DEMANDE) : {prompt_utilisateur}"
+                    response_g = _generate_gemini_with_fallback(
+                        client=client_g,
+                        contents=contents_g,
+                        config=types.GenerateContentConfig(
+                            temperature=0.2,
+                            response_mime_type='application/json',
+                        ),
+                        requested_model=gemini_model_fb,
+                    )
+                    reponse_texte = response_g.text.strip()
+                    print(f"[IA-RECOMMANDATION] Fallback Gemini reussi apres echec HuggingFace.", flush=True)
+                except Exception as gem_err:
+                    print(f"[IA-RECOMMANDATION] Fallback Gemini a aussi echoue apres echec HuggingFace: {gem_err}", flush=True)
+                    return {"error": f"Erreur de l'API Hugging Face : {err_msg}"}
+            else:
+                return {"error": f"Erreur de l'API Hugging Face : {err_msg}"}
 
     else:
         # Provider Gemini (defaut)
