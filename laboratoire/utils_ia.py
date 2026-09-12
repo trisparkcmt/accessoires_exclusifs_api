@@ -1166,9 +1166,10 @@ Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSO
         }
 
         def _post_hf(payload, retries=3):
+            # router.huggingface.co : DNS résout sur le serveur Hostinger, utilisé en priorité.
+            # api-inference.huggingface.co : DNS bloqué sur ce VPS (Hostinger), retiré de la liste.
             urls = [
                 'https://router.huggingface.co/v1/chat/completions',
-                'https://api-inference.huggingface.co/v1/chat/completions',
             ]
             last_resp = None
             for url in urls:
