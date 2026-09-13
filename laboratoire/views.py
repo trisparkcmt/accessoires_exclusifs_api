@@ -47,6 +47,11 @@ class ParfumPersonnaliseViewSet(viewsets.ModelViewSet):
     ordering_fields = ['prix_total', 'date_creation', 'nom']
     ordering = ['-date_creation']
 
+    def get_permissions(self):
+        if self.action == 'retrieve':
+            return [AllowAny()]
+        return [IsAuthenticated(), IsCreatorOrReadOnly()]
+
     def get_queryset(self):
         queryset = ParfumPersonnalise.objects.all().select_related(
             'flacon', 'client', 'client__user'
@@ -57,13 +62,17 @@ class ParfumPersonnaliseViewSet(viewsets.ModelViewSet):
             'lignes__essence_personnalisee__lignes__ingredient',
         ).distinct()
 
+        # Consultation publique des détails d'un parfum personnalisé (partage de lien sans authentification)
+        if self.action == 'retrieve':
+            return queryset
+
         from utilisateur.permissions import is_privileged_dashboard_user
 
         if is_privileged_dashboard_user(self.request):
             return queryset
 
         if hasattr(self.request.user, 'client'):
-            if self.action in ['retrieve', 'update', 'partial_update', 'destroy']:
+            if self.action in ['update', 'partial_update', 'destroy']:
                 return queryset.filter(client=self.request.user.client)
             return queryset.filter(client=self.request.user.client, enregistre=True)
 
@@ -92,10 +101,18 @@ class EssencePersonnaliseeViewSet(viewsets.ModelViewSet):
     ordering_fields = ['prix_par_ml_calcule', 'date_creation', 'nom']
     ordering = ['-date_creation']
 
+    def get_permissions(self):
+        if self.action == 'retrieve':
+            return [AllowAny()]
+        return [IsAuthenticated(), IsCreatorOrReadOnly()]
+
     def get_queryset(self):
         queryset = EssencePersonnalisee.objects.all().select_related(
             'client', 'client__user'
         ).prefetch_related('lignes__ingredient').distinct()
+
+        if self.action == 'retrieve':
+            return queryset
 
         from utilisateur.permissions import is_privileged_dashboard_user
 

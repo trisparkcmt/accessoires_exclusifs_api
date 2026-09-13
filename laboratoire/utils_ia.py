@@ -1190,7 +1190,10 @@ CONSIGNES STRICTES DE SELECTION ET LIMITATION DES PRODUITS (TRES IMPORTANT) :
 1. SI LE CLIENT DEMANDE UNE CATÉGORIE PRÉCISE :
 - Si le client demande spécifiquement des PARFUMS EXISTANTS (prêts à l'emploi) : Propose UNIQUEMENT des parfums dans `parfums_existants_recommandes` (MAXIMUM 3 PARFUMS). Ne propose AUCUN accessoire, AUCUN diffuseur et AUCUNE création sur-mesure (garde `flacon_id = 0`, `essences_pre_faites = []`, `accessoires = []`, `diffuseurs = []`).
 - Si le client demande spécifiquement des ACCESSOIRES ou DIFFUSEURS : Propose UNIQUEMENT des produits dans `accessoires` ou `diffuseurs` (MAXIMUM 3 PRODUITS AU TOTAL). Ne propose AUCUN parfum et AUCUNE création sur-mesure (garde `parfums_existants_recommandes = []`, `flacon_id = 0`, `essences_pre_faites = []`).
-- Si le client demande un PARFUM PERSONNALISÉ / CRÉATION SUR-MESURE : Propose UNE SEULE (1 SEULE) création sur-mesure avec `flacon_id` et ses essences dans `essences_pre_faites`. Ne propose AUCUN parfum existant prêt à l'emploi, AUCUN accessoire et AUCUN diffuseur (garde `parfums_existants_recommandes = []`, `accessoires = []`, `diffuseurs = []`).
+- Si le client demande un PARFUM PERSONNALISÉ / CRÉATION SUR-MESURE :
+  - **Souplesse sur les flacons** : Même si les flacons en base de données ne correspondent pas exactement à la contenance ou aux préférences idéales du client, **propose tout de même le flacon disponible le plus proche** et explique avec bienveillance ton choix dans le message.
+  - **Gestion claire des indisponibilités** : Si pour une raison quelconque (pas de flacon disponible, pas d'essence en stock), la création sur-mesure ne peut pas être réalisée, **explique-le clairement et poliment au client dans ton `message`** (ex : "Nous n'avons actuellement pas de flacon adapté en stock pour cette création, mais je vous suggère..."). Propose alors en alternative des parfums prêts à l'emploi dans `parfums_existants_recommandes`.
+  - Si la création est réalisable : Propose UNE SEULE (1 SEULE) création sur-mesure avec `flacon_id` et ses essences dans `essences_pre_faites`. Ne propose AUCUN parfum existant prêt à l'emploi, AUCUN accessoire et AUCUN diffuseur (garde `parfums_existants_recommandes = []`, `accessoires = []`, `diffuseurs = []`).
 
 2. SI LA DEMANDE EST VAGUE, DÉCOUVERTE OU SANS CATÉGORIE SPÉCIFIQUE (ex: "propose-moi quelque chose", "idées cadeaux", "surprise-moi") :
 - Ne propose PAS les 3 catégories en même temps. Choisis UNIQUEMENT 1 SEUL PRODUIT parmi l'une des catégories (soit 1 seul parfum, soit 1 seul accessoire, soit 1 seule création sur-mesure). NE SURCHARGE JAMAIS le client.
@@ -1208,11 +1211,12 @@ RÈGLES IMPÉRATIVES :
 
 1. RÈGLE FLACON / ESSENCES (SUR-MESURE) :
 - Si tu ne proposes pas d'essences dans `essences_pre_faites`, tu NE DOIS PAS non plus proposer de flacon (`flacon_id` DOIT ÊTRE ÉGAL À 0). Un `flacon_id` (> 0) n'est autorisé QUE SI `essences_pre_faites` contient au moins une essence.
+- Si un élément est manquant (flacon ou essence), l'IA DOIT expliquer la raison clairement dans son `message`.
 
 2. FORMAT DE RÉPONSE FINAL :
 Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSON strict respectant la structure suivante (sans balise ```json) :
 {{
-    "message": "Ton message chaleureux expliquant tes choix rédigé STRICTEMENT DANS LA LANGUE DU MESSAGE ACTUEL DU CLIENT (2 phrases maximum, mots complets, sans abréviation).",
+    "message": "Ton message chaleureux expliquant tes choix ou la raison d'un ajustement/indisponibilité, rédigé STRICTEMENT DANS LA LANGUE DU MESSAGE ACTUEL DU CLIENT (2 phrases maximum, mots complets, sans abréviation).",
     "quantite_demandee_ml": 0,
     "budget_max_fcfa": 0,
     "flacon_id": 0,
@@ -1320,13 +1324,18 @@ Tu DOIS obligatoirement renvoyer ta réponse finale sous la forme d'un objet JSO
         # S'il n'y a pas d'essences pré-faites, on garantit flacon_id = 0 et essences_pre_faites = []
         parsed['flacon_id'] = 0
         parsed['essences_pre_faites'] = []
-        # Plafonnier strict à 3 éléments maximum par catégorie ciblée
+        # Plafonnier strict à 3 éléments maximum par catégorie ciblée + conversion des dicts d'ID en entiers
         if parsed.get('parfums_existants_recommandes'):
-            parsed['parfums_existants_recommandes'] = parsed['parfums_existants_recommandes'][:3]
+            raw_parfums = parsed['parfums_existants_recommandes']
+            parsed['parfums_existants_recommandes'] = [
+                p.get('id') if isinstance(p, dict) else p for p in raw_parfums if p is not None
+            ][:3]
         if parsed.get('accessoires') or parsed.get('diffuseurs'):
-            parsed['accessoires'] = parsed.get('accessoires', [])[:3]
+            raw_acc = [a.get('id') if isinstance(a, dict) else a for a in parsed.get('accessoires', []) if a is not None]
+            parsed['accessoires'] = raw_acc[:3]
             rem = max(0, 3 - len(parsed['accessoires']))
-            parsed['diffuseurs'] = parsed.get('diffuseurs', [])[:rem]
+            raw_diff = [d.get('id') if isinstance(d, dict) else d for d in parsed.get('diffuseurs', []) if d is not None]
+            parsed['diffuseurs'] = raw_diff[:rem]
         print(f"[IA-RECOMMANDATION] Post-traitement Python des limites et réinitialisation flacon_id appliqué avec succès.", flush=True)
 
     # 2. Validation du schéma JSON
