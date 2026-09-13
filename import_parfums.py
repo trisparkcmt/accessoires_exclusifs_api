@@ -151,17 +151,44 @@ def import_parfums():
                 return (row_lower.get(colonne.strip().lower()) or "").strip()
         return ""
 
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    img_dir = os.path.join(backend_dir, "images_parfum")
+    dir_files = os.listdir(img_dir) if os.path.exists(img_dir) else []
+    file_map = {}
+    import re
+    for f in dir_files:
+        file_map[f.lower()] = f
+        clean_stem = re.sub(r'[\._]NIGHT', '', os.path.splitext(f)[0], flags=re.IGNORECASE).lower()
+        file_map[clean_stem] = f
+
     def attacher_image(parfum, field_name, image_val):
         if not image_val:
             return False
-        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        base = os.path.basename(image_val).strip()
+        if not base:
+            return False
+
+        img_full_path = None
         candidates = [
             os.path.join(backend_dir, image_val),
-            os.path.join(backend_dir, "images_parfum", os.path.basename(image_val)),
+            os.path.join(img_dir, base),
             os.path.join(getattr(settings, "MEDIA_ROOT", backend_dir), image_val),
         ]
+        alt1 = base.replace('_NIGHT', '.NIGHT').replace('_night', '.NIGHT')
+        alt2 = base.replace('.NIGHT', '_NIGHT').replace('.night', '_NIGHT')
+        candidates.extend([os.path.join(img_dir, alt1), os.path.join(img_dir, alt2)])
+
         img_full_path = next((p for p in candidates if os.path.exists(p)), None)
-        if img_full_path:
+
+        if not img_full_path and base.lower() in file_map:
+            img_full_path = os.path.join(img_dir, file_map[base.lower()])
+
+        if not img_full_path:
+            stem = re.sub(r'[\._]NIGHT', '', os.path.splitext(base)[0], flags=re.IGNORECASE).lower()
+            if stem in file_map:
+                img_full_path = os.path.join(img_dir, file_map[stem])
+
+        if img_full_path and os.path.exists(img_full_path):
             from django.core.files import File
             field = getattr(parfum, field_name)
             with open(img_full_path, "rb") as img_file:
