@@ -287,17 +287,84 @@ def import_parfums():
                 "stock_quantite": 20,
                 "actif": True,
             }
-            parfum = Parfum.objects.filter(reference_sku=sku).first() or Parfum.objects.filter(nom__iexact=nom).first()
+            marque_csv = valeur(row, "marque")
+
+            # 1. Chercher d'abord par nom + marque (priorité principale)
+            parfum = None
+            if marque_csv:
+                parfum = Parfum.objects.filter(
+                    nom__iexact=nom, marque__iexact=marque_csv
+                ).first()
+
+            # 2. Fallback : chercher par nom uniquement (si pas de marque dans le CSV)
+            if not parfum and not marque_csv:
+                parfum = Parfum.objects.filter(nom__iexact=nom).first()
+
+            # 3. Dernier recours : chercher par SKU (réimport technique)
+            if not parfum:
+                parfum = Parfum.objects.filter(reference_sku=sku).first()
+
             if parfum:
-                operation = "*"
-                for key, val in defaults.items():
-                    setattr(parfum, key, val)
-                if parfum.stock_quantite <= 0:
-                    parfum.stock_quantite = 20
-                parfum.actif = True
-                parfum.reference_sku = sku
-                parfum.save()
-                updated_count += 1
+                # Vérifier si le parfum existant possède déjà des images
+                a_des_images = bool(parfum.image_principale)
+                if not a_des_images:
+                    # Vérifier aussi les images supplémentaires
+                    for i in range(1, 5):
+                        if getattr(parfum, f"image_supp_{i}", None):
+                            a_des_images = True
+                            break
+
+                if a_des_images:
+                    # Le parfum existant a des images → on le garde tel quel, on ne remplace pas
+                    # On met quand même à jour le SKU et les données textuelles/prix, mais PAS les images
+                    operation = "="
+                    for key, val in defaults.items():
+                        setattr(parfum, key, val)
+                    if parfum.stock_quantite <= 0:
+                        parfum.stock_quantite = 20
+                    parfum.actif = True
+                    parfum.reference_sku = sku
+                    parfum.save()
+                    updated_count += 1
+                    print(f"[{operation}] {nom} (images conservées, données mises à jour)")
+                    # Mise à jour des tags uniquement
+                    TagParfum.objects.filter(parfum=parfum).delete()
+                    for colonne in colonnes_en_tags:
+                        cle = {
+                            "Type / concentration": "concentration",
+                            "Famille olfactive": "famille",
+                            "Durabilité": "duree_annoncee",
+                            "Sillage": "sillage",
+                            "Style": "style",
+                            "Humeur compatible": "humeur",
+                            "Saisons compatibles": "saisons",
+                            "Climat conseillé": "climat",
+                            "Occasions recommandées": "occasions",
+                            "Niveau de certitude": "__ignore__",
+                            "Parfum original dont il s'inspire lorsqu'il est identifiable": "original",
+                        }[colonne]
+                        if cle == "__ignore__":
+                            continue
+                        tag_valeur = valeur(row, cle)
+                        if tag_valeur:
+                            TagParfum.objects.create(
+                                parfum=parfum,
+                                tag=tag_pour_colonne(colonne),
+                                valeur=tag_valeur,
+                            )
+                    continue  # Passer à la ligne suivante du CSV
+
+                else:
+                    # Le parfum existant n'a pas d'images → mise à jour complète
+                    operation = "*"
+                    for key, val in defaults.items():
+                        setattr(parfum, key, val)
+                    if parfum.stock_quantite <= 0:
+                        parfum.stock_quantite = 20
+                    parfum.actif = True
+                    parfum.reference_sku = sku
+                    parfum.save()
+                    updated_count += 1
             else:
                 operation = "+"
                 parfum = Parfum.objects.create(reference_sku=sku, **defaults)

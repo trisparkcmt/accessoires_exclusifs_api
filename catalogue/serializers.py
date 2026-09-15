@@ -200,7 +200,7 @@ class ParfumSerializer(serializers.ModelSerializer):
             'notes_tete', 'notes_coeur', 'notes_fond',
             'tags', 'famille_olfactive', 'humeurs_compatibles',
             'occasions', 'saisons_compatibles',
-            'est_nouveau', 'est_bestseller',
+            'est_nouveau', 'est_bestseller', 'actif',
             'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',  'stock_quantite', 'seuil_alerte_stock',
             'date_creation','produits_similaires', 'is_favori', 'categorie','description_longue','description_ia',
         ]
