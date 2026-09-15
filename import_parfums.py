@@ -252,7 +252,7 @@ def import_parfums():
     updated_count = 0
 
     with open(csv_path, "r", encoding="utf-8-sig", newline="") as csv_file:
-        rows = csv.DictReader(csv_file)
+        rows = csv.DictReader(csv_file, delimiter="\t")
         for index, row in enumerate(rows, start=1):
             nom = valeur(row, "nom")
             if not nom:
@@ -304,6 +304,14 @@ def import_parfums():
             if not parfum:
                 parfum = Parfum.objects.filter(reference_sku=sku).first()
 
+            def liberer_sku(target_sku, target_parfum=None):
+                qs = Parfum.objects.filter(reference_sku=target_sku)
+                if target_parfum and target_parfum.pk:
+                    qs = qs.exclude(pk=target_parfum.pk)
+                for c in qs:
+                    c.reference_sku = None
+                    c.save()
+
             if parfum:
                 # Vérifier si le parfum existant possède déjà des images
                 a_des_images = bool(parfum.image_principale)
@@ -323,6 +331,7 @@ def import_parfums():
                     if parfum.stock_quantite <= 0:
                         parfum.stock_quantite = 20
                     parfum.actif = True
+                    liberer_sku(sku, parfum)
                     parfum.reference_sku = sku
                     parfum.save()
                     updated_count += 1
@@ -362,11 +371,13 @@ def import_parfums():
                     if parfum.stock_quantite <= 0:
                         parfum.stock_quantite = 20
                     parfum.actif = True
+                    liberer_sku(sku, parfum)
                     parfum.reference_sku = sku
                     parfum.save()
                     updated_count += 1
             else:
                 operation = "+"
+                liberer_sku(sku, None)
                 parfum = Parfum.objects.create(reference_sku=sku, **defaults)
                 created_count += 1
 
