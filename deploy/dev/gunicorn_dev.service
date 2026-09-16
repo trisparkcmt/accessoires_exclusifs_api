@@ -10,13 +10,17 @@ EnvironmentFile=/var/www/accessoiresexclusifs_dev/.env
 
 ExecStart=/var/www/accessoiresexclusifs_dev/env/bin/gunicorn \
     --workers 2 \
-    --bind unix:/run/gunicorn_dev.sock \
+    --bind unix:/run/gunicorn_dev/gunicorn_dev.sock \
     --access-logfile /var/log/gunicorn/dev_access.log \
     --error-logfile /var/log/gunicorn/dev_error.log \
     backend.wsgi:application
+
+RuntimeDirectory=gunicorn_dev
+RuntimeDirectoryMode=0755
 
 Restart=on-failure
 RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target
+

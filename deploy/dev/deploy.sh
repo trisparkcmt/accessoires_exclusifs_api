@@ -29,7 +29,9 @@ python manage.py collectstatic --noinput --clear
 echo "🔍 [5/6] Vérification Django..."
 python manage.py check
 
-echo "🔄 [6/6] Redémarrage du service $SERVICE..."
+echo "🔄 [6/6] Mise à jour du service systemd et redémarrage de $SERVICE..."
+cp "$APP_DIR/deploy/dev/gunicorn_dev.service" /etc/systemd/system/gunicorn_dev.service
+systemctl daemon-reload
 systemctl restart "$SERVICE"
 
 echo ""
