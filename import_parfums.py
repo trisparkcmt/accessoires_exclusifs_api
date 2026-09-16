@@ -229,7 +229,7 @@ def import_parfums():
             nom = "DUPE"
         elif "marque" in statut_normalise:
             nom = "PARFUMS DE MARQUE"
-        elif "Parfum de créateur" in statut_normalise:
+        elif "createur" in statut_normalise:
             nom = "PARFUMS DE CREATEUR"
         else:
             # Les créations et les inspirations sont regroupées dans la catégorie Inspiration.
