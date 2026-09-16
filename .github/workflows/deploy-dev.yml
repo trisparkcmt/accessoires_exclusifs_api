@@ -1,0 +1,27 @@
+name: Deploy Dev API (main branch)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-dev:
+    name: Deploy Dev API to Hostinger VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Execute deployment on VPS for Dev
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+          script: |
+            cd /var/www/accessoiresexclusifs_dev
+            git config --global --add safe.directory /var/www/accessoiresexclusifs_dev
+            bash deploy/dev/deploy.sh
