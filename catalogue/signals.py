@@ -10,8 +10,9 @@ from django.db.models.signals import post_save, pre_delete, pre_save, m2m_change
 from django.dispatch import receiver
 from .models import (
     CategorieParfum, TypeAccessoire, TypeFlacon, Essence,
-    Accessoire, Flacon, LotEssence, Ingredient, Parfum, ProduitFiniEssence,
+    Accessoire, Flacon, LotEssence, Ingredient, Parfum, ProduitFiniEssence, DiffuseurParfum
 )
+from .utils import compress_model_images
 
 logger = logging.getLogger(__name__)
 
@@ -736,6 +737,50 @@ def enregistrer_mouvement_parfum(sender, instance, created, **kwargs):
                 'prix_unitaire': str(instance.prix_unitaire),
             },
         )
+
+
+# ============================================================
+# COMPRESSION AUTOMATIQUE DES IMAGES EN WEBP (QUALITÉ 80%)
+# ============================================================
+@receiver(pre_save, sender=Parfum)
+def compresser_images_parfum(sender, instance, **kwargs):
+    compress_model_images(instance, ['image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4'])
+
+
+@receiver(pre_save, sender=Accessoire)
+def compresser_images_accessoire(sender, instance, **kwargs):
+    compress_model_images(instance, ['image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4'])
+
+
+@receiver(pre_save, sender=Flacon)
+def compresser_images_flacon(sender, instance, **kwargs):
+    compress_model_images(instance, ['image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4'])
+
+
+@receiver(pre_save, sender=ProduitFiniEssence)
+def compresser_images_produit_fini_essence(sender, instance, **kwargs):
+    compress_model_images(instance, ['image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4'])
+
+
+@receiver(pre_save, sender=DiffuseurParfum)
+def compresser_images_diffuseur_parfum(sender, instance, **kwargs):
+    compress_model_images(instance, ['image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4'])
+
+
+@receiver(pre_save, sender=CategorieParfum)
+def compresser_images_categorie_parfum(sender, instance, **kwargs):
+    compress_model_images(instance, ['image'])
+
+
+@receiver(pre_save, sender=TypeAccessoire)
+def compresser_images_type_accessoire(sender, instance, **kwargs):
+    compress_model_images(instance, ['icone'])
+
+
+@receiver(pre_save, sender=TypeFlacon)
+def compresser_images_type_flacon(sender, instance, **kwargs):
+    compress_model_images(instance, ['image'])
+
 
 
 

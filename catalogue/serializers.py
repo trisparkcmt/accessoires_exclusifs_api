@@ -200,7 +200,7 @@ class ParfumSerializer(serializers.ModelSerializer):
             'notes_tete', 'notes_coeur', 'notes_fond',
             'tags', 'famille_olfactive', 'humeurs_compatibles',
             'occasions', 'saisons_compatibles',
-            'est_nouveau', 'est_bestseller',
+            'est_nouveau', 'est_bestseller', 'actif',
             'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',  'stock_quantite', 'seuil_alerte_stock',
             'date_creation','produits_similaires', 'is_favori', 'categorie','description_longue','description_ia',
         ]
@@ -256,7 +256,7 @@ class ParfumSerializer(serializers.ModelSerializer):
     def get_produits_similaires(self, obj):
         from .utils import get_similar_products
         from .models import Parfum
-        similaires = get_similar_products(obj, Parfum, limit=4)
+        similaires = get_similar_products(obj, Parfum, limit=6)
         return ParfumSimilaireSerializer(similaires, many=True, context=self.context).data
   
     def get_is_favori(self, obj):
@@ -819,7 +819,7 @@ class AccessoireSerializer(serializers.ModelSerializer):
 
     def get_produits_similaires(self, obj):
         from .utils import get_similar_products
-        similaires = get_similar_products(obj, Accessoire, limit=4)
+        similaires = get_similar_products(obj, Accessoire, limit=6)
         return AccessoireSimilaireSerializer(similaires, many=True, context=self.context).data
 
     def get_is_favori(self, obj):
@@ -1175,7 +1175,7 @@ class DiffuseurParfumSerializer(serializers.ModelSerializer):
         return obj.prix_promotionnel_effectif is not None
 
     def get_produits_similaires(self, obj):
-        similaires = get_similar_products(obj, DiffuseurParfum, limit=4)
+        similaires = get_similar_products(obj, DiffuseurParfum, limit=6)
         return DiffuseurParfumSimilaireSerializer(similaires, many=True, context=self.context).data
 
 
