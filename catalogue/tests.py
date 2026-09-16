@@ -135,6 +135,14 @@ class ParfumImageTest(APITestCase):
         self.assertTrue('/media/' in url or 'amazonaws.com' in url or 'cloudfront.net' in url)
         self.assertIn('rose-eternelle', url)   # rangé dans le bon dossier
 
+    def test_conversion_automatique_en_webp(self):
+        """Une image JPG/PNG uploadée doit être automatiquement convertie en WebP."""
+        self.parfum.image_principale = creer_image_test('flacon_luxe.jpg', format='JPEG')
+        self.parfum.save()
+
+        self.parfum.refresh_from_db()
+        self.assertTrue(self.parfum.image_principale.name.endswith('.webp'))
+
     def tearDown(self):
         """Nettoyage des fichiers créés pendant les tests."""
         import shutil

@@ -55,3 +55,88 @@ def get_similar_products(instance, model, tag_field='tags', limit=6):
     return qs.distinct()[:limit]
 
 
+# ============================================================
+# COMPRESSION ET CONVERSION DES IMAGES EN WEBP (QUALITÉ 80%)
+# ============================================================
+import io
+import os
+from PIL import Image, ImageOps
+from django.core.files.base import ContentFile
+from django.core.files.uploadedfile import UploadedFile
+
+
+def compress_image_to_webp(image_field, max_dimension=1600, quality=80):
+    """
+    Compress et convertit une image de type ImageField au format WebP.
+    - Qualité : 80%
+    - Dimension max : 1600px par défaut (garde le ratio d'aspect)
+    - Gestion de l'orientation EXIF
+    - Conservation de la transparence pour PNG/RGBA
+    """
+    if not image_field:
+        return None
+
+    try:
+        file_obj = getattr(image_field, 'file', None)
+        if not file_obj:
+            return None
+    except Exception:
+        return None
+
+    # Vérification si c'est un nouveau fichier uploadé
+    is_uploaded = isinstance(file_obj, UploadedFile)
+    filename = getattr(image_field, 'name', '') or ''
+    is_webp = filename.lower().endswith('.webp')
+
+    # Si le fichier n'est pas nouvellement uploadé et est déjà en .webp, ne pas recompresser
+    if not is_uploaded and is_webp:
+        return None
+
+    try:
+        if hasattr(file_obj, 'seek'):
+            file_obj.seek(0)
+
+        img = Image.open(file_obj)
+
+        # Orientation EXIF automatique
+        img = ImageOps.exif_transpose(img)
+
+        # Gestion du mode couleur (Transparence vs RGB)
+        if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+            img = img.convert('RGBA')
+        else:
+            img = img.convert('RGB')
+
+        # Redimensionnement si > max_dimension
+        w, h = img.size
+        if w > max_dimension or h > max_dimension:
+            img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+
+        # Enregistrement WebP en mémoire avec qualité 80%
+        output = io.BytesIO()
+        img.save(output, format='WEBP', quality=quality, optimize=True)
+        output.seek(0)
+
+        # Génération du nouveau nom de fichier avec extension .webp
+        base_name = os.path.splitext(os.path.basename(filename))[0] if filename else 'image'
+        new_filename = f"{base_name}.webp"
+
+        return ContentFile(output.getvalue(), name=new_filename)
+    except Exception:
+        return None
+
+
+def compress_model_images(instance, image_field_names, max_dimension=1600, quality=80):
+    """
+    Parcourt tous les champs d'images spécifiés d'un modèle et les compresse en WebP (qualité 80%).
+    À appeler dans un signal pre_save.
+    """
+    for field_name in image_field_names:
+        image_field = getattr(instance, field_name, None)
+        if image_field:
+            new_content = compress_image_to_webp(image_field, max_dimension=max_dimension, quality=quality)
+            if new_content:
+                image_field.save(new_content.name, new_content, save=False)
+
+
+
