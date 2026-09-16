@@ -40,7 +40,7 @@ def get_or_create_categories():
     en gérant les correspondances insensibles à la casse.
     """
     categories = {}
-    for cat_name in ["MARQUE", "DUPE"]:
+    for cat_name in ["MARQUE", "DUPE", "PARFUMS DE CREATEUR"]:
         cat = CategorieParfum.objects.filter(nom__iexact=cat_name).first()
         if not cat:
             cat = CategorieParfum.objects.create(
@@ -229,6 +229,8 @@ def import_parfums():
             nom = "DUPE"
         elif "marque" in statut_normalise:
             nom = "PARFUMS DE MARQUE"
+        elif "Parfum de créateur" in statut_normalise:
+            nom = "PARFUMS DE CREATEUR"
         else:
             # Les créations et les inspirations sont regroupées dans la catégorie Inspiration.
             nom = "INSPIRATION"
