@@ -13,7 +13,7 @@ import tempfile, os
 from .utils import get_similar_products
 
 from .models import (
-    Tag, Parfum, Essence, Accessoire, Flacon, LotEssence, ProduitFiniEssence, Favori,
+    Tag, TagParfum, Parfum, Essence, Accessoire, Flacon, LotEssence, ProduitFiniEssence, Favori,
     CategorieParfum, TypeAccessoire, TypeFlacon, Ingredient, EntrepriseInfo
 )
 from utilisateur.models import Serveuse
@@ -1015,7 +1015,8 @@ class SimilarProductsUtilsTest(TestCase):
             contenance_ml=50, prix_unitaire=10000,
             stock_quantite=10, categorie=self.cat, actif=True
         )
-        self.p1.tags.add(self.tag_floral, self.tag_boise)
+        TagParfum.objects.create(parfum=self.p1, tag=self.tag_floral, valeur="Fleuri")
+        TagParfum.objects.create(parfum=self.p1, tag=self.tag_boise, valeur="Boisé")
 
         # Parfum B : floral + boisé (identique)
         self.p2 = Parfum.objects.create(
@@ -1023,7 +1024,8 @@ class SimilarProductsUtilsTest(TestCase):
             contenance_ml=50, prix_unitaire=12000,
             stock_quantite=10, categorie=self.cat, actif=True
         )
-        self.p2.tags.add(self.tag_floral, self.tag_boise)
+        TagParfum.objects.create(parfum=self.p2, tag=self.tag_floral, valeur="Fleuri")
+        TagParfum.objects.create(parfum=self.p2, tag=self.tag_boise, valeur="Boisé")
 
         # Parfum C : boisé seulement
         self.p3 = Parfum.objects.create(
@@ -1031,7 +1033,7 @@ class SimilarProductsUtilsTest(TestCase):
             contenance_ml=50, prix_unitaire=9000,
             stock_quantite=10, categorie=self.cat, actif=True
         )
-        self.p3.tags.add(self.tag_boise)
+        TagParfum.objects.create(parfum=self.p3, tag=self.tag_boise, valeur="Boisé")
 
         # Parfum D : aucun tag commun
         self.p4 = Parfum.objects.create(
@@ -1039,7 +1041,7 @@ class SimilarProductsUtilsTest(TestCase):
             contenance_ml=50, prix_unitaire=11000,
             stock_quantite=10, categorie=self.cat, actif=True
         )
-        self.p4.tags.add(self.tag_oriental)
+        TagParfum.objects.create(parfum=self.p4, tag=self.tag_oriental, valeur="Oriental")
 
         # Parfum inactif (ne doit pas remonter)
         self.p5 = Parfum.objects.create(
@@ -1047,7 +1049,7 @@ class SimilarProductsUtilsTest(TestCase):
             contenance_ml=50, prix_unitaire=5000,
             stock_quantite=10, categorie=self.cat, actif=False
         )
-        self.p5.tags.add(self.tag_floral)
+        TagParfum.objects.create(parfum=self.p5, tag=self.tag_floral, valeur="Fleuri")
 
     def test_similarites_par_tags(self):
         # Pour p1, on doit trouver p2 (2 tags communs) et p3 (1 tag commun)
@@ -1081,7 +1083,7 @@ class SimilarProductsUtilsTest(TestCase):
                 contenance_ml=50, prix_unitaire=10000,
                 stock_quantite=10, categorie=self.cat, actif=True
             )
-            p.tags.add(self.tag_floral)
+            TagParfum.objects.create(parfum=p, tag=self.tag_floral, valeur="Fleuri")
         similaires = get_similar_products(self.p1, Parfum, limit=4)
         self.assertEqual(len(similaires), 4)
 
