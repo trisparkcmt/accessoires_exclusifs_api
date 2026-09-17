@@ -1449,6 +1449,43 @@ class SimilarProductsTest(TestCase):
         self.assertEqual(similaires[5].marque, "Lattafa")
 
 
+class ImportParfumsLogicTest(TestCase):
+    def test_parfum_existant_nom_marque_preserve_et_sku_ignore(self):
+        from catalogue.models import Parfum, CategorieParfum
+        from import_parfums import import_parfums
+        import unittest.mock as mock
+
+        cat, _ = CategorieParfum.objects.get_or_create(nom="INSPIRATION")
+
+        # Parfum existant en BDD
+        parfum_existant = Parfum.objects.create(
+            nom="Bleu de Chanel",
+            marque="Chanel",
+            reference_sku="SKU-EXISTANT-CUSTOM-123",
+            prix_unitaire=Decimal("99999.00"),
+            contenance_ml=150,
+            description_courte="Description originale personnalisee",
+            actif=True
+        )
+
+        mock_csv_content = (
+            "Nom du produit\tMarque / maison\tPrix (FCFA)\tStatut\n"
+            "Bleu de Chanel\tChanel\t155000\tMARQUE\n"
+        )
+
+        with mock.patch("builtins.open", mock.mock_open(read_data=mock_csv_content)):
+            import_parfums()
+
+        parfum_apres = Parfum.objects.get(pk=parfum_existant.pk)
+
+        # Le parfum d'origine ne doit PAS être modifié (prix, description et SKU d'origine sont préservés)
+        self.assertEqual(parfum_apres.prix_unitaire, Decimal("99999.00"))
+        self.assertEqual(parfum_apres.description_courte, "Description originale personnalisee")
+        self.assertEqual(parfum_apres.reference_sku, "SKU-EXISTANT-CUSTOM-123")
+        self.assertTrue(parfum_apres.actif)
+
+
+
 
 
 
