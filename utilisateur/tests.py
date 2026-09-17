@@ -1131,6 +1131,164 @@ class PhotoProfilTest(APITestCase):
         self.assertFalse(bool(self.livreur.photo))
 
 
+from utilisateur.models import Boutique
+
+class BoutiqueTest(APITestCase):
+    def setUp(self):
+        import io
+        from PIL import Image
+
+        self.user = User.objects.create_user(
+            username='client_boutique_test',
+            email='client_boutique@example.com',
+            password='Password123!',
+            telephone='+225070000100'
+        )
+        self.admin = User.objects.create_superuser(
+            username='admin_boutique_test',
+            email='admin_boutique@example.com',
+            password='AdminPassword123!'
+        )
+
+        file = io.BytesIO()
+        img = Image.new('RGB', (10, 10), color='green')
+        img.save(file, 'jpeg')
+        file.seek(0)
+        self.test_photo = SimpleUploadedFile('boutique_logo.jpg', file.getvalue(), content_type='image/jpeg')
+
+    def test_apply_boutique_validation(self):
+        self.client.force_authenticate(user=self.user)
+
+        # Missing photo & nom -> 400
+        res = self.client.post('/api/v1/auth/boutique/apply/', {}, format='multipart')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('photo', res.data)
+        self.assertIn('nom', res.data)
+
+    def test_apply_boutique_success_and_duplicate(self):
+        self.client.force_authenticate(user=self.user)
+
+        import io
+        from PIL import Image
+        file = io.BytesIO()
+        img = Image.new('RGB', (10, 10), color='green')
+        img.save(file, 'jpeg')
+        photo = SimpleUploadedFile('logo.jpg', file.getvalue(), content_type='image/jpeg')
+
+        payload = {
+            'nom': 'Ma Super Boutique',
+            'adresse': '123 Rue du Commerce',
+            'ville': 'Abidjan',
+            'telephone': '+225070000100',
+            'photo': photo
+        }
+        res = self.client.post('/api/v1/auth/boutique/apply/', payload, format='multipart')
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data['boutique']['nom'], 'Ma Super Boutique')
+        self.assertEqual(res.data['boutique']['statut'], 'en_attente')
+
+        # Role remains 'client' while en_attente
+        self.user.refresh_from_db()
+        self.assertNotIn('boutique', self.user.role)
+
+        # Duplicate application -> 400
+        photo2 = SimpleUploadedFile('logo2.jpg', file.getvalue(), content_type='image/jpeg')
+        res_dup = self.client.post('/api/v1/auth/boutique/apply/', {'nom': 'Deuxieme Boutique', 'photo': photo2}, format='multipart')
+        self.assertEqual(res_dup.status_code, 400)
+
+    def test_me_boutique_get_and_patch(self):
+        boutique = Boutique.objects.create(
+            client=self.user.client,
+            nom='Boutique Initial',
+            photo=self.test_photo,
+            statut='en_attente'
+        )
+        self.client.force_authenticate(user=self.user)
+
+        # GET /api/v1/auth/me/boutique/
+        res_get = self.client.get('/api/v1/auth/me/boutique/')
+        self.assertEqual(res_get.status_code, 200)
+        self.assertEqual(res_get.data['nom'], 'Boutique Initial')
+
+        # PATCH /api/v1/auth/me/boutique/
+        res_patch = self.client.patch('/api/v1/auth/me/boutique/', {'nom': 'Boutique Modifiée', 'ville': 'Yamoussoukro'}, format='json')
+        self.assertEqual(res_patch.status_code, 200)
+        self.assertEqual(res_patch.data['nom'], 'Boutique Modifiée')
+        self.assertEqual(res_patch.data['ville'], 'Yamoussoukro')
+
+    def test_admin_boutique_list_and_activate(self):
+        boutique = Boutique.objects.create(
+            client=self.user.client,
+            nom='Boutique En Attente',
+            photo=self.test_photo,
+            statut='en_attente'
+        )
+        self.client.force_authenticate(user=self.admin)
+
+        # Admin GET list
+        res_list = self.client.get('/api/v1/auth/admin/boutiques/')
+        self.assertEqual(res_list.status_code, 200)
+        self.assertEqual(len(res_list.data), 1)
+
+        # Admin PATCH activate
+        res_patch = self.client.patch(f'/api/v1/auth/admin/boutiques/{boutique.pk}/', {'statut': 'actif'}, format='json')
+        self.assertEqual(res_patch.status_code, 200)
+        self.assertEqual(res_patch.data['statut'], 'actif')
+
+        # Now role includes 'boutique'
+        self.user.refresh_from_db()
+        self.assertIn('boutique', self.user.role)
+
+
+from utilisateur.models import Prestataire
+
+class PrestataireCancelAndDeleteTest(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='user_prestataire_cancel',
+            email='user_pres_cancel@example.com',
+            password='Password123!'
+        )
+        self.admin = User.objects.create_superuser(
+            username='admin_prestataire_delete',
+            email='admin_pres_delete@example.com',
+            password='AdminPassword123!'
+        )
+
+    def test_client_can_cancel_pending_prestataire_application(self):
+        prestataire = Prestataire.objects.create(
+            client=self.user.client,
+            statut='en_attente'
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.delete('/api/v1/auth/prestataire/cancel/')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Prestataire.objects.filter(pk=prestataire.pk).exists())
+
+    def test_client_cannot_cancel_active_prestataire(self):
+        prestataire = Prestataire.objects.create(
+            client=self.user.client,
+            statut='actif'
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.delete('/api/v1/auth/prestataire/cancel/')
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(Prestataire.objects.filter(pk=prestataire.pk).exists())
+
+    def test_admin_can_delete_prestataire(self):
+        prestataire = Prestataire.objects.create(
+            client=self.user.client,
+            statut='en_attente'
+        )
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.delete(f'/api/v1/auth/admin/prestataires/{prestataire.pk}/delete/')
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Prestataire.objects.filter(pk=prestataire.pk).exists())
+
+
 
 
 

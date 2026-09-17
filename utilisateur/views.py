@@ -32,9 +32,10 @@ from .serializers import (
     PrestataireValidationSerializer, MeSerializer, MeUpdateSerializer,
     NotificationSerializer, PayoutTransactionSerializer, PayoutRequestSerializer,
     LivreurSerializer, LivreurUpdateSerializer, LivreurCommandeSerializer,
-    ServeusesSerializer, ServeusesUpdateSerializer, DepenseSerializer, ClientSerializer
+    ServeusesSerializer, ServeusesUpdateSerializer, DepenseSerializer, ClientSerializer,
+    BoutiqueSerializer, BoutiqueApplicationSerializer, BoutiqueMeUpdateSerializer, BoutiqueAdminUpdateSerializer
 )
-from .models import Prestataire, User, Notification, PayoutTransaction, CommissionLog, Livreur, Serveuse, Client, Depense
+from .models import Prestataire, User, Notification, PayoutTransaction, CommissionLog, Livreur, Serveuse, Client, Depense, Boutique
 from orders.models import Commande
 from .throttles import (
     ChangeEmailThrottle,
@@ -1049,12 +1050,33 @@ def apply_prestataire(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def cancel_prestataire_application(request):
+    """
+    Permet à un client d'annuler sa demande de prestataire en attente.
+    """
+    user = request.user
+    if not hasattr(user, 'client') or not hasattr(user.client, 'prestataire'):
+        return Response({"detail": "Aucune demande de prestataire trouvée."}, status=status.HTTP_404_NOT_FOUND)
+
+    prestataire = user.client.prestataire
+    if prestataire.statut != 'en_attente':
+        return Response(
+            {"detail": "Impossible d'annuler une demande qui a déjà été traitée ou activée."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    prestataire.delete()
+    return Response({"detail": "Votre demande de prestataire a été annulée avec succès."}, status=status.HTTP_200_OK)
+
+
 @api_view(['POST', 'PATCH'])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
 def upload_photo_profil(request):
     """
-    Permet à une serveuse, un livreur ou un prestataire connecté de mettre à jour sa photo de profil.
+    Permet à une serveuse, un livreur, un prestataire ou une boutique connecté de mettre à jour sa photo de profil.
     L'admin ne peut pas modifier la photo via les endpoints d'administration.
     """
     user = request.user
@@ -1070,10 +1092,12 @@ def upload_photo_profil(request):
         target_profiles.append(client.livreur)
     if hasattr(client, 'prestataire'):
         target_profiles.append(client.prestataire)
+    if hasattr(client, 'boutique'):
+        target_profiles.append(client.boutique)
 
     if not target_profiles:
         return Response(
-            {"detail": "Vous n'avez aucun rôle (serveuse, livreur, prestataire) permettant d'ajouter une photo."},
+            {"detail": "Vous n'avez aucun rôle (serveuse, livreur, prestataire, boutique) permettant d'ajouter une photo."},
             status=status.HTTP_403_FORBIDDEN
         )
 
@@ -1090,6 +1114,108 @@ def upload_photo_profil(request):
         "detail": "Photo de profil mise à jour avec succès.",
         "photo": updated_photo_url
     }, status=status.HTTP_200_OK)
+
+
+#============================== Boutique ==========================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def apply_boutique(request):
+    """
+    Endpoint pour qu'un client postule pour créer sa boutique.
+    La photo et le nom sont obligatoires.
+    """
+    user = request.user
+    client, _ = Client.objects.get_or_create(user=user)
+
+    if hasattr(client, 'boutique'):
+        return Response({"detail": "Vous avez déjà une demande de boutique en cours ou une boutique enregistrée."}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = BoutiqueApplicationSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        boutique = serializer.save(client=client, statut='en_attente')
+        send_mail(
+            "Demande de boutique reçue",
+            f"Bonjour {user.first_name or user.username}, votre demande de création de boutique '{serializer.validated_data.get('nom')}' a bien été reçue.",
+            "noreply@accessoire-exclusif.com",
+            [user.email],
+            fail_silently=True,
+        )
+        return Response({
+            "detail": "Demande de boutique envoyée avec succès.",
+            "boutique": BoutiqueSerializer(boutique, context={'request': request}).data
+        }, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def me_boutique(request):
+    """
+    GET: Consulter les informations de sa propre boutique.
+    PATCH: Modifier les informations de sa propre boutique (nom, adresse, ville, telephone).
+    """
+    user = request.user
+    if not hasattr(user, 'client') or not hasattr(user.client, 'boutique'):
+        return Response({"detail": "Vous n'avez pas de boutique."}, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = user.client.boutique
+
+    if request.method == 'GET':
+        serializer = BoutiqueSerializer(boutique, context={'request': request})
+        return Response(serializer.data)
+
+    elif request.method == 'PATCH':
+        serializer = BoutiqueMeUpdateSerializer(boutique, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(BoutiqueSerializer(boutique, context={'request': request}).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([IsSuperadminOrServeuseReadOnly])
+def admin_boutiques_list(request):
+    """
+    Liste toutes les boutiques (pour l'administrateur / serveuse).
+    Possibilité de filtrer par statut via ?statut=en_attente|actif|suspendu|refuse.
+    """
+    statut = request.query_params.get('statut')
+    queryset = Boutique.objects.select_related('client__user').all().order_by('-date_creation')
+    if statut:
+        queryset = queryset.filter(statut=statut)
+
+    serializer = BoutiqueSerializer(queryset, many=True, context={'request': request})
+    return Response(serializer.data)
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([IsSuperadminOrServeuseReadOnly])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def admin_boutique_detail(request, pk):
+    """
+    GET: Détails d'une boutique (Admin).
+    PATCH: Modifier une boutique (statut, nom, etc.) par un Admin.
+    DELETE: Supprimer une boutique (Admin).
+    """
+    boutique = get_object_or_404(Boutique, pk=pk)
+
+    if request.method == 'GET':
+        serializer = BoutiqueSerializer(boutique, context={'request': request})
+        return Response(serializer.data)
+
+    elif request.method == 'PATCH':
+        serializer = BoutiqueAdminUpdateSerializer(boutique, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(BoutiqueSerializer(boutique, context={'request': request}).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    elif request.method == 'DELETE':
+        boutique.delete()
+        return Response({"detail": "Boutique supprimée avec succès."}, status=status.HTTP_204_NO_CONTENT)
 
 @api_view(['GET'])
 @permission_classes([IsSuperadminOrServeuseReadOnly])
@@ -1454,6 +1580,17 @@ def admin_prestataire_update(request, pk):
         serializer.save()
         return Response(serializer.data)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsSuperadmin])
+def admin_delete_prestataire(request, pk):
+    """
+    Supprime un profil ou une demande de prestataire (admin only).
+    """
+    prestataire = get_object_or_404(Prestataire, pk=pk)
+    prestataire.delete()
+    return Response({"detail": "Prestataire supprimé avec succès."}, status=status.HTTP_204_NO_CONTENT)
 
 @api_view(['GET'])
 @permission_classes([IsSuperadmin])

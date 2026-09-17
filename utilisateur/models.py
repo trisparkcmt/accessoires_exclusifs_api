@@ -77,6 +77,8 @@ class User(AbstractUser):
             roles.append("prestataire")
         if hasattr(self.client, 'livreur') and self.client.livreur.statut != 'inactif':
             roles.append("livreur")
+        if hasattr(self.client, 'boutique') and self.client.boutique.statut == 'actif':
+            roles.append("boutique")
 
         return roles if roles else "client"
 
@@ -222,6 +224,42 @@ class Serveuse(models.Model):
     
     def __str__(self):
         return f"{self.nom} {self.prenom} - {self.telephone}"
+
+
+class Boutique(models.Model):
+    """Boutique = Client + vitrine commerciale en ligne"""
+    STATUT_CHOICES = [
+        ('en_attente', 'En attente'),
+        ('actif', 'Actif'),
+        ('suspendu', 'Suspendu'),
+        ('inactif', 'Inactif'),
+    ]
+
+    client    = models.OneToOneField(Client, on_delete=models.CASCADE, related_name='boutique')
+    photo     = models.ImageField(upload_to='photos_profil/boutiques/', null=True, blank=True)
+    nom       = models.CharField(max_length=200)
+    adresse   = models.CharField(max_length=300, blank=True)
+    ville     = models.CharField(max_length=100, blank=True)
+    telephone = models.CharField(max_length=20, blank=True)
+    statut    = models.CharField(max_length=20, choices=STATUT_CHOICES, default='en_attente')
+    date_creation     = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'boutique'
+        verbose_name = 'Boutique'
+        verbose_name_plural = 'Boutiques'
+
+    @property
+    def user(self):
+        return self.client.user
+
+    @property
+    def proprietaire_nom(self):
+        return f"{self.user.first_name} {self.user.last_name}".strip() or self.user.email
+
+    def __str__(self):
+        return f"{self.nom} ({self.statut}) — {self.proprietaire_nom}"
 
 
 class CommissionLog(models.Model):

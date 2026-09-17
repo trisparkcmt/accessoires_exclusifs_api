@@ -6,7 +6,7 @@ from django.urls import reverse
 from dj_rest_auth.serializers import LoginSerializer, PasswordChangeSerializer
 from dj_rest_auth.registration.serializers import RegisterSerializer
 from drf_spectacular.utils import extend_schema_serializer
-from .models import User, Client, Prestataire, CommissionLog, Notification, PayoutTransaction, Livreur, Serveuse, Depense
+from .models import User, Client, Prestataire, CommissionLog, Notification, PayoutTransaction, Livreur, Serveuse, Boutique, Depense
 from catalogue.models import Favori
 from laboratoire.models import ParfumPersonnalise, ParfumPersonnaliseLigne
 from orders.models import (
@@ -321,12 +321,14 @@ class UserSerializer(serializers.ModelSerializer):
                 roles.append('livreur')
             if hasattr(client, 'serveuse'):
                 roles.append('serveuse')
+            if hasattr(client, 'boutique'):
+                roles.append('boutique')
         return roles
 
     def get_photo(self, obj):
         if hasattr(obj, 'client'):
             client = obj.client
-            for role_attr in ['serveuse', 'livreur', 'prestataire']:
+            for role_attr in ['serveuse', 'livreur', 'prestataire', 'boutique']:
                 if hasattr(client, role_attr):
                     profile = getattr(client, role_attr)
                     if profile and profile.photo:
@@ -625,12 +627,14 @@ class MeSerializer(serializers.ModelSerializer):
                 roles.append('livreur')
             if hasattr(client, 'serveuse'):
                 roles.append('serveuse')
+            if hasattr(client, 'boutique'):
+                roles.append('boutique')
         return roles
 
     def get_photo(self, obj):
         if hasattr(obj, 'client'):
             client = obj.client
-            for role_attr in ['serveuse', 'livreur', 'prestataire']:
+            for role_attr in ['serveuse', 'livreur', 'prestataire', 'boutique']:
                 if hasattr(client, role_attr):
                     profile = getattr(client, role_attr)
                     if profile and profile.photo:
@@ -872,6 +876,56 @@ class ServeusesUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Serveuse
         fields = ['actif']
+
+
+# ============================================================
+# SERIALIZERS BOUTIQUE
+# ============================================================
+
+class BoutiqueSerializer(serializers.ModelSerializer):
+    """Serializer complet pour le profil Boutique"""
+    user_details = UserSerializer(source='client.user', read_only=True)
+    photo = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Boutique
+        fields = [
+            'id', 'user_details', 'photo', 'nom', 'adresse', 'ville',
+            'telephone', 'statut', 'date_creation', 'date_modification'
+        ]
+        read_only_fields = ['photo', 'statut', 'date_creation', 'date_modification']
+
+    def get_photo(self, obj):
+        if obj.photo:
+            request = self.context.get('request')
+            return request.build_absolute_uri(obj.photo.url) if request else obj.photo.url
+        return None
+
+
+class BoutiqueApplicationSerializer(serializers.ModelSerializer):
+    """Serializer pour la demande initiale d'ouverture de boutique (photo obligatoire)"""
+    photo = serializers.ImageField(required=True)
+
+    class Meta:
+        model = Boutique
+        fields = ['nom', 'photo', 'adresse', 'ville', 'telephone']
+        extra_kwargs = {
+            'nom': {'required': True},
+        }
+
+
+class BoutiqueMeUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour que le propriétaire modifie les infos de sa boutique"""
+    class Meta:
+        model = Boutique
+        fields = ['nom', 'adresse', 'ville', 'telephone']
+
+
+class BoutiqueAdminUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour que l'admin modifie le statut et les infos d'une boutique"""
+    class Meta:
+        model = Boutique
+        fields = ['nom', 'adresse', 'ville', 'telephone', 'statut']
 
 
 class DepenseSerializer(serializers.ModelSerializer):

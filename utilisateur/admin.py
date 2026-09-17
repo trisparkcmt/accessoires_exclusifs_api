@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin
 from django.utils.translation import gettext_lazy as _
 from django import forms
 from django.core.exceptions import ValidationError
-from .models import User, Client, Prestataire, Livreur, CommissionLog, Serveuse, FCMDevice
+from .models import User, Client, Prestataire, Livreur, CommissionLog, Serveuse, FCMDevice, Boutique
 
 
 @admin.register(User)
@@ -462,3 +462,34 @@ class FCMDeviceAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return request.user.is_superuser or request.user.is_staff
+
+
+@admin.register(Boutique)
+class BoutiqueAdmin(admin.ModelAdmin):
+    list_display = ('id', 'nom', 'get_proprietaire', 'ville', 'telephone', 'statut', 'date_creation')
+    list_filter = ('statut', 'date_creation', 'ville')
+    search_fields = ('nom', 'adresse', 'ville', 'telephone', 'client__user__email', 'client__user__first_name', 'client__user__last_name')
+    readonly_fields = ('date_creation', 'date_modification')
+
+    fieldsets = (
+        ('Client propriétaire', {
+            'fields': ('client',)
+        }),
+        ('Informations Boutique', {
+            'fields': ('nom', 'photo', 'adresse', 'ville', 'telephone')
+        }),
+        ('Statut', {
+            'fields': ('statut',)
+        }),
+        ('Dates', {
+            'fields': ('date_creation', 'date_modification'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def get_proprietaire(self, obj):
+        return obj.proprietaire_nom
+    get_proprietaire.short_description = 'Propriétaire'
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('client', 'client__user')

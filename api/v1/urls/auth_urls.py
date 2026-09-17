@@ -1,11 +1,12 @@
 from django.urls import path, include
 from utilisateur.views import (
     manage_me, change_email, upload_photo_profil, GoogleLogin, apply_prestataire, 
-    list_prestataire_requests, validate_prestataire,
+    cancel_prestataire_application, list_prestataire_requests, validate_prestataire,
     prestataire_dashboard, prestataire_finance_history, prestataire_payouts_list,
+    apply_boutique, me_boutique, admin_boutiques_list, admin_boutique_detail,
     # Admin views
     admin_users_list, admin_user_toggle_status,
-    admin_prestataires_list, admin_prestataire_update,
+    admin_prestataires_list, admin_prestataire_update, admin_delete_prestataire,
     admin_global_stats,
     # Payouts
     admin_prestataire_payout, admin_payouts_list, campay_payout_webhook, admin_poll_campay_payout,
@@ -51,12 +52,17 @@ urlpatterns = [
     path('me', manage_me),
     path('me/change-email/', change_email, name='me-change-email'),
     path('me/photo/', upload_photo_profil, name='me-upload-photo'),
+    path('me/boutique/', me_boutique, name='me-boutique'),
 
     # Workflow Prestataire (Côté Client)
     path('prestataire/apply/', apply_prestataire, name='prestataire-apply'),
+    path('prestataire/cancel/', cancel_prestataire_application, name='prestataire-cancel'),
     path('prestataire/dashboard/', prestataire_dashboard, name='prestataire-dashboard'),
     path('prestataire/historique/', prestataire_finance_history, name='prestataire-historique'),
     path('prestataire/payouts/', prestataire_payouts_list, name='prestataire-payouts'),
+
+    # Workflow Boutique (Côté Client)
+    path('boutique/apply/', apply_boutique, name='boutique-apply'),
 
     # Webhook public pour Campay Payouts
     path('payout/webhook/', campay_payout_webhook, name='campay-payout-webhook'),
@@ -72,11 +78,16 @@ urlpatterns = [
     path('admin/prestataires/', admin_prestataires_list, name='admin-prestataires-list'),
     path('admin/prestataires/validate/<int:pk>/', validate_prestataire, name='admin-prestataire-validate'),
     path('admin/prestataires/<int:pk>/update/', admin_prestataire_update, name='admin-prestataire-update'),
+    path('admin/prestataires/<int:pk>/delete/', admin_delete_prestataire, name='admin-prestataire-delete'),
     path('admin/prestataires/<int:pk>/payout/', admin_prestataire_payout, name='admin-prestataire-payout'),
     path('admin/payouts/', admin_payouts_list, name='admin-payouts-list'),
     path('admin/payouts/<int:pk>/verifier/', admin_poll_campay_payout, name='admin-payout-check-status'),
     path('admin/stats/global/', admin_global_stats, name='admin-global-stats'),
     
+    # Admin Boutique Endpoints
+    path('admin/boutiques/', admin_boutiques_list, name='admin-boutiques-list'),
+    path('admin/boutiques/<int:pk>/', admin_boutique_detail, name='admin-boutique-detail'),
+
     # Admin Delivery Endpoints
     path('admin/livreurs/', admin_livreurs_list, name='admin-livreurs-list'),
     path('admin/livreurs/promote/', admin_promote_to_livreur, name='admin-promote-to-livreur'),
