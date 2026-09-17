@@ -249,9 +249,9 @@ def import_parfums():
         return tag
 
     print(f"\n--- Importation du catalogue {os.path.basename(csv_path)} ---")
-    imported_skus = []
+    imported_ids = []
     created_count = 0
-    updated_count = 0
+    skipped_count = 0
 
     with open(csv_path, "r", encoding="utf-8-sig", newline="") as csv_file:
         rows = csv.DictReader(csv_file, delimiter="\t")
@@ -260,7 +260,6 @@ def import_parfums():
             if not nom:
                 continue
             sku = f"PARFUM-CSV-{index:03d}"
-            imported_skus.append(sku)
             statut = valeur(row, "statut")
             prix = prix_depuis_valeur(valeur(row, "prix"))
             prix_affiche = prix_depuis_valeur(valeur(row, "prix_affiche"))
@@ -268,9 +267,38 @@ def import_parfums():
             if not prix or prix <= Decimal("0"):
                 prix = Decimal("18000.00")
 
+            marque_csv = valeur(row, "marque")
+
+            # 1. Chercher un parfum existant en BDD par nom + marque (sans SKU)
+            parfum = None
+            if marque_csv:
+                parfum = Parfum.objects.filter(
+                    nom__iexact=nom, marque__iexact=marque_csv
+                ).first()
+
+            # 2. Fallback : chercher par nom uniquement (si pas de marque dans le CSV)
+            if not parfum and not marque_csv:
+                parfum = Parfum.objects.filter(nom__iexact=nom).first()
+
+            def liberer_sku(target_sku, target_parfum=None):
+                qs = Parfum.objects.filter(reference_sku=target_sku)
+                if target_parfum and target_parfum.pk:
+                    qs = qs.exclude(pk=target_parfum.pk)
+                for c in qs:
+                    c.reference_sku = None
+                    c.save()
+
+            if parfum:
+                # Si le parfum existe déjà en BDD avec le même nom et la même marque,
+                # on ne le modifie plus, on le laisse tel quel et on le saute dans le catalogue.
+                imported_ids.append(parfum.pk)
+                skipped_count += 1
+                print(f"[*] Conservé (inchangé) : {nom} ({marque_csv})")
+                continue
+
             defaults = {
                 "nom": nom,
-                "marque": valeur(row, "marque"),
+                "marque": marque_csv,
                 "categorie": categorie_pour_statut(statut),
                 "genre_cible": genre_valide(valeur(row, "genre")),
                 "duree": valeur(row, "concentration"),
@@ -289,113 +317,15 @@ def import_parfums():
                 "stock_quantite": 20,
                 "actif": True,
             }
-            marque_csv = valeur(row, "marque")
 
-            # 1. Chercher d'abord par nom + marque (priorité principale)
-            parfum = None
-            if marque_csv:
-                parfum = Parfum.objects.filter(
-                    nom__iexact=nom, marque__iexact=marque_csv
-                ).first()
+            operation = "+"
+            liberer_sku(sku, None)
+            parfum = Parfum.objects.create(reference_sku=sku, **defaults)
+            created_count += 1
+            imported_ids.append(parfum.pk)
 
-            # 2. Fallback : chercher par nom uniquement (si pas de marque dans le CSV)
-            if not parfum and not marque_csv:
-                parfum = Parfum.objects.filter(nom__iexact=nom).first()
-
-            # 3. Dernier recours : chercher par SKU (réimport technique)
-            if not parfum:
-                parfum = Parfum.objects.filter(reference_sku=sku).first()
-
-            def liberer_sku(target_sku, target_parfum=None):
-                qs = Parfum.objects.filter(reference_sku=target_sku)
-                if target_parfum and target_parfum.pk:
-                    qs = qs.exclude(pk=target_parfum.pk)
-                for c in qs:
-                    c.reference_sku = None
-                    c.save()
-
-            if parfum:
-                # Vérifier si le parfum existant possède déjà des images
-                a_des_images = bool(parfum.image_principale)
-                if not a_des_images:
-                    # Vérifier aussi les images supplémentaires
-                    for i in range(1, 5):
-                        if getattr(parfum, f"image_supp_{i}", None):
-                            a_des_images = True
-                            break
-
-                if a_des_images:
-                    # Le parfum existant a des images → on le garde tel quel, on ne remplace pas
-                    # On met quand même à jour le SKU et les données textuelles/prix, mais PAS les images
-                    operation = "="
-                    for key, val in defaults.items():
-                        setattr(parfum, key, val)
-                    if parfum.stock_quantite <= 0:
-                        parfum.stock_quantite = 20
-                    parfum.actif = True
-                    liberer_sku(sku, parfum)
-                    parfum.reference_sku = sku
-                    parfum.save()
-                    updated_count += 1
-                    print(f"[{operation}] {nom} (images conservées, données mises à jour)")
-                    # Mise à jour des tags uniquement
-                    TagParfum.objects.filter(parfum=parfum).delete()
-                    for colonne in colonnes_en_tags:
-                        cle = {
-                            "Type / concentration": "concentration",
-                            "Famille olfactive": "famille",
-                            "Durabilité": "duree_annoncee",
-                            "Sillage": "sillage",
-                            "Style": "style",
-                            "Humeur compatible": "humeur",
-                            "Saisons compatibles": "saisons",
-                            "Climat conseillé": "climat",
-                            "Occasions recommandées": "occasions",
-                            "Niveau de certitude": "__ignore__",
-                            "Parfum original dont il s'inspire lorsqu'il est identifiable": "original",
-                        }[colonne]
-                        if cle == "__ignore__":
-                            continue
-                        tag_valeur = valeur(row, cle)
-                        if tag_valeur:
-                            TagParfum.objects.create(
-                                parfum=parfum,
-                                tag=tag_pour_colonne(colonne),
-                                valeur=tag_valeur,
-                            )
-                    continue  # Passer à la ligne suivante du CSV
-
-                else:
-                    # Le parfum existant n'a pas d'images → mise à jour complète
-                    operation = "*"
-                    for key, val in defaults.items():
-                        setattr(parfum, key, val)
-                    if parfum.stock_quantite <= 0:
-                        parfum.stock_quantite = 20
-                    parfum.actif = True
-                    liberer_sku(sku, parfum)
-                    parfum.reference_sku = sku
-                    parfum.save()
-                    updated_count += 1
-            else:
-                operation = "+"
-                liberer_sku(sku, None)
-                parfum = Parfum.objects.create(reference_sku=sku, **defaults)
-                created_count += 1
-
-            # Gestion des images principales et secondaires (1 à 4)
-            img_modifiee = False
-            image_val = valeur(row, "image")
-            if attacher_image(parfum, "image_principale", image_val):
-                img_modifiee = True
-
-            for i in range(1, 5):
-                img_supp_val = valeur(row, f"image_supp_{i}")
-                if attacher_image(parfum, f"image_supp_{i}", img_supp_val):
-                    img_modifiee = True
-
-            if img_modifiee:
-                parfum.save()
+            # Les images ne sont pas importées depuis le catalogue CSV.
+            # Elles doivent être ajoutées manuellement via l'interface d'administration.
 
             TagParfum.objects.filter(parfum=parfum).delete()
             for colonne in colonnes_en_tags:
@@ -424,8 +354,8 @@ def import_parfums():
             print(f"[{operation}] {nom}")
 
     # Remplace le catalogue visible sans supprimer les produits liés à l'historique des commandes.
-    Parfum.objects.exclude(reference_sku__in=imported_skus).update(actif=False)
-    print(f"\nImportation terminée : {created_count} créés, {updated_count} mis à jour.")
+    Parfum.objects.exclude(pk__in=imported_ids).update(actif=False)
+    print(f"\nImportation terminée : {created_count} créés, {skipped_count} ignorés/conservés.")
     return
 
     # Ancien catalogue codé en dur conservé temporairement ci-dessous pour référence historique.
@@ -2440,10 +2370,19 @@ def import_parfums():
     updated_count = 0
 
     for item in parfums_data:
-        # Recherche par référence SKU ou par nom exact
-        parfum = Parfum.objects.filter(reference_sku=item["sku"]).first()
-        if not parfum:
-            parfum = Parfum.objects.filter(nom__iexact=item["nom"]).first()
+        nom_item = item["nom"]
+        marque_item = item.get("marque", "")
+        parfum = None
+        if marque_item:
+            parfum = Parfum.objects.filter(
+                nom__iexact=nom_item, marque__iexact=marque_item
+            ).first()
+        else:
+            parfum = Parfum.objects.filter(nom__iexact=nom_item).first()
+
+        if parfum:
+            print(f"[*] Ignoré (déjà en BDD) : {parfum.nom}")
+            continue
 
         defaults = {
             "nom": item["nom"],
@@ -2468,17 +2407,10 @@ def import_parfums():
             "actif": True
         }
 
-        if parfum:
-            for key, val in defaults.items():
-                setattr(parfum, key, val)
-            parfum.save()
-            updated_count += 1
-            print(f"[*] Mis à jour : {parfum.nom} (Catégorie: {parfum.categorie.nom})")
-        else:
-            defaults["reference_sku"] = item["sku"]
-            parfum = Parfum.objects.create(**defaults)
-            created_count += 1
-            print(f"[+] Ajouté : {parfum.nom} (Catégorie: {parfum.categorie.nom})")
+        defaults["reference_sku"] = item["sku"]
+        parfum = Parfum.objects.create(**defaults)
+        created_count += 1
+        print(f"[+] Ajouté : {parfum.nom} (Catégorie: {parfum.categorie.nom})")
 
     print(f"\n==========================================")
     print(f"Importation terminée : {created_count} créés, {updated_count} mis à jour.")
