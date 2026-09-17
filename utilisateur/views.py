@@ -1045,6 +1045,27 @@ def apply_prestataire(request):
         return Response({"detail": "Demande envoyée avec succès."}, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def cancel_prestataire_application(request):
+    """
+    Permet à un client d'annuler sa demande de prestataire en attente.
+    """
+    user = request.user
+    if not hasattr(user, 'client') or not hasattr(user.client, 'prestataire'):
+        return Response({"detail": "Aucune demande de prestataire trouvée."}, status=status.HTTP_404_NOT_FOUND)
+
+    prestataire = user.client.prestataire
+    if prestataire.statut != 'en_attente':
+        return Response(
+            {"detail": "Impossible d'annuler une demande qui a déjà été traitée ou activée."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    prestataire.delete()
+    return Response({"detail": "Votre demande de prestataire a été annulée avec succès."}, status=status.HTTP_200_OK)
+
 @api_view(['GET'])
 @permission_classes([IsSuperadminOrServeuseReadOnly])
 def list_prestataire_requests(request):
@@ -1408,6 +1429,17 @@ def admin_prestataire_update(request, pk):
         serializer.save()
         return Response(serializer.data)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsSuperadmin])
+def admin_delete_prestataire(request, pk):
+    """
+    Supprime un profil ou une demande de prestataire (admin only).
+    """
+    prestataire = get_object_or_404(Prestataire, pk=pk)
+    prestataire.delete()
+    return Response({"detail": "Prestataire supprimé avec succès."}, status=status.HTTP_204_NO_CONTENT)
 
 @api_view(['GET'])
 @permission_classes([IsSuperadmin])

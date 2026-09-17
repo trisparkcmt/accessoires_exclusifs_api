@@ -1043,5 +1043,54 @@ class ServeuseEndpointsTest(APITestCase):
         self.assertTrue(hasattr(user.client, 'serveuse'))
 
 
+from utilisateur.models import Prestataire
+
+class PrestataireCancelAndDeleteTest(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='user_prestataire_cancel',
+            email='user_pres_cancel@example.com',
+            password='Password123!'
+        )
+        self.admin = User.objects.create_superuser(
+            username='admin_prestataire_delete',
+            email='admin_pres_delete@example.com',
+            password='AdminPassword123!'
+        )
+
+    def test_client_can_cancel_pending_prestataire_application(self):
+        prestataire = Prestataire.objects.create(
+            client=self.user.client,
+            statut='en_attente'
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.delete('/api/v1/auth/prestataire/cancel/')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Prestataire.objects.filter(pk=prestataire.pk).exists())
+
+    def test_client_cannot_cancel_active_prestataire(self):
+        prestataire = Prestataire.objects.create(
+            client=self.user.client,
+            statut='actif'
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.delete('/api/v1/auth/prestataire/cancel/')
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(Prestataire.objects.filter(pk=prestataire.pk).exists())
+
+    def test_admin_can_delete_prestataire(self):
+        prestataire = Prestataire.objects.create(
+            client=self.user.client,
+            statut='en_attente'
+        )
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.delete(f'/api/v1/auth/admin/prestataires/{prestataire.pk}/delete/')
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Prestataire.objects.filter(pk=prestataire.pk).exists())
+
+
 
 
