@@ -117,8 +117,7 @@ class Prestataire(models.Model):
     ]
     
     client = models.OneToOneField(Client, on_delete=models.CASCADE, related_name='prestataire')
-   
-   
+    photo = models.ImageField(upload_to='photos_profil/prestataires/', null=True, blank=True)
     code_promo = models.CharField(max_length=50, unique=True, null=True, blank=True)
     taux_commission = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     reduction_client_pourcentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
@@ -151,7 +150,7 @@ class Livreur(models.Model):
     STATUT_CHOICES = [('disponible', 'Disponible'), ('en_livraison', 'En livraison'), ('inactif', 'Inactif'), ('suspendu', 'Suspendu')]
     
     client = models.OneToOneField(Client, on_delete=models.CASCADE, related_name='livreur')
-    photo = models.CharField(max_length=255, blank=True)
+    photo = models.ImageField(upload_to='photos_profil/livreurs/', null=True, blank=True)
     statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='disponible')
     note_moyenne = models.DecimalField(max_digits=3, decimal_places=2, default=0)
     nombre_livraisons = models.IntegerField(default=0)
@@ -190,6 +189,7 @@ class Serveuse(models.Model):
     """Serveuse = Client + spécificités"""
 
     client = models.OneToOneField(Client, on_delete=models.CASCADE, related_name='serveuse')
+    photo = models.ImageField(upload_to='photos_profil/serveuses/', null=True, blank=True)
     actif = models.BooleanField(default=False)
     note_moyenne = models.DecimalField(max_digits=3, decimal_places=2, default=0)
     nombre_services = models.IntegerField(default=0)

@@ -238,7 +238,7 @@ class PrestataireDashboardSerializer(serializers.ModelSerializer):
     class Meta:
         model = Prestataire
         fields = [
-            'id', 'solde_commission', 'taux_commission', 'reduction_client_pourcentage', 
+            'id', 'photo', 'solde_commission', 'taux_commission', 'reduction_client_pourcentage', 
             'code_promo', 'statut', 'total_gains', 'total_retraits', 'solde_bloque', 
             'payouts_recents', 'historique_recent'
         ]
@@ -272,10 +272,12 @@ class PrestataireDashboardSerializer(serializers.ModelSerializer):
 
 
 class PrestataireApplicationSerializer(serializers.ModelSerializer):
-    """Serializer pour la demande initiale de l'utilisateur"""
+    """Serializer pour la demande initiale de l'utilisateur (photo obligatoire)"""
+    photo = serializers.ImageField(required=True)
+
     class Meta:
         model = Prestataire
-        fields = [] # L'utilisateur ne remplit rien, on crée juste l'objet en attente
+        fields = ['photo']
 
 class PrestataireValidationSerializer(serializers.ModelSerializer):
     """Serializer pour la validation par l'administrateur"""
@@ -290,11 +292,12 @@ class PrestataireValidationSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     """Serializer pour les données de base de l'utilisateur"""
     roles = serializers.SerializerMethodField()
+    photo = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'roles']
-        read_only_fields = ['roles']
+        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'roles', 'photo']
+        read_only_fields = ['roles', 'photo']
         extra_kwargs = {
             'email': {'read_only': True},
         }
@@ -319,6 +322,19 @@ class UserSerializer(serializers.ModelSerializer):
             if hasattr(client, 'serveuse'):
                 roles.append('serveuse')
         return roles
+
+    def get_photo(self, obj):
+        if hasattr(obj, 'client'):
+            client = obj.client
+            for role_attr in ['serveuse', 'livreur', 'prestataire']:
+                if hasattr(client, role_attr):
+                    profile = getattr(client, role_attr)
+                    if profile and profile.photo:
+                        request = self.context.get('request')
+                        if request:
+                            return request.build_absolute_uri(profile.photo.url)
+                        return profile.photo.url
+        return None
 
 
 class MeUpdateSerializer(serializers.ModelSerializer):
@@ -582,6 +598,7 @@ class MeSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
     roles = serializers.SerializerMethodField()
+    photo = serializers.SerializerMethodField()
     client = serializers.SerializerMethodField()
     preferences = serializers.SerializerMethodField()
     favoris = serializers.SerializerMethodField()
@@ -590,7 +607,7 @@ class MeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'roles', 'client', 'preferences', 'favoris', 'parfums_personnalises', 'commandes']
+        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'roles', 'photo', 'client', 'preferences', 'favoris', 'parfums_personnalises', 'commandes']
 
     def get_roles(self, obj):
         """
@@ -609,6 +626,19 @@ class MeSerializer(serializers.ModelSerializer):
             if hasattr(client, 'serveuse'):
                 roles.append('serveuse')
         return roles
+
+    def get_photo(self, obj):
+        if hasattr(obj, 'client'):
+            client = obj.client
+            for role_attr in ['serveuse', 'livreur', 'prestataire']:
+                if hasattr(client, role_attr):
+                    profile = getattr(client, role_attr)
+                    if profile and profile.photo:
+                        request = self.context.get('request')
+                        if request:
+                            return request.build_absolute_uri(profile.photo.url)
+                        return profile.photo.url
+        return None
 
     def _get_client(self, obj):
         return getattr(obj, 'client', None)
@@ -688,17 +718,25 @@ class MeSerializer(serializers.ModelSerializer):
 class PrestataireSerializer(serializers.ModelSerializer):
     """Serializer complet pour l'affichage (Admin)"""
     user_details = UserSerializer(source='client.user', read_only=True)
+    photo = serializers.SerializerMethodField()
     total_gains = serializers.SerializerMethodField()
     total_paid_orders = serializers.SerializerMethodField()
 
     class Meta:
         model = Prestataire
         fields = [
-            'id', 'client', 'user_details', 'code_promo',
+            'id', 'client', 'user_details', 'photo', 'code_promo',
             'taux_commission', 'reduction_client_pourcentage',
             'solde_commission', 'statut', 'date_creation', 'date_modification',
             'total_gains', 'total_paid_orders'
         ]
+        read_only_fields = ['photo']
+
+    def get_photo(self, obj):
+        if obj.photo:
+            request = self.context.get('request')
+            return request.build_absolute_uri(obj.photo.url) if request else obj.photo.url
+        return None
 
     def get_total_gains(self, obj):
         val = getattr(obj, 'total_gains', None)
@@ -763,6 +801,7 @@ class PayoutRequestSerializer(serializers.Serializer):
 class LivreurSerializer(serializers.ModelSerializer):
     """Serializer complet pour le profil Livreur"""
     user_details = UserSerializer(source='client.user', read_only=True)
+    photo = serializers.SerializerMethodField()
     
     class Meta:
         model = Livreur
@@ -770,7 +809,13 @@ class LivreurSerializer(serializers.ModelSerializer):
             'id', 'user_details', 'photo', 'statut', 
             'nombre_livraisons', 'date_embauche', 'date_creation'
         ]
-        read_only_fields = ['nombre_livraisons', 'date_creation']
+        read_only_fields = ['photo', 'nombre_livraisons', 'date_creation']
+
+    def get_photo(self, obj):
+        if obj.photo:
+            request = self.context.get('request')
+            return request.build_absolute_uri(obj.photo.url) if request else obj.photo.url
+        return None
 
 class LivreurUpdateSerializer(serializers.ModelSerializer):
     """Serializer pour modifier le statut du livreur depuis l'admin"""
@@ -805,14 +850,21 @@ class LivreurCommandeSerializer(serializers.ModelSerializer):
 class ServeusesSerializer(serializers.ModelSerializer):
     """Serializer complet pour le profil Serveuse"""
     user_details = UserSerializer(source='client.user', read_only=True)
+    photo = serializers.SerializerMethodField()
 
     class Meta:
         model = Serveuse
         fields = [
-            'id', 'user_details', 'actif',
+            'id', 'user_details', 'photo', 'actif',
             'nombre_services', 'note_moyenne', 'date_embauche', 'date_creation'
         ]
-        read_only_fields = ['nombre_services', 'date_creation']
+        read_only_fields = ['photo', 'nombre_services', 'date_creation']
+
+    def get_photo(self, obj):
+        if obj.photo:
+            request = self.context.get('request')
+            return request.build_absolute_uri(obj.photo.url) if request else obj.photo.url
+        return None
 
 
 class ServeusesUpdateSerializer(serializers.ModelSerializer):

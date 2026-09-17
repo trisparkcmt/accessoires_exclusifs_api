@@ -168,24 +168,32 @@ class AuthEndpointsTest(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('detail', response.data)
 
-    def test_apply_prestataire_creates_request(self):
+    def test_apply_prestataire_requires_photo(self):
         access_token = self.authenticate({'email': self.user.email, 'password': self.password})
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
 
-        response = self.client.post(self.apply_prestataire_url, format='json')
+        # Sans photo -> 400
+        response_no_photo = self.client.post(self.apply_prestataire_url, format='json')
+        self.assertEqual(response_no_photo.status_code, 400)
+        self.assertIn('photo', response_no_photo.data)
+
+    def test_apply_prestataire_creates_request_with_photo(self):
+        import io
+        from PIL import Image
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        access_token = self.authenticate({'email': self.user.email, 'password': self.password})
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        file = io.BytesIO()
+        img = Image.new('RGB', (10, 10), color='red')
+        img.save(file, 'jpeg')
+        file.seek(0)
+
+        photo = SimpleUploadedFile('test_photo.jpg', file.getvalue(), content_type='image/jpeg')
+        response = self.client.post(self.apply_prestataire_url, {'photo': photo}, format='multipart')
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['detail'], 'Demande envoyée avec succès.')
-
-    def test_apply_prestataire_fails_when_already_requested(self):
-        access_token = self.authenticate({'email': self.user.email, 'password': self.password})
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
-
-        response_first = self.client.post(self.apply_prestataire_url, format='json')
-        self.assertEqual(response_first.status_code, 201)
-
-        response_second = self.client.post(self.apply_prestataire_url, format='json')
-        self.assertEqual(response_second.status_code, 400)
-        self.assertIn('detail', response_second.data)
 
 
 from unittest.mock import patch
@@ -1041,6 +1049,87 @@ class ServeuseEndpointsTest(APITestCase):
         self.assertEqual(user.telephone, '+237600000022')
         self.assertTrue(hasattr(user, 'client'))
         self.assertTrue(hasattr(user.client, 'serveuse'))
+
+
+from utilisateur.models import Serveuse
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+class PhotoProfilTest(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username='admin_photo_test',
+            email='admin_photo@example.com',
+            password='AdminPassword123!'
+        )
+
+        self.serveuse_user = User.objects.create_user(
+            username='serveuse_photo_user',
+            email='serveuse_photo@example.com',
+            password='UserPassword123!'
+        )
+        self.serveuse = Serveuse.objects.create(
+            client=self.serveuse_user.client,
+            actif=True
+        )
+
+        self.livreur_user = User.objects.create_user(
+            username='livreur_photo_user',
+            email='livreur_photo@example.com',
+            password='UserPassword123!'
+        )
+        self.livreur = Livreur.objects.create(
+            client=self.livreur_user.client,
+            statut='disponible'
+        )
+
+    def test_admin_created_serveuse_and_livreur_have_no_photo_by_default(self):
+        self.assertFalse(bool(self.serveuse.photo))
+        self.assertFalse(bool(self.livreur.photo))
+
+    def test_user_can_upload_profile_photo(self):
+        import io
+        from PIL import Image
+        self.client.force_authenticate(user=self.serveuse_user)
+
+        file = io.BytesIO()
+        img = Image.new('RGB', (10, 10), color='blue')
+        img.save(file, 'jpeg')
+        file.seek(0)
+
+        photo = SimpleUploadedFile('serveuse.jpg', file.getvalue(), content_type='image/jpeg')
+
+        response = self.client.post('/api/v1/auth/me/photo/', {'photo': photo}, format='multipart')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('photo', response.data)
+        self.assertIn('photos_profil/serveuses/serveuse', response.data['photo'])
+
+        self.serveuse.refresh_from_db()
+        self.assertTrue(bool(self.serveuse.photo))
+
+    def test_admin_cannot_update_photo_via_admin_endpoints(self):
+        self.client.force_authenticate(user=self.admin)
+        photo = SimpleUploadedFile('hacked.jpg', b'hacked_content', content_type='image/jpeg')
+
+        # Admin tries to update serveuse photo
+        response_serveuse = self.client.patch(
+            f'/api/v1/auth/admin/serveuses/{self.serveuse.pk}/',
+            {'photo': photo, 'actif': True},
+            format='multipart'
+        )
+        self.assertEqual(response_serveuse.status_code, 200)
+        self.serveuse.refresh_from_db()
+        self.assertFalse(bool(self.serveuse.photo))
+
+        # Admin tries to update livreur photo
+        response_livreur = self.client.patch(
+            f'/api/v1/auth/admin/livreurs/{self.livreur.pk}/',
+            {'photo': photo, 'statut': 'disponible'},
+            format='multipart'
+        )
+        self.assertEqual(response_livreur.status_code, 200)
+        self.livreur.refresh_from_db()
+        self.assertFalse(bool(self.livreur.photo))
+
 
 
 

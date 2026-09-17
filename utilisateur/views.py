@@ -7,7 +7,8 @@ from django.contrib.auth.forms import SetPasswordForm
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.http import HttpResponse
-from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes, parser_classes
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from .permissions import (
     IsSuperadmin, IsActiveSuperadmin, IsActiveServeuse, IsSuperadminOrActiveServeuse,
@@ -1019,9 +1020,11 @@ def change_email(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
 def apply_prestataire(request):
     """
     Endpoint pour qu'un utilisateur postule en tant que prestataire.
+    La photo est obligatoire.
     """
     user = request.user
     
@@ -1044,6 +1047,49 @@ def apply_prestataire(request):
         )
         return Response({"detail": "Demande envoyée avec succès."}, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST', 'PATCH'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def upload_photo_profil(request):
+    """
+    Permet à une serveuse, un livreur ou un prestataire connecté de mettre à jour sa photo de profil.
+    L'admin ne peut pas modifier la photo via les endpoints d'administration.
+    """
+    user = request.user
+    if not hasattr(user, 'client'):
+        return Response({"detail": "Profil client introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+
+    client = user.client
+    target_profiles = []
+
+    if hasattr(client, 'serveuse'):
+        target_profiles.append(client.serveuse)
+    if hasattr(client, 'livreur'):
+        target_profiles.append(client.livreur)
+    if hasattr(client, 'prestataire'):
+        target_profiles.append(client.prestataire)
+
+    if not target_profiles:
+        return Response(
+            {"detail": "Vous n'avez aucun rôle (serveuse, livreur, prestataire) permettant d'ajouter une photo."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    photo_file = request.FILES.get('photo') or request.data.get('photo')
+    if not photo_file:
+        return Response({"detail": "Le fichier 'photo' est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
+
+    for profile in target_profiles:
+        profile.photo = photo_file
+        profile.save()
+
+    updated_photo_url = request.build_absolute_uri(target_profiles[0].photo.url) if target_profiles[0].photo else None
+    return Response({
+        "detail": "Photo de profil mise à jour avec succès.",
+        "photo": updated_photo_url
+    }, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
 @permission_classes([IsSuperadminOrServeuseReadOnly])
