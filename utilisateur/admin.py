@@ -466,7 +466,7 @@ class FCMDeviceAdmin(admin.ModelAdmin):
 
 @admin.register(Boutique)
 class BoutiqueAdmin(admin.ModelAdmin):
-    list_display = ('id', 'nom', 'get_proprietaire', 'ville', 'telephone', 'statut', 'date_creation')
+    list_display = ('id', 'nom', 'get_proprietaire', 'taux_commission', 'ville', 'telephone', 'statut', 'date_creation')
     list_filter = ('statut', 'date_creation', 'ville')
     search_fields = ('nom', 'adresse', 'ville', 'telephone', 'client__user__email', 'client__user__first_name', 'client__user__last_name')
     readonly_fields = ('date_creation', 'date_modification')
@@ -478,8 +478,8 @@ class BoutiqueAdmin(admin.ModelAdmin):
         ('Informations Boutique', {
             'fields': ('nom', 'photo', 'adresse', 'ville', 'telephone')
         }),
-        ('Statut', {
-            'fields': ('statut',)
+        ('Statut & Commission', {
+            'fields': ('taux_commission', 'statut')
         }),
         ('Dates', {
             'fields': ('date_creation', 'date_modification'),

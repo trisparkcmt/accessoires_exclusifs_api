@@ -3,7 +3,7 @@ from utilisateur.views import (
     manage_me, change_email, upload_photo_profil, GoogleLogin, apply_prestataire, 
     cancel_prestataire_application, list_prestataire_requests, validate_prestataire,
     prestataire_dashboard, prestataire_finance_history, prestataire_payouts_list,
-    apply_boutique, me_boutique, admin_boutiques_list, admin_boutique_detail,
+    apply_boutique, cancel_boutique_application, me_boutique, admin_boutiques_list, admin_boutique_detail, validate_boutique,
     # Admin views
     admin_users_list, admin_user_toggle_status,
     admin_prestataires_list, admin_prestataire_update, admin_delete_prestataire,
@@ -63,6 +63,7 @@ urlpatterns = [
 
     # Workflow Boutique (Côté Client)
     path('boutique/apply/', apply_boutique, name='boutique-apply'),
+    path('boutique/cancel/', cancel_boutique_application, name='boutique-cancel'),
 
     # Webhook public pour Campay Payouts
     path('payout/webhook/', campay_payout_webhook, name='campay-payout-webhook'),
@@ -86,6 +87,7 @@ urlpatterns = [
     
     # Admin Boutique Endpoints
     path('admin/boutiques/', admin_boutiques_list, name='admin-boutiques-list'),
+    path('admin/boutiques/validate/<int:pk>/', validate_boutique, name='admin-boutique-validate'),
     path('admin/boutiques/<int:pk>/', admin_boutique_detail, name='admin-boutique-detail'),
 
     # Admin Delivery Endpoints

@@ -111,6 +111,7 @@ class ParfumFilter(django_filters.FilterSet):
 
     # --- Autres filtres ---
     categorie     = django_filters.NumberFilter(field_name='categorie__id')
+    boutique      = django_filters.NumberFilter(field_name='boutique__id')
     marque        = django_filters.CharFilter(field_name='marque', lookup_expr='icontains')
     genre         = django_filters.CharFilter(field_name='genre_cible')
     intensite     = django_filters.CharFilter(field_name='intensite')
@@ -166,6 +167,7 @@ class AccessoireFilter(django_filters.FilterSet):
     tags            = django_filters.BaseInFilter(field_name='tags__id', lookup_expr='in')
     tag             = django_filters.CharFilter(method='filter_by_tag')
     marque          = django_filters.CharFilter(field_name='marque', lookup_expr='icontains')
+    boutique        = django_filters.NumberFilter(field_name='boutique__id')
     type_accessoire = django_filters.NumberFilter(field_name='type_accessoire__id')
     type_nom        = django_filters.CharFilter(
         field_name='type_accessoire__nom',

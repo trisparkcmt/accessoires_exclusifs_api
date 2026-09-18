@@ -241,6 +241,7 @@ class Boutique(models.Model):
     adresse   = models.CharField(max_length=300, blank=True)
     ville     = models.CharField(max_length=100, blank=True)
     telephone = models.CharField(max_length=20, blank=True)
+    taux_commission = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="Pourcentage de commission admin prélevé sur chaque vente")
     statut    = models.CharField(max_length=20, choices=STATUT_CHOICES, default='en_attente')
     date_creation     = models.DateTimeField(auto_now_add=True)
     date_modification = models.DateTimeField(auto_now=True)

@@ -33,7 +33,7 @@ from .serializers import (
     NotificationSerializer, PayoutTransactionSerializer, PayoutRequestSerializer,
     LivreurSerializer, LivreurUpdateSerializer, LivreurCommandeSerializer,
     ServeusesSerializer, ServeusesUpdateSerializer, DepenseSerializer, ClientSerializer,
-    BoutiqueSerializer, BoutiqueApplicationSerializer, BoutiqueMeUpdateSerializer, BoutiqueAdminUpdateSerializer
+    BoutiqueSerializer, BoutiqueApplicationSerializer, BoutiqueMeUpdateSerializer, BoutiqueAdminUpdateSerializer, BoutiqueValidationSerializer
 )
 from .models import Prestataire, User, Notification, PayoutTransaction, CommissionLog, Livreur, Serveuse, Client, Depense, Boutique
 from orders.models import Commande
@@ -1135,13 +1135,45 @@ def apply_boutique(request):
     serializer = BoutiqueApplicationSerializer(data=request.data, context={'request': request})
     if serializer.is_valid():
         boutique = serializer.save(client=client, statut='en_attente')
-        send_mail(
-            "Demande de boutique reçue",
-            f"Bonjour {user.first_name or user.username}, votre demande de création de boutique '{serializer.validated_data.get('nom')}' a bien été reçue.",
-            "noreply@accessoire-exclusif.com",
-            [user.email],
-            fail_silently=True,
+
+        # --- Notification in-app pour l'admin ---
+        Notification.objects.create(
+            type='demande_boutique',
+            title="Nouvelle demande de boutique",
+            message=f"{user.first_name or user.username} ({user.email}) a soumis une demande pour ouvrir la boutique '{boutique.nom}'.",
+            is_global_admin=True,
+            url=f"/admin/boutiques/{boutique.id}/",
+            metadata={'boutique_id': boutique.id, 'client_email': user.email},
         )
+
+        # --- Email HTML à l'admin ---
+        try:
+            admin_emails = list(
+                User.objects.filter(is_superuser=True, is_active=True).values_list('email', flat=True)
+            )
+            if admin_emails:
+                admin_context = {
+                    'nom_boutique': boutique.nom,
+                    'client_nom': f"{user.first_name or ''} {user.last_name or ''}".strip() or user.username,
+                    'client_email': user.email,
+                    'client_telephone': getattr(user, 'telephone', None) or '',
+                    'ville': getattr(boutique, 'ville', '') or '',
+                    'adresse': getattr(boutique, 'adresse', '') or '',
+                }
+                html_body = render_to_string('emails/boutique_request_admin.html', admin_context)
+                from django.utils.html import strip_tags
+                text_body = strip_tags(html_body)
+                email_admin = EmailMultiAlternatives(
+                    subject="[Accessoires Exclusifs] Nouvelle demande de boutique",
+                    body=text_body,
+                    from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@accessoire-exclusif.com'),
+                    to=admin_emails,
+                )
+                email_admin.attach_alternative(html_body, "text/html")
+                email_admin.send(fail_silently=True)
+        except Exception:
+            pass
+
         return Response({
             "detail": "Demande de boutique envoyée avec succès.",
             "boutique": BoutiqueSerializer(boutique, context={'request': request}).data
@@ -1149,13 +1181,35 @@ def apply_boutique(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['GET', 'PATCH'])
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def cancel_boutique_application(request):
+    """
+    Permet à un client d'annuler sa demande de création de boutique en attente.
+    """
+    user = request.user
+    if not hasattr(user, 'client') or not hasattr(user.client, 'boutique'):
+        return Response({"detail": "Aucune boutique trouvée pour ce compte."}, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = user.client.boutique
+    if boutique.statut != 'en_attente':
+        return Response(
+            {"detail": "Impossible d'annuler une boutique qui a déjà été traitée ou activée."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    boutique.delete()
+    return Response({"detail": "Votre demande de boutique a été annulée avec succès."}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 def me_boutique(request):
     """
     GET: Consulter les informations de sa propre boutique.
     PATCH: Modifier les informations de sa propre boutique (nom, adresse, ville, telephone).
+    DELETE: Annuler sa demande de boutique.
     """
     user = request.user
     if not hasattr(user, 'client') or not hasattr(user.client, 'boutique'):
@@ -1173,6 +1227,15 @@ def me_boutique(request):
             serializer.save()
             return Response(BoutiqueSerializer(boutique, context={'request': request}).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    elif request.method == 'DELETE':
+        if boutique.statut != 'en_attente':
+            return Response(
+                {"detail": "Impossible d'annuler une boutique qui a déjà été traitée ou activée."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        boutique.delete()
+        return Response({"detail": "Votre demande de boutique a été annulée avec succès."}, status=status.HTTP_200_OK)
 
 
 @api_view(['GET'])
@@ -1216,6 +1279,64 @@ def admin_boutique_detail(request, pk):
     elif request.method == 'DELETE':
         boutique.delete()
         return Response({"detail": "Boutique supprimée avec succès."}, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST', 'PATCH'])
+@permission_classes([IsSuperadmin])
+@parser_classes([JSONParser, FormParser])
+def validate_boutique(request, pk):
+    """
+    Endpoint pour valider et activer une boutique (Réservé à l'Admin).
+    L'admin doit renseigner le taux_commission (pourcentage).
+    """
+    boutique = get_object_or_404(Boutique, pk=pk)
+
+    if boutique.statut != 'en_attente':
+        return Response({"detail": "Cette boutique a déjà été traitée ou n'est plus en attente."}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = BoutiqueValidationSerializer(boutique, data=request.data)
+    if serializer.is_valid():
+        boutique = serializer.save(statut='actif')
+
+        user = boutique.client.user
+
+        # --- Notification in-app pour le client ---
+        Notification.objects.create(
+            recipient=user,
+            type='boutique_validee',
+            title="Boutique activée !",
+            message=f"Votre boutique '{boutique.nom}' a été validée et est maintenant active sur la plateforme.",
+            url="/me/boutique/",
+            metadata={'boutique_id': boutique.id, 'taux_commission': str(boutique.taux_commission)},
+        )
+
+        # --- Email HTML au client ---
+        try:
+            client_context = {
+                'first_name': user.first_name or user.username,
+                'nom_boutique': boutique.nom,
+                'taux_commission': boutique.taux_commission,
+            }
+            html_body = render_to_string('emails/boutique_validee.html', client_context)
+            from django.utils.html import strip_tags
+            text_body = strip_tags(html_body)
+            email_client = EmailMultiAlternatives(
+                subject="Votre boutique est maintenant active ! 🛍️",
+                body=text_body,
+                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@accessoire-exclusif.com'),
+                to=[user.email],
+            )
+            email_client.attach_alternative(html_body, "text/html")
+            email_client.send(fail_silently=True)
+        except Exception:
+            pass
+
+        return Response({
+            "detail": "Boutique validée et activée avec succès.",
+            "boutique": BoutiqueSerializer(boutique, context={'request': request}).data
+        }, status=status.HTTP_200_OK)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
 @permission_classes([IsSuperadminOrServeuseReadOnly])

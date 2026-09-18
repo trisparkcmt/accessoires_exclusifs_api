@@ -1239,6 +1239,50 @@ class BoutiqueTest(APITestCase):
         self.user.refresh_from_db()
         self.assertIn('boutique', self.user.role)
 
+    def test_cancel_boutique_application(self):
+        boutique = Boutique.objects.create(
+            client=self.user.client,
+            nom='Boutique A Annuler',
+            photo=self.test_photo,
+            statut='en_attente'
+        )
+        self.client.force_authenticate(user=self.user)
+
+        res_cancel = self.client.delete('/api/v1/auth/boutique/cancel/')
+        self.assertEqual(res_cancel.status_code, 200)
+        self.assertFalse(Boutique.objects.filter(pk=boutique.pk).exists())
+
+    def test_admin_validate_boutique_requires_taux_commission(self):
+        boutique = Boutique.objects.create(
+            client=self.user.client,
+            nom='Boutique A Valider',
+            photo=self.test_photo,
+            statut='en_attente'
+        )
+        self.client.force_authenticate(user=self.admin)
+
+        # Validation sans taux_commission -> 400
+        res_no_rate = self.client.patch(f'/api/v1/auth/admin/boutiques/validate/{boutique.pk}/', {}, format='json')
+        self.assertEqual(res_no_rate.status_code, 400)
+        self.assertIn('taux_commission', res_no_rate.data)
+
+        # Validation avec taux_commission -> 200
+        res_val = self.client.patch(
+            f'/api/v1/auth/admin/boutiques/validate/{boutique.pk}/',
+            {'taux_commission': '15.50'},
+            format='json'
+        )
+        self.assertEqual(res_val.status_code, 200)
+        self.assertEqual(res_val.data['boutique']['statut'], 'actif')
+
+        # Verify DB and user role
+        boutique.refresh_from_db()
+        self.assertEqual(boutique.statut, 'actif')
+        self.assertEqual(boutique.taux_commission, Decimal('15.50'))
+
+        self.user.refresh_from_db()
+        self.assertIn('boutique', self.user.role)
+
 
 from utilisateur.models import Prestataire
 
@@ -1287,6 +1331,115 @@ class PrestataireCancelAndDeleteTest(APITestCase):
         response = self.client.delete(f'/api/v1/auth/admin/prestataires/{prestataire.pk}/delete/')
         self.assertEqual(response.status_code, 204)
         self.assertFalse(Prestataire.objects.filter(pk=prestataire.pk).exists())
+
+
+from catalogue.models import Parfum, Accessoire, CategorieParfum, TypeAccessoire
+
+class BoutiqueProduitCatalogTest(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='user_boutique_owner',
+            email='boutique_owner@example.com',
+            password='Password123!'
+        )
+        self.boutique = Boutique.objects.create(
+            client=self.user.client,
+            nom='Ma Super Boutique',
+            statut='actif'
+        )
+        self.categorie_parfum = CategorieParfum.objects.create(nom='Boise', slug='boise')
+        self.type_accessoire = TypeAccessoire.objects.create(nom='Sac', slug='sac')
+
+    def test_active_boutique_can_post_parfum_and_accessoire(self):
+        self.client.force_authenticate(user=self.user)
+
+        # Post Parfum
+        res_parfum = self.client.post('/api/v1/shop/parfums/', {
+            'nom': 'Parfum Boutique 1',
+            'contenance_ml': 100,
+            'prix_unitaire': '25000.00',
+            'stock_quantite': 20,
+            'seuil_alerte_stock': 2,
+            'categorie': self.categorie_parfum.pk,
+            'actif': True,
+        }, format='json')
+        self.assertEqual(res_parfum.status_code, 201)
+        parfum_id = res_parfum.data['id']
+        parfum = Parfum.objects.get(pk=parfum_id)
+        self.assertEqual(parfum.boutique, self.boutique)
+
+        # Post Accessoire
+        res_acc = self.client.post('/api/v1/shop/accessoires/', {
+            'nom': 'Accessoire Boutique 1',
+            'prix_unitaire': '15000.00',
+            'stock_quantite': 10,
+            'seuil_alerte_stock': 1,
+            'type_accessoire': self.type_accessoire.pk,
+            'actif': True,
+        }, format='json')
+        self.assertEqual(res_acc.status_code, 201)
+        accessoire_id = res_acc.data['id']
+        accessoire = Accessoire.objects.get(pk=accessoire_id)
+        self.assertEqual(accessoire.boutique, self.boutique)
+
+    def test_public_cannot_see_boutique_info_in_product(self):
+        parfum = Parfum.objects.create(
+            nom='Parfum Discret',
+            contenance_ml=100,
+            prix_unitaire=Decimal('30000.00'),
+            stock_quantite=15,
+            seuil_alerte_stock=2,
+            categorie=self.categorie_parfum,
+            boutique=self.boutique,
+            actif=True
+        )
+        self.client.force_authenticate(user=None)
+        res = self.client.get(f'/api/v1/shop/parfums/{parfum.slug}/')
+        self.assertEqual(res.status_code, 200)
+        self.assertNotIn('boutique', res.data)
+
+    def test_boutique_only_sees_own_products_in_dashboard(self):
+        # Produit de l'admin (sans boutique)
+        parfum_admin = Parfum.objects.create(
+            nom='Parfum Admin',
+            contenance_ml=100,
+            prix_unitaire=Decimal('20000.00'),
+            stock_quantite=10,
+            seuil_alerte_stock=1,
+            categorie=self.categorie_parfum,
+            actif=True
+        )
+        # Produit de notre boutique
+        parfum_boutique = Parfum.objects.create(
+            nom='Parfum Ma Boutique',
+            contenance_ml=100,
+            prix_unitaire=Decimal('25000.00'),
+            stock_quantite=10,
+            seuil_alerte_stock=1,
+            categorie=self.categorie_parfum,
+            boutique=self.boutique,
+            actif=True
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        # 1. En mode Dashboard (avec header X-Dashboard-Context=true)
+        res_dash = self.client.get('/api/v1/shop/parfums/', HTTP_X_DASHBOARD_CONTEXT='true')
+        self.assertEqual(res_dash.status_code, 200)
+        results_dash = res_dash.data.get('resultats', res_dash.data)
+        slugs_dash = [p['slug'] for p in results_dash]
+        self.assertIn(parfum_boutique.slug, slugs_dash)
+        self.assertNotIn(parfum_admin.slug, slugs_dash)
+
+        # 2. Avec paramètre ?mes_produits=true
+        res_my = self.client.get('/api/v1/shop/parfums/?mes_produits=true')
+        self.assertEqual(res_my.status_code, 200)
+        results_my = res_my.data.get('resultats', res_my.data)
+        slugs_my = [p['slug'] for p in results_my]
+        self.assertIn(parfum_boutique.slug, slugs_my)
+        self.assertNotIn(parfum_admin.slug, slugs_my)
+
+
 
 
 

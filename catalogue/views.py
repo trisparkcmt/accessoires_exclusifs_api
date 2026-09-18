@@ -22,7 +22,7 @@ from drf_spectacular.utils import (
 from drf_spectacular.types import OpenApiTypes
 from rest_framework.permissions import IsAuthenticated
 from orders.models import CommandeLigneAccessoire, CommandeLigneParfum, CommandeProduitFiniEssence
-from .permissions import IsAdminOrReadOnly, IsAdmin, IsAdminOrServeuse, IsAdminOrServeuseOrReadOnly
+from .permissions import IsAdminOrReadOnly, IsAdmin, IsAdminOrServeuse, IsAdminOrServeuseOrReadOnly, IsAdminOrServeuseOrBoutiqueOrReadOnly
 from utilisateur.permissions import is_active_serveuse
 
 from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Flacon, Favori, Ingredient, ProduitFiniEssence, Tag, TypeAccessoire, TypeFlacon, NotificationCatalogue, MouvementStock, EntrepriseInfo
@@ -229,7 +229,7 @@ Retourne également :
 class ParfumViewSet(viewsets.ModelViewSet):
     serializer_class   = ParfumSerializer
     pagination_class   = StandardPagination
-    permission_classes = [IsAdminOrServeuseOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrBoutiqueOrReadOnly]
     filter_backends    = [DjangoFilterBackend, OrderedSearchFilter, CustomOrderingFilter]
     parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = ParfumFilter
@@ -239,15 +239,64 @@ class ParfumViewSet(viewsets.ModelViewSet):
     lookup_field       = 'slug'
 
     def get_queryset(self):
-        from utilisateur.permissions import is_privileged_dashboard_user
-        from django.db.models import F
-        if is_privileged_dashboard_user(self.request):
-            return Parfum.objects.all().select_related('categorie').prefetch_related('tags')
-        return Parfum.objects.filter(
+        from utilisateur.permissions import is_privileged_dashboard_user, is_dashboard_request
+        from django.db.models import F, Q
+        
+        request = getattr(self, 'request', None)
+        user = request.user if request else None
+
+        if is_privileged_dashboard_user(request):
+            return Parfum.objects.all().select_related('categorie', 'boutique').prefetch_related('tags')
+        
+        base_qs = Parfum.objects.select_related('categorie', 'boutique').prefetch_related('tags')
+        boutique = None
+        if user and user.is_authenticated:
+            try:
+                client = getattr(user, 'client', None)
+                boutique = getattr(client, 'boutique', None) if client else None
+            except Exception:
+                pass
+
+        is_dash = is_dashboard_request(request)
+        query_mes_produits = request and (
+            request.query_params.get('mes_produits') in ('true', '1', 'yes') or
+            request.query_params.get('my_products') in ('true', '1', 'yes') or
+            request.query_params.get('boutique_only') in ('true', '1', 'yes')
+        )
+
+        if boutique and boutique.statut == 'actif':
+            if is_dash or query_mes_produits:
+                # Dans le dashboard, la boutique ne voit QUE les produits qu'elle a postés
+                return base_qs.filter(boutique=boutique)
+            else:
+                return base_qs.filter(
+                    Q(boutique=boutique) |
+                    (
+                        Q(actif=True, stock_quantite__gt=F('seuil_alerte_stock'), prix_unitaire__gt=0) &
+                        (Q(boutique__isnull=True) | Q(boutique__statut='actif'))
+                    )
+                )
+
+        return base_qs.filter(
             actif=True,
             stock_quantite__gt=F('seuil_alerte_stock'),
             prix_unitaire__gt=0
-        ).select_related('categorie').prefetch_related('tags')
+        ).filter(
+            Q(boutique__isnull=True) | Q(boutique__statut='actif')
+        )
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if not user.is_staff and not is_active_serveuse(user):
+            try:
+                client = getattr(user, 'client', None)
+                boutique = getattr(client, 'boutique', None) if client else None
+                if boutique and boutique.statut == 'actif':
+                    serializer.save(boutique=boutique)
+                    return
+            except Exception:
+                pass
+        serializer.save()
 
     def get_object(self):
         queryset = self.filter_queryset(self.get_queryset())
@@ -261,14 +310,22 @@ class ParfumViewSet(viewsets.ModelViewSet):
         return obj
 
     def get_serializer_class(self):
-        from utilisateur.permissions import is_privileged_dashboard_user
-        is_admin = is_privileged_dashboard_user(self.request)
+        from utilisateur.permissions import is_privileged_dashboard_user, is_dashboard_request
+        request = getattr(self, 'request', None)
+        is_admin = is_privileged_dashboard_user(request)
+        is_dash = is_dashboard_request(request)
+        is_dash_or_my = is_admin or is_dash or (
+            request and (
+                request.query_params.get('mes_produits') in ('true', '1', 'yes') or
+                request.query_params.get('my_products') in ('true', '1', 'yes')
+            )
+        )
         if self.action == 'list':
-            if is_admin:
+            if is_dash_or_my:
                 return ParfumAdminListSerializer
             return ParfumPublicListSerializer
         else:
-            if is_admin:
+            if is_dash_or_my:
                 return ParfumAdminDetailSerializer
             return ParfumPublicDetailSerializer
     
@@ -1388,7 +1445,7 @@ Retourne la liste paginée de tous les accessoires **actifs**.
 class AccessoireViewSet(viewsets.ModelViewSet):
     serializer_class   = AccessoireSerializer
     pagination_class   = StandardPagination
-    permission_classes = [IsAdminOrServeuseOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrBoutiqueOrReadOnly]
     filter_backends    = [DjangoFilterBackend, OrderedSearchFilter, CustomOrderingFilter]
     parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = AccessoireFilter
@@ -1399,17 +1456,64 @@ class AccessoireViewSet(viewsets.ModelViewSet):
     lookup_field       = 'slug'
 
     def get_queryset(self):
-        from utilisateur.permissions import is_privileged_dashboard_user
-        from django.db.models import F
-        if is_privileged_dashboard_user(self.request):
-            # Pour l'admin, afficher tous les accessoires, triés par date de création (du plus récent au plus ancien)
-            return Accessoire.objects.all().select_related('type_accessoire').order_by('-date_creation', '-id')
-        # Pour les utilisateurs non-admin, triés par date de création du plus récent au plus ancien
-        return Accessoire.objects.filter(
+        from utilisateur.permissions import is_privileged_dashboard_user, is_dashboard_request
+        from django.db.models import F, Q
+        
+        request = getattr(self, 'request', None)
+        user = request.user if request else None
+
+        if is_privileged_dashboard_user(request):
+            return Accessoire.objects.all().select_related('type_accessoire', 'boutique').order_by('-date_creation', '-id')
+
+        base_qs = Accessoire.objects.select_related('type_accessoire', 'boutique').order_by('-date_creation', '-id')
+        boutique = None
+        if user and user.is_authenticated:
+            try:
+                client = getattr(user, 'client', None)
+                boutique = getattr(client, 'boutique', None) if client else None
+            except Exception:
+                pass
+
+        is_dash = is_dashboard_request(request)
+        query_mes_produits = request and (
+            request.query_params.get('mes_produits') in ('true', '1', 'yes') or
+            request.query_params.get('my_products') in ('true', '1', 'yes') or
+            request.query_params.get('boutique_only') in ('true', '1', 'yes')
+        )
+
+        if boutique and boutique.statut == 'actif':
+            if is_dash or query_mes_produits:
+                # Dans le dashboard, la boutique ne voit QUE les produits qu'elle a postés
+                return base_qs.filter(boutique=boutique)
+            else:
+                return base_qs.filter(
+                    Q(boutique=boutique) |
+                    (
+                        Q(actif=True, stock_quantite__gt=F('seuil_alerte_stock'), prix_unitaire__gt=0) &
+                        (Q(boutique__isnull=True) | Q(boutique__statut='actif'))
+                    )
+                )
+
+        return base_qs.filter(
             actif=True,
             stock_quantite__gt=F('seuil_alerte_stock'),
             prix_unitaire__gt=0
-        ).select_related('type_accessoire').order_by('-date_creation', '-id')
+        ).filter(
+            Q(boutique__isnull=True) | Q(boutique__statut='actif')
+        )
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if not user.is_staff and not is_active_serveuse(user):
+            try:
+                client = getattr(user, 'client', None)
+                boutique = getattr(client, 'boutique', None) if client else None
+                if boutique and boutique.statut == 'actif':
+                    serializer.save(boutique=boutique)
+                    return
+            except Exception:
+                pass
+        serializer.save()
 
     def get_object(self):
         queryset = self.filter_queryset(self.get_queryset())
@@ -1423,14 +1527,22 @@ class AccessoireViewSet(viewsets.ModelViewSet):
         return obj
 
     def get_serializer_class(self):
-        from utilisateur.permissions import is_privileged_dashboard_user
-        is_admin = is_privileged_dashboard_user(self.request)
+        from utilisateur.permissions import is_privileged_dashboard_user, is_dashboard_request
+        request = getattr(self, 'request', None)
+        is_admin = is_privileged_dashboard_user(request)
+        is_dash = is_dashboard_request(request)
+        is_dash_or_my = is_admin or is_dash or (
+            request and (
+                request.query_params.get('mes_produits') in ('true', '1', 'yes') or
+                request.query_params.get('my_products') in ('true', '1', 'yes')
+            )
+        )
         if self.action == 'list':
-            if is_admin:
+            if is_dash_or_my:
                 return AccessoireAdminListSerializer
             return AccessoirePublicListSerializer
         else:
-            if is_admin:
+            if is_dash_or_my:
                 return AccessoireAdminDetailSerializer
             return AccessoirePublicDetailSerializer
     #accessoires favoris 

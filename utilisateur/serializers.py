@@ -891,7 +891,7 @@ class BoutiqueSerializer(serializers.ModelSerializer):
         model = Boutique
         fields = [
             'id', 'user_details', 'photo', 'nom', 'adresse', 'ville',
-            'telephone', 'statut', 'date_creation', 'date_modification'
+            'telephone', 'taux_commission', 'statut', 'date_creation', 'date_modification'
         ]
         read_only_fields = ['photo', 'statut', 'date_creation', 'date_modification']
 
@@ -922,10 +922,19 @@ class BoutiqueMeUpdateSerializer(serializers.ModelSerializer):
 
 
 class BoutiqueAdminUpdateSerializer(serializers.ModelSerializer):
-    """Serializer pour que l'admin modifie le statut et les infos d'une boutique"""
+    """Serializer pour que l'admin modifie le statut, le taux de commission et les infos d'une boutique"""
     class Meta:
         model = Boutique
-        fields = ['nom', 'adresse', 'ville', 'telephone', 'statut']
+        fields = ['nom', 'adresse', 'ville', 'telephone', 'taux_commission', 'statut']
+
+
+class BoutiqueValidationSerializer(serializers.ModelSerializer):
+    """Serializer pour la validation d'une boutique par l'admin (taux_commission obligatoire)"""
+    taux_commission = serializers.DecimalField(max_digits=5, decimal_places=2, required=True, min_value=0, max_value=100)
+
+    class Meta:
+        model = Boutique
+        fields = ['taux_commission']
 
 
 class DepenseSerializer(serializers.ModelSerializer):

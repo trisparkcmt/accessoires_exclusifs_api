@@ -254,6 +254,7 @@ class Parfum(models.Model):
     ]
     
     categorie = models.ForeignKey(CategorieParfum, on_delete=models.SET_NULL, null=True, related_name='parfums')
+    boutique = models.ForeignKey('utilisateur.Boutique', on_delete=models.CASCADE, null=True, blank=True, related_name='parfums')
     nom = models.CharField(max_length=200)
     slug = models.SlugField(max_length=220, unique=True, blank=True)
     marque = models.CharField(max_length=200 ,blank=True)
@@ -696,6 +697,7 @@ class TypeAccessoire(models.Model):
 
 class Accessoire(models.Model):
     type_accessoire = models.ForeignKey(TypeAccessoire, on_delete=models.SET_NULL, null=True, related_name='accessoires')
+    boutique = models.ForeignKey('utilisateur.Boutique', on_delete=models.CASCADE, null=True, blank=True, related_name='accessoires')
     nom = models.CharField(max_length=200)
     marque = models.CharField(max_length=200, blank=True)
     slug = models.SlugField(max_length=220, unique=True, blank=True)
