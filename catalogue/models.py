@@ -137,7 +137,7 @@ class TagParfum(models.Model):
     """
     parfum = models.ForeignKey('Parfum', on_delete=models.CASCADE, related_name='tags_associes')
     tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name='parfums_associes')
-    valeur = models.CharField(max_length=255, blank=True, default='', help_text="Valeur du tag pour ce parfum (ex: Élevée, Gourmand, etc.)")
+    valeur = models.TextField(blank=True, default='', help_text="Valeur du tag pour ce parfum (ex: Élevée, Gourmand, etc.)")
     date_creation = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -156,7 +156,7 @@ class TagEssence(models.Model):
     """
     essence = models.ForeignKey('Essence', on_delete=models.CASCADE, related_name='tags_associes')
     tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name='essences_associes')
-    valeur = models.CharField(max_length=255, blank=True, default='', help_text="Valeur du tag pour cette essence")
+    valeur = models.TextField(blank=True, default='', help_text="Valeur du tag pour cette essence")
     date_creation = models.DateTimeField(auto_now_add=True)
     
     class Meta:
@@ -175,7 +175,7 @@ class TagAccessoire(models.Model):
     """
     accessoire = models.ForeignKey('Accessoire', on_delete=models.CASCADE, related_name='tags_associes')
     tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name='accessoires_associes')
-    valeur = models.CharField(max_length=255, blank=True, default='', help_text="Valeur du tag pour cet accessoire")
+    valeur = models.TextField(blank=True, default='', help_text="Valeur du tag pour cet accessoire")
     date_creation = models.DateTimeField(auto_now_add=True)
     
     class Meta:

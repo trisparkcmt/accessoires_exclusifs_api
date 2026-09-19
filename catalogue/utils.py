@@ -5,27 +5,34 @@ def get_similar_products(instance, model, tag_field='tags', limit=6):
     """
     Sélectionne les produits similaires pour un produit donné :
     - Priorité 1 : Produits ayant les mêmes valeurs de tags (ex: temps=nuit)
-    - Priorité 2 : Produits de la même marque (marque)
-    - Trier par : Priorité (1 puis 2), nombre de valeurs en commun (décroissant), date de création (-date_creation)
+    - Priorité 2 : Produits ayant les mêmes tags (tag_id)
+    - Priorité 3 : Produits de la même marque (marque)
+    - Trier par : Priorité (1 puis 2 puis 3), nombre de valeurs/tags en commun (décroissant), date de création (-date_creation)
     - Limite : 6 produits max.
     """
     if not instance.pk:
         return model.objects.none()
 
-    # 1. Extraction des sous-tokens (tag_id, valeur) associés au produit
+    # 1. Extraction des tag_ids et sous-tokens (tag_id, valeur) associés au produit
+    tag_ids = []
     tokens = []
     if hasattr(instance, 'tags_associes'):
         for ta in instance.tags_associes.all():
+            tag_ids.append(ta.tag_id)
             if ta.valeur and str(ta.valeur).strip():
                 parts = [p.strip() for p in str(ta.valeur).split(',') if p.strip()]
                 for part in parts:
                     tokens.append((ta.tag_id, part))
+    elif hasattr(instance, tag_field):
+        tags_mgr = getattr(instance, tag_field, None)
+        if tags_mgr is not None:
+            tag_ids = list(tags_mgr.values_list('id', flat=True))
 
     # 2. Marque du produit
     marque_val = getattr(instance, 'marque', None)
     has_marque = bool(marque_val and str(marque_val).strip() and str(marque_val).strip().lower() != 'non indiquée')
 
-    if not tokens and not has_marque:
+    if not tag_ids and not tokens and not has_marque:
         return model.objects.none()
 
     qs = model.objects.filter(actif=True).exclude(pk=instance.pk)
@@ -34,23 +41,62 @@ def get_similar_products(instance, model, tag_field='tags', limit=6):
     for tag_id, val in tokens:
         q_tag_valeurs |= (Q(tags_associes__tag_id=tag_id) & Q(tags_associes__valeur__icontains=val))
 
+    if tag_ids:
+        if hasattr(model, 'tags_associes'):
+            q_tags = Q(tags_associes__tag_id__in=tag_ids)
+        elif hasattr(model, tag_field):
+            q_tags = Q(**{f'{tag_field}__id__in': tag_ids})
+        else:
+            q_tags = Q(pk__in=[])
+    else:
+        q_tags = Q(pk__in=[])
+
     q_marque = Q(marque__iexact=marque_val.strip()) if has_marque else Q(pk__in=[])
 
+    filter_q = Q()
     if tokens:
-        qs = qs.filter(q_tag_valeurs | q_marque).annotate(
-            communs_valeurs=Count('tags_associes', filter=q_tag_valeurs, distinct=True),
-            priority=Case(
-                When(communs_valeurs__gt=0, then=Value(1)),
-                When(q_marque, then=Value(2)),
-                default=Value(3),
-                output_field=IntegerField()
-            )
-        ).order_by('priority', '-communs_valeurs', '-date_creation')
-    elif has_marque:
-        qs = qs.filter(q_marque).annotate(
-            communs_valeurs=Value(0),
-            priority=Value(1, output_field=IntegerField())
-        ).order_by('-date_creation')
+        filter_q |= q_tag_valeurs
+    if tag_ids:
+        filter_q |= q_tags
+    if has_marque:
+        filter_q |= q_marque
+
+    if not filter_q:
+        return model.objects.none()
+
+    qs = qs.filter(filter_q)
+
+    annotation_kwargs = {}
+    if tokens:
+        annotation_kwargs['communs_valeurs'] = Count('tags_associes', filter=q_tag_valeurs, distinct=True)
+    else:
+        annotation_kwargs['communs_valeurs'] = Value(0)
+
+    if tag_ids:
+        if hasattr(model, 'tags_associes'):
+            annotation_kwargs['communs_tags'] = Count('tags_associes', filter=q_tags, distinct=True)
+        else:
+            annotation_kwargs['communs_tags'] = Count(tag_field, filter=q_tags, distinct=True)
+    else:
+        annotation_kwargs['communs_tags'] = Value(0)
+
+    when_clauses = []
+    if tokens:
+        when_clauses.append(When(communs_valeurs__gt=0, then=Value(1)))
+    if tag_ids:
+        when_clauses.append(When(communs_tags__gt=0, then=Value(2)))
+    if has_marque:
+        when_clauses.append(When(q_marque, then=Value(3)))
+
+    if when_clauses:
+        annotation_kwargs['priority'] = Case(
+            *when_clauses,
+            default=Value(4),
+            output_field=IntegerField()
+        )
+        qs = qs.annotate(**annotation_kwargs).order_by('priority', '-communs_valeurs', '-communs_tags', '-date_creation')
+    else:
+        return model.objects.none()
 
     return qs.distinct()[:limit]
 
