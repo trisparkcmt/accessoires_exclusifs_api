@@ -116,7 +116,7 @@ def _sauvegarder_tags(instance, tags_input, model_liaison, fk_field_name):
             tag_id = item.get('tag') or item.get('tag_id')
             if isinstance(tag_id, Tag):
                 tag_id = tag_id.id
-            valeur = item.get('valeur', '')
+            valeur = str(item.get('valeur', '') or '')
             if tag_id:
                 model_liaison.objects.create(**{fk_field_name: instance, 'tag_id': tag_id, 'valeur': valeur})
         elif isinstance(item, Tag):
