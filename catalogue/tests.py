@@ -839,6 +839,43 @@ class EssenceAPITest(APITestCase):
         slugs_dash = [e['slug'] for e in resp_dash.data['resultats']]
         self.assertIn(essence_vide.slug, slugs_dash)
 
+    def test_admin_et_serveuse_masques_en_boutique_si_sans_produit_fini_mais_visibles_en_dashboard(self):
+        from catalogue.models import Essence, LotEssence
+        from utilisateur.models import Serveuse
+        user_model = get_user_model()
+
+        # Essence brute sans produit fini
+        essence_brute = Essence.objects.create(
+            marque="Maison Lab", nom="Rose Brute", code_reference="ESS-BRUTE-002",
+            categorie="premium", prix_par_ml=Decimal('400.00'), actif=True
+        )
+        LotEssence.objects.create(
+            essence=essence_brute, stock_ml=Decimal('500.00'), quantite_initiale_ml=Decimal('500.00'), actif=True
+        )
+
+        admin = user_model.objects.create_user(email='admin-test-boutique@example.com', password='password123', is_staff=True)
+        serveuse_user = user_model.objects.create_user(email='serveuse-test-boutique@example.com', password='password123')
+        Serveuse.objects.create(client=serveuse_user.client, actif=True)
+
+        # 1. Admin en vue Boutique -> L'essence brute n'est PAS affichée
+        self.client.force_authenticate(admin)
+        resp_admin_shop = self.client.get('/api/v1/shop/essences/')
+        slugs_admin_shop = [e['slug'] for e in resp_admin_shop.data['resultats']]
+        self.assertNotIn(essence_brute.slug, slugs_admin_shop)
+
+        # 2. Serveuse en vue Boutique -> L'essence brute n'est PAS affichée
+        self.client.force_authenticate(serveuse_user)
+        resp_serv_shop = self.client.get('/api/v1/shop/essences/')
+        slugs_serv_shop = [e['slug'] for e in resp_serv_shop.data['resultats']]
+        self.assertNotIn(essence_brute.slug, slugs_serv_shop)
+
+        # 3. Admin en vue Dashboard -> L'essence brute EST affichée
+        self.client.force_authenticate(admin)
+        resp_admin_dash = self.client.get('/api/v1/lab/essences/', HTTP_X_CONTEXT='dashboard')
+        slugs_admin_dash = [e['slug'] for e in resp_admin_dash.data['resultats']]
+        self.assertIn(essence_brute.slug, slugs_admin_dash)
+
+
 
 class IngredientVisibilityAPITest(APITestCase):
     def setUp(self):

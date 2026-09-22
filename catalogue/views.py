@@ -473,9 +473,8 @@ class EssenceViewSet(viewsets.ModelViewSet):
 
         ctx = get_request_context(self.request)
 
-        # Privilège Dashboard / Admin OU utilisateur staff : retourne toutes les essences (sans filtrage restrictif)
-        user = getattr(self.request, 'user', None)
-        if is_privileged_dashboard_user(self.request) or ctx == 'dashboard' or (user and user.is_authenticated and user.is_staff):
+        # Privilège Dashboard / Admin : retourne toutes les essences uniquement en contexte dashboard
+        if is_privileged_dashboard_user(self.request) or ctx == 'dashboard':
             return Essence.objects.all().prefetch_related('tags', 'lots', 'produits_finis')
 
         if ctx == 'labo':

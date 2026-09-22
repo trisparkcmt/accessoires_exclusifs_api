@@ -21,6 +21,7 @@ shop_router.register(r'categories-parfum', CategorieParfumViewSet, basename='cat
 shop_router.register(r'types-accessoire', TypeAccessoireViewSet, basename='typeaccessoire')
 shop_router.register(r'types-flacon', TypeFlaconViewSet, basename='typeflacon')
 shop_router.register(r'produits-essence', ProduitFiniEssenceViewSet, basename='produitessence')
+shop_router.register(r'essences', EssenceViewSet, basename='essence-shop')
 shop_router.register(r'promotions', PromotionViewSet, basename='promotion')
 shop_router.register(r'bestsellers', BestsellerViewSet, basename='bestsellers')
 shop_router.register(r'hotsellers', HotsellerViewSet, basename='hotsellers')
