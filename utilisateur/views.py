@@ -975,6 +975,47 @@ def manage_me(request):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+#==============================supprimer compte======================
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def supprimer_compte(request):
+    """
+    Permet à un utilisateur connecté de supprimer définitivement son propre compte.
+    Les comptes administrateurs (is_superuser=True) ne peuvent PAS être supprimés,
+    même par l'administrateur lui-même.
+    """
+    user = request.user
+
+    if user.is_superuser:
+        return Response(
+            {"detail": "Les comptes administrateurs ne peuvent pas être supprimés."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    # Déconnecter l'utilisateur avant suppression (invalider les sessions/tokens)
+    from django.contrib.auth import logout as django_logout
+    from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
+    try:
+        # Blacklister tous les tokens JWT actifs de l'utilisateur
+        for token in OutstandingToken.objects.filter(user=user):
+            BlacklistedToken.objects.get_or_create(token=token)
+    except Exception:
+        pass  # Si le blacklist n'est pas activé, on continue
+
+    # Supprimer le compte (cascade sur les objets liés)
+    email = user.email
+    user.delete()
+
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("[Compte supprimé] %s a supprimé son compte.", email)
+
+    return Response(
+        {"detail": "Votre compte a été supprimé définitivement."},
+        status=status.HTTP_200_OK
+    )
+
 #==============================email=================================
 
 @api_view(['POST'])

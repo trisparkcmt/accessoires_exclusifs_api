@@ -95,11 +95,12 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
     # 1. NOUVELLE COMMANDE CRÉÉE
     if created:
         # Notifier les Admins & Serveuses (exclut l'acheteur s'il est aussi serveuse/admin)
+        client_email = instance.client.email if instance.client else 'Client'
         Notification.objects.create(
             is_global_admin=True,
             type='nouvelle_commande_admin',
             title=f"Nouvelle Commande {cmd_ref}",
-            message=f"Commande {cmd_ref} de {instance.total_ttc} FCFA reçue de {instance.client.email if instance.client else 'Client'}.",
+            message=f"Commande **{cmd_ref}** de **{instance.total_ttc} FCFA** reçue de **{client_email}**.",
             url=f"/api/v1/orders/commandes/{instance.pk}/",
             metadata={
                 'commande_id': str(instance.pk),
@@ -125,7 +126,7 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                     recipient=user_client,
                     type='commande_livree',
                     title=f"Commande {cmd_ref} livrée ! 📦",
-                    message=f"Votre commande {cmd_ref} a été livrée avec succès. Merci de votre confiance !",
+                    message=f"Votre commande **{cmd_ref}** a été livrée avec succès. Merci de votre confiance !",
                     url=f"/api/v1/orders/commandes/{instance.pk}/",
                     metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref), 'statut': 'livrée'}
                 )
@@ -134,7 +135,7 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                     recipient=user_client,
                     type='commande_remboursee',
                     title=f"Commande {cmd_ref} remboursée 💳",
-                    message=f"Votre commande {cmd_ref} a été remboursée.",
+                    message=f"Votre commande **{cmd_ref}** a été remboursée.",
                     url=f"/api/v1/orders/commandes/{instance.pk}/",
                     metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref), 'statut': 'remboursée'}
                 )
@@ -143,20 +144,21 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
         if instance.prestataire and instance.prestataire.client and instance.prestataire.client.user:
             user_prestataire = instance.prestataire.client.user
             if nouveau_statut in ['validé', 'livrée'] and ancien_statut not in ['validé', 'livrée']:
+                code_promo_val = instance.code_promo_utilise or (instance.prestataire.code_promo if instance.prestataire else '') or ''
                 Notification.objects.create(
                     recipient=user_prestataire,
                     type='commission_gagne',
                     title="Commission validée ! 💰",
                     message=(
-                        f"La commande {cmd_ref} utilisant votre code promo a été validée/livrée ! "
-                        f"Vous avez gagné {instance.commission_montant} FCFA de commission."
+                        f"La commande **{cmd_ref}** utilisant votre code promo **{code_promo_val}** a été validée/livrée ! "
+                        f"Vous avez gagné **{instance.commission_montant} FCFA** de commission."
                     ),
                     url="/api/v1/utilisateur/prestataire/dashboard/",
                     metadata={
                         'commande_id': str(instance.pk),
                         'numero_commande': str(cmd_ref),
                         'commission_montant': str(instance.commission_montant),
-                        'code_promo': str(instance.code_promo_utilise or instance.prestataire.code_promo or ''),
+                        'code_promo': str(code_promo_val),
                     }
                 )
             elif nouveau_statut == 'remboursée' and ancien_statut != 'remboursée':
@@ -164,7 +166,7 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                     recipient=user_prestataire,
                     type='commission_annulee',
                     title="Commande avec votre code remboursée ⚠️",
-                    message=f"La commande {cmd_ref} liée à votre code promo a été remboursée.",
+                    message=f"La commande **{cmd_ref}** liée à votre code promo a été remboursée.",
                     url="/api/v1/utilisateur/prestataire/dashboard/",
                     metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref)}
                 )
@@ -180,7 +182,7 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                         recipient=nouveau_livreur.client.user,
                         type='livraison_assignee',
                         title=f"Nouvelle livraison attribuée ! 🚚",
-                        message=f"La commande {cmd_ref} vous a été attribuée pour livraison.",
+                        message=f"La commande **{cmd_ref}** vous a été attribuée pour livraison.",
                         url=f"/api/v1/auth/livreur/commandes/",
                         metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref), 'adresse': str(instance.adresse_livraison or '')}
                     )
@@ -197,7 +199,7 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                         recipient=ancien_livreur.client.user,
                         type='livraison_retiree',
                         title=f"Livraison réassignée ℹ️",
-                        message=f"La livraison de la commande {cmd_ref} ne vous est plus attribuée.",
+                        message=f"La livraison de la commande **{cmd_ref}** ne vous est plus attribuée.",
                         url=f"/api/v1/auth/livreur/commandes/",
                         metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref)}
                     )
@@ -214,7 +216,7 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                         recipient=livreur_actuel.client.user,
                         type='livraison_annulee',
                         title=f"Livraison annulée 🛑",
-                        message=f"La commande {cmd_ref} qui vous était attribuée a été annulée.",
+                        message=f"La commande **{cmd_ref}** qui vous était attribuée a été annulée.",
                         url=f"/api/v1/auth/livreur/commandes/",
                         metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref)}
                     )
@@ -254,8 +256,8 @@ def notifier_clients_code_promo_exclusif(sender, instance, action, pk_set, **kwa
                     type='code_promo_exclusif',
                     title="🎁 Code Promo Exclusif !",
                     message=(
-                        f"Vous avez reçu un code promo exclusif '{instance.code}' "
-                        f"offrant {pourcentage_str} de réduction !"
+                        f"Vous avez reçu un code promo exclusif **{instance.code}** "
+                        f"offrant **{pourcentage_str}** de réduction !"
                     ),
                     url="/api/v1/orders/promos/",
                     metadata={
@@ -297,7 +299,7 @@ def notifier_statut_payout_prestataire(sender, instance, created, **kwargs):
             recipient=user_prestataire,
             type='payout_demande',
             title="Demande de retrait enregistrée 💸",
-            message=f"Votre demande de retrait de {instance.montant} FCFA est en cours de traitement.",
+            message=f"Votre demande de retrait de **{instance.montant} FCFA** est en cours de traitement.",
             url="/api/v1/utilisateur/prestataire/payouts/",
             metadata={'payout_id': str(instance.pk), 'montant': str(instance.montant)}
         )
@@ -309,7 +311,7 @@ def notifier_statut_payout_prestataire(sender, instance, created, **kwargs):
                     recipient=user_prestataire,
                     type='payout_succes',
                     title="Retrait effectué avec succès ! 💰",
-                    message=f"Votre virement de {instance.montant} FCFA vers {instance.telephone_destination} a été validé.",
+                    message=f"Votre virement de **{instance.montant} FCFA** vers **{instance.telephone_destination}** a été validé.",
                     url="/api/v1/utilisateur/prestataire/payouts/",
                     metadata={'payout_id': str(instance.pk), 'montant': str(instance.montant)}
                 )
@@ -318,7 +320,7 @@ def notifier_statut_payout_prestataire(sender, instance, created, **kwargs):
                     recipient=user_prestataire,
                     type='payout_echec',
                     title="Échec du virement ⚠️",
-                    message=f"Votre demande de retrait de {instance.montant} FCFA n'a pas pu aboutir. Votre solde a été crédité.",
+                    message=f"Votre demande de retrait de **{instance.montant} FCFA** n'a pas pu aboutir. Votre solde a été crédité.",
                     url="/api/v1/utilisateur/prestataire/payouts/",
                     metadata={'payout_id': str(instance.pk), 'montant': str(instance.montant)}
                 )
@@ -356,16 +358,17 @@ def notify_prestataire_statut_change(sender, instance, created, **kwargs):
         
         # 1. CAS ACCEPTÉ / VALIDÉ (ex: en_attente -> actif ou valide)
         if nouveau_statut in ['actif', 'valide']:
+            prenom = user.first_name or user.username
             Notification.objects.create(
                 recipient=user,
                 type='prestataire_statut_valide',
                 title="Candidature Prestataire Validée ! 🎉",
                 message=(
-                    f"Félicitations {user.first_name or user.username} ! "
+                    f"Félicitations **{prenom}** ! "
                     f"Votre demande pour devenir partenaire a été acceptée.\n"
-                    f"Code promo : {instance.code_promo or 'N/A'}\n"
-                    f"Taux commission : {instance.taux_commission}%\n"
-                    f"Réduction client : {instance.reduction_client_pourcentage}%"
+                    f"Code promo : **{instance.code_promo or 'N/A'}**\n"
+                    f"Taux commission : **{instance.taux_commission}%**\n"
+                    f"Réduction client : **{instance.reduction_client_pourcentage}%**"
                 ),
                 url='/api/v1/utilisateur/prestataire/dashboard/',
                 metadata={
@@ -379,12 +382,13 @@ def notify_prestataire_statut_change(sender, instance, created, **kwargs):
 
         # 2. CAS REFUSÉ / REJETÉ (ex: en_attente -> inactif / suspendu / refuse)
         elif nouveau_statut in ['refuse', 'rejete', 'inactif', 'suspendu'] and ancien_statut == 'en_attente':
+            prenom = user.first_name or user.username
             Notification.objects.create(
                 recipient=user,
                 type='prestataire_statut_refuse',
                 title="Mise à jour candidature Prestataire",
                 message=(
-                    f"Bonjour {user.first_name or user.username}, "
+                    f"Bonjour **{prenom}**, "
                     f"nous avons examiné votre demande de partenariat. "
                     f"Malheureusement, nous ne pouvons pas y donner une suite favorable pour le moment."
                 ),
@@ -401,11 +405,13 @@ def notify_admin_on_prestataire_request(sender, instance, created, **kwargs):
     """Signal envoyé à l'administrateur quand un prestataire fait une demande."""
     if created and instance.statut == 'en_attente':
         admin_users = User.objects.filter(is_staff=True, is_active=True)
-        subject = f"Nouvelle demande de prestataire : {instance.client.email}"
+        client_nom = instance.client.user.get_full_name()
+        client_email = instance.client.email
+        subject = f"Nouvelle demande de prestataire : {client_email}"
         message = (
             f"Une nouvelle demande de prestataire a été reçue.\n\n"
-            f"Client: {instance.client.email}\n"
-            f"Nom: {instance.client.user.get_full_name()}\n"
+            f"Client: **{client_email}**\n"
+            f"Nom: **{client_nom}**\n"
             f"Statut: {instance.statut}\n"
             f"Date: {instance.date_creation}\n\n"
             "Veuillez consulter l'admin ou le tableau de bord dédié pour traiter cette demande."
@@ -421,7 +427,7 @@ def notify_admin_on_prestataire_request(sender, instance, created, **kwargs):
             is_global_admin=True,
             metadata={
                 'prestataire_id': instance.pk,
-                'client_email': instance.client.email,
+                'client_email': client_email,
                 'statut': instance.statut,
             }
         )

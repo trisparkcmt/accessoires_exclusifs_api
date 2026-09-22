@@ -1157,5 +1157,45 @@ class NotificationDeletionAndGoogleOneTapTest(APITestCase):
         self.assertTrue(User.objects.filter(email='onetap@example.com').exists())
 
 
+class SupprimerCompteTest(APITestCase):
+    """Tests pour l'endpoint de suppression de compte (DELETE /api/v1/auth/me/supprimer-compte/)."""
+
+    def setUp(self):
+        self.url = '/api/v1/auth/me/supprimer-compte/'
+        self.user = User.objects.create_user(
+            username='delete_me_user',
+            email='deleteme@example.com',
+            password='Password123!'
+        )
+        self.admin = User.objects.create_superuser(
+            username='protected_admin',
+            email='admin_nodelete@example.com',
+            password='AdminPassword123!'
+        )
+
+    def test_user_can_delete_own_account(self):
+        """Un utilisateur normal peut supprimer son propre compte."""
+        self.client.force_authenticate(user=self.user)
+        response = self.client.delete(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('supprimé', response.data['detail'])
+        # Vérifier que le compte est bien supprimé
+        self.assertFalse(User.objects.filter(email='deleteme@example.com').exists())
+
+    def test_admin_cannot_delete_own_account(self):
+        """Un administrateur ne peut PAS supprimer son propre compte."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.delete(self.url)
+        self.assertEqual(response.status_code, 403)
+        # Vérifier que le compte admin existe toujours
+        self.assertTrue(User.objects.filter(email='admin_nodelete@example.com').exists())
+
+    def test_unauthenticated_cannot_delete(self):
+        """Un utilisateur non connecté ne peut pas appeler cet endpoint."""
+        response = self.client.delete(self.url)
+        self.assertEqual(response.status_code, 401)
+
+
+
 
 

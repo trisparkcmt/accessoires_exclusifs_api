@@ -1,6 +1,6 @@
 from django.urls import path, include
 from utilisateur.views import (
-    manage_me, change_email, GoogleLogin, apply_prestataire, 
+    manage_me, change_email, GoogleLogin, apply_prestataire, supprimer_compte, 
     cancel_prestataire_application, list_prestataire_requests, validate_prestataire,
     prestataire_dashboard, prestataire_finance_history, prestataire_payouts_list,
     # Admin views
@@ -50,6 +50,7 @@ urlpatterns = [
     path('me/', manage_me, name='me'),
     path('me', manage_me),
     path('me/change-email/', change_email, name='me-change-email'),
+    path('me/supprimer-compte/', supprimer_compte, name='me-supprimer-compte'),
 
     # Workflow Prestataire (Côté Client)
     path('prestataire/apply/', apply_prestataire, name='prestataire-apply'),
