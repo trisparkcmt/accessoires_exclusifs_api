@@ -1333,6 +1333,7 @@ class PrestataireCancelAndDeleteTest(APITestCase):
         self.assertFalse(Prestataire.objects.filter(pk=prestataire.pk).exists())
 
 
+<<<<<<< HEAD
 from catalogue.models import Parfum, Accessoire, CategorieParfum, TypeAccessoire
 
 class BoutiqueProduitCatalogTest(APITestCase):
@@ -1440,7 +1441,69 @@ class BoutiqueProduitCatalogTest(APITestCase):
         self.assertNotIn(parfum_admin.slug, slugs_my)
 
 
+from unittest.mock import patch
+from utilisateur.models import Notification
 
+class NotificationDeletionAndGoogleOneTapTest(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='user_notif_test',
+            email='notif_user@example.com',
+            password='Password123!'
+        )
+        self.admin = User.objects.create_superuser(
+            username='admin_notif_test',
+            email='notif_admin@example.com',
+            password='AdminPassword123!'
+        )
+        self.notif_user = Notification.objects.create(
+            recipient=self.user,
+            title="Titre User",
+            message="Message User"
+        )
+        self.notif_global = Notification.objects.create(
+            is_global_admin=True,
+            title="Titre Global",
+            message="Message Global"
+        )
+
+    def test_delete_single_user_notification(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.delete(f'/api/v1/utilisateur/notifications/?id={self.notif_user.pk}')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['deleted'], 1)
+        self.assertFalse(Notification.objects.filter(pk=self.notif_user.pk).exists())
+
+    def test_delete_admin_global_notification(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.delete(f'/api/v1/utilisateur/notifications/?notification_id={self.notif_global.pk}')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['deleted'], 1)
+        self.assertFalse(Notification.objects.filter(pk=self.notif_global.pk).exists())
+
+    def test_delete_all_user_notifications(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.delete('/api/v1/utilisateur/notifications/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['deleted'], 1)
+        self.assertFalse(Notification.objects.filter(pk=self.notif_user.pk).exists())
+        self.assertTrue(Notification.objects.filter(pk=self.notif_global.pk).exists())
+
+    @patch('google.oauth2.id_token.verify_oauth2_token')
+    def test_google_one_tap_login(self, mock_verify):
+        mock_verify.return_value = {
+            'email': 'onetap@example.com',
+            'sub': '1234567890',
+            'given_name': 'One',
+            'family_name': 'Tap',
+            'email_verified': True
+        }
+        response = self.client.post('/api/v1/auth/google/', {'credential': 'fake_google_token_123'})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('access', response.data)
+        self.assertIn('user', response.data)
+        self.assertEqual(response.data['user']['email'], 'onetap@example.com')
+        self.assertTrue(User.objects.filter(email='onetap@example.com').exists())
 
 
 

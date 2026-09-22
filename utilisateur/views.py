@@ -1380,39 +1380,66 @@ def user_notifications(request):
         return Response(serializer.data)
         
     elif request.method in ['POST', 'PATCH']:
-        # On ne marque comme lu que les notifications de l'utilisateur connecté
-        updated = Notification.objects.filter(recipient=user, is_read=False).update(is_read=True)
+        # On marque comme lues les notifications accessibles à l'utilisateur
+        if user.is_superuser or is_active_serveuse(user) or user.is_staff:
+            updated = Notification.objects.filter((Q(recipient=user) | Q(is_global_admin=True)), is_read=False).update(is_read=True)
+        else:
+            updated = Notification.objects.filter(recipient=user, is_read=False).update(is_read=True)
         return Response({
             "detail": "Toutes vos notifications ont été marquées comme lues.",
             "updated": updated
         }, status=status.HTTP_200_OK)
 
     elif request.method == 'DELETE':
-        notif_id = request.query_params.get('id') or (request.data.get('notification_id') if hasattr(request, 'data') and isinstance(request.data, dict) else None)
-        notif_ids = request.data.get('notification_ids') if hasattr(request, 'data') and isinstance(request.data, dict) else None
+        data = request.data if hasattr(request, 'data') and isinstance(request.data, dict) else {}
+        query = request.query_params
+
+        notif_id = (
+            query.get('id') or query.get('notification_id') or query.get('notif_id') or
+            data.get('id') or data.get('notification_id') or data.get('notif_id')
+        )
+
+        notif_ids = data.get('notification_ids') or data.get('ids') or data.get('notif_ids') or query.get('ids')
+        if isinstance(notif_ids, str):
+            notif_ids = [i.strip() for i in notif_ids.split(',') if i.strip().isdigit()]
+
+        if user.is_superuser or is_active_serveuse(user) or user.is_staff:
+            scope_qs = Notification.objects.filter(Q(recipient=user) | Q(is_global_admin=True))
+        else:
+            scope_qs = Notification.objects.filter(recipient=user)
 
         if notif_id:
-            deleted_count, _ = Notification.objects.filter(pk=notif_id, recipient=user).delete()
-            if deleted_count == 0 and (user.is_superuser or user.is_staff):
-                deleted_count, _ = Notification.objects.filter(pk=notif_id, is_global_admin=True).delete()
-            return Response({
-                "detail": f"Notification #{notif_id} supprimée de la base de données." if deleted_count > 0 else "Notification introuvable.",
-                "deleted": deleted_count
-            }, status=status.HTTP_200_OK if deleted_count > 0 else status.HTTP_404_NOT_FOUND)
+            deleted_count, _ = scope_qs.filter(pk=notif_id).delete()
+            if deleted_count > 0:
+                return Response({
+                    "detail": f"Notification #{notif_id} supprimée de la base de données.",
+                    "deleted": deleted_count
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    "detail": f"Notification #{notif_id} introuvable.",
+                    "deleted": 0
+                }, status=status.HTTP_404_NOT_FOUND)
 
         elif notif_ids and isinstance(notif_ids, list):
-            deleted_count, _ = Notification.objects.filter(pk__in=notif_ids, recipient=user).delete()
+            deleted_count, _ = scope_qs.filter(pk__in=notif_ids).delete()
             return Response({
                 "detail": f"{deleted_count} notification(s) supprimée(s) de la base de données.",
                 "deleted": deleted_count
             }, status=status.HTTP_200_OK)
 
         else:
-            deleted_count, _ = Notification.objects.filter(recipient=user).delete()
-            return Response({
-                "detail": "Toutes vos notifications ont été supprimées de la base de données.",
-                "deleted": deleted_count
-            }, status=status.HTTP_200_OK)
+            deleted_count, _ = scope_qs.delete()
+            if deleted_count > 0:
+                return Response({
+                    "detail": "Toutes vos notifications ont été supprimées de la base de données.",
+                    "deleted": deleted_count
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({
+                    "detail": "Aucune notification à supprimer.",
+                    "deleted": 0
+                }, status=status.HTTP_200_OK)
 
 
 @api_view(['GET', 'PATCH', 'DELETE'])
@@ -2083,6 +2110,123 @@ class GoogleLogin(SocialLoginView):
     client_class = OAuth2Client
     callback_url = settings.FRONTEND_URL # Doit correspondre EXACTEMENT à l'URI de redirection configurée chez Google
     throttle_classes = [LoginIPThrottle]
+
+    def post(self, request, *args, **kwargs):
+        # Support Google One Tap (id_token / credential / token)
+        id_token_input = (
+            request.data.get('id_token') or 
+            request.data.get('credential') or 
+            request.data.get('token')
+        ) if isinstance(request.data, dict) else None
+
+        has_oauth_code = bool(
+            isinstance(request.data, dict) and 
+            (request.data.get('code') or request.data.get('access_token'))
+        )
+
+        if id_token_input and not has_oauth_code:
+            return self._handle_one_tap(request, id_token_input)
+
+        return super().post(request, *args, **kwargs)
+
+    def _handle_one_tap(self, request, token_str):
+        import requests as http_requests
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+        from rest_framework_simplejwt.tokens import RefreshToken
+        from dj_rest_auth.jwt_auth import set_jwt_cookies
+        from allauth.socialaccount.models import SocialAccount
+        from utilisateur.models import User
+        from utilisateur.serializers import UserSerializer
+
+        id_info = None
+        # 1. Vérification via la bibliothèque google-auth
+        try:
+            id_info = google_id_token.verify_oauth2_token(
+                token_str,
+                google_requests.Request(),
+                clock_skew_in_seconds=10
+            )
+        except Exception:
+            # 2. Fallback via l'endpoint API google tokeninfo
+            try:
+                resp = http_requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={token_str}", timeout=10)
+                if resp.status_code == 200:
+                    id_info = resp.json()
+            except Exception:
+                id_info = None
+
+        if not id_info or not isinstance(id_info, dict) or not id_info.get('email'):
+            return Response(
+                {"detail": "Jeton Google One Tap (id_token) invalide ou expiré."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        email = id_info.get('email').strip().lower()
+        sub = id_info.get('sub') or id_info.get('user_id') or email
+        first_name = id_info.get('given_name') or id_info.get('name', '').split(' ')[0]
+        last_name = id_info.get('family_name') or ''
+
+        # Récupération ou création du compte utilisateur
+        user = User.objects.filter(email__iexact=email).first()
+        if not user:
+            username = email.split('@')[0]
+            base_username = username
+            counter = 1
+            while User.objects.filter(username=username).exists():
+                username = f"{base_username}_{counter}"
+                counter += 1
+
+            user = User.objects.create_user(
+                email=email,
+                username=username,
+                first_name=first_name,
+                last_name=last_name,
+                is_active=True
+            )
+            user.set_unusable_password()
+            user.save()
+        else:
+            if not user.is_active:
+                user.is_active = True
+                user.save(update_fields=['is_active'])
+
+        try:
+            from allauth.account.models import EmailAddress
+            EmailAddress.objects.get_or_create(
+                user=user,
+                email=user.email,
+                defaults={'verified': True, 'primary': True}
+            )
+        except Exception:
+            pass
+
+        # Enregistrement de la fiche SocialAccount
+        SocialAccount.objects.get_or_create(
+            user=user,
+            provider='google',
+            defaults={
+                'uid': str(sub),
+                'extra_data': id_info
+            }
+        )
+
+        # Génération des jetons JWT et cookies HttpOnly
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
+
+        serializer = UserSerializer(user, context={'request': request})
+        data = {
+            'access': access_token,
+            'refresh': refresh_token,
+            'user': serializer.data,
+            'roles': serializer.data.get('roles', [])
+        }
+
+        response = Response(data, status=status.HTTP_200_OK)
+        set_jwt_cookies(response, access_token, refresh_token)
+        return response
 
     def get_response(self):
         response = super().get_response()

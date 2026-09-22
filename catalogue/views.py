@@ -1873,6 +1873,12 @@ class NotificationCatalogueViewSet(viewsets.ModelViewSet):
         """Marquer toutes les notifications non-lues comme lues."""
         updated = NotificationCatalogue.objects.filter(est_lu=False).update(est_lu=True)
         return Response({'updated': updated, 'message': f'{updated} notifications marquées comme lues'})
+
+    @action(detail=False, methods=['delete'])
+    def supprimer_toutes(self, request):
+        """Supprimer toutes les notifications du catalogue (alertes de stock)."""
+        deleted_count, _ = NotificationCatalogue.objects.all().delete()
+        return Response({'deleted': deleted_count, 'message': f'{deleted_count} notification(s) de catalogue supprimée(s)'}, status=status.HTTP_200_OK)
     
     @action(detail=False, methods=['get'])
     def non_lues(self, request):
