@@ -155,7 +155,8 @@ def _importer_catalogue_tsv_sans_modification():
             })
 
     created = 0
-    skipped = 0
+    updated = 0
+    unchanged = 0
     seen = set()
     categories = {}
     tag_cache = {}
@@ -168,22 +169,31 @@ def _importer_catalogue_tsv_sans_modification():
             normalize(item.get("concentration", "")),
         )
         if identity in seen:
-            skipped += 1
+            unchanged += 1
             continue
         seen.add(identity)
         matches = Parfum.objects.filter(nom__iexact=item["nom"])
         same_product = matches.filter(
             contenance_ml=parsed["size"], marque__iexact=item["marque"]
         )
-        if any(
-            normalize(existing_concentration) == identity[3]
-            for existing_concentration in same_product.values_list("duree", flat=True)
-        ):
-            skipped += 1
-            print(
-                f"[*] Existant inchangé, ignoré: {item['nom']} "
-                f"({item['marque']}, {parsed['size']} ml, {item.get('concentration', '')})"
-            )
+        existing_parfum = same_product.first()
+
+        if existing_parfum:
+            if existing_parfum.prix_unitaire != parsed["price"]:
+                ancien_prix = existing_parfum.prix_unitaire
+                existing_parfum.prix_unitaire = parsed["price"]
+                existing_parfum.save(update_fields=["prix_unitaire"])
+                updated += 1
+                print(
+                    f"[~] Prix mis à jour: {existing_parfum.nom} ({existing_parfum.marque}, {existing_parfum.contenance_ml}ml) "
+                    f"-> {ancien_prix} FCFA => {parsed['price']} FCFA"
+                )
+            else:
+                unchanged += 1
+                print(
+                    f"[*] Existant inchangé: {item['nom']} "
+                    f"({item['marque']}, {parsed['size']} ml, {item.get('concentration', '')})"
+                )
             continue
 
         parfum = Parfum.objects.create(
@@ -212,7 +222,7 @@ def _importer_catalogue_tsv_sans_modification():
         created += 1
         print(f"[+] Créé: {parfum.nom} ({parfum.marque})")
 
-    print(f"Import terminé: {created} créés, {skipped} doublons ignorés. Les existants sont inchangés.")
+    print(f"Import terminé: {created} créés, {updated} prix mis à jour, {unchanged} inchangés.")
 
 def import_parfums():
     return _importer_catalogue_tsv_sans_modification()
