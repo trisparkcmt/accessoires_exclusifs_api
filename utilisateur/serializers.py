@@ -902,6 +902,73 @@ class BoutiqueSerializer(serializers.ModelSerializer):
         return None
 
 
+class BoutiqueAdminDetailSerializer(serializers.ModelSerializer):
+    """
+    Serializer enrichi pour l'Admin : fiche complète d'une boutique partenaire.
+    Inclut toutes les infos financières, le propriétaire et les statistiques.
+    """
+    user_details = UserSerializer(source='client.user', read_only=True)
+    photo = serializers.SerializerMethodField()
+    proprietaire_nom = serializers.SerializerMethodField()
+    proprietaire_email = serializers.SerializerMethodField()
+    proprietaire_telephone = serializers.SerializerMethodField()
+    nb_produits_parfums = serializers.SerializerMethodField()
+    nb_produits_accessoires = serializers.SerializerMethodField()
+    nb_produits_total = serializers.SerializerMethodField()
+    nb_ventes_total = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Boutique
+        fields = [
+            # Identité
+            'id', 'nom', 'photo', 'adresse', 'ville', 'telephone',
+            # Propriétaire
+            'user_details', 'proprietaire_nom', 'proprietaire_email', 'proprietaire_telephone',
+            # Commission & Statut
+            'taux_commission', 'statut',
+            # Finances
+            'solde_disponible', 'solde_total_recu',
+            # Paiement
+            'telephone_paiement', 'mode_paiement_prefere',
+            # Statistiques
+            'nb_produits_parfums', 'nb_produits_accessoires', 'nb_produits_total', 'nb_ventes_total',
+            # Dates
+            'date_creation', 'date_modification',
+        ]
+        read_only_fields = [
+            'photo', 'statut', 'date_creation', 'date_modification',
+            'solde_disponible', 'solde_total_recu',
+        ]
+
+    def get_photo(self, obj):
+        if obj.photo:
+            request = self.context.get('request')
+            return request.build_absolute_uri(obj.photo.url) if request else obj.photo.url
+        return None
+
+    def get_proprietaire_nom(self, obj):
+        return obj.proprietaire_nom
+
+    def get_proprietaire_email(self, obj):
+        return obj.client.user.email
+
+    def get_proprietaire_telephone(self, obj):
+        return obj.client.user.phone_number if hasattr(obj.client.user, 'phone_number') else obj.telephone
+
+    def get_nb_produits_parfums(self, obj):
+        return obj.parfums.count()
+
+    def get_nb_produits_accessoires(self, obj):
+        return obj.accessoires.count()
+
+    def get_nb_produits_total(self, obj):
+        return obj.parfums.count() + obj.accessoires.count()
+
+    def get_nb_ventes_total(self, obj):
+        from orders.models import VenteBoutique
+        return VenteBoutique.objects.filter(boutique=obj, statut='valide').count()
+
+
 class BoutiqueApplicationSerializer(serializers.ModelSerializer):
     """Serializer pour la demande initiale d'ouverture de boutique (photo obligatoire)"""
     photo = serializers.ImageField(required=True)
@@ -927,6 +994,19 @@ class BoutiqueAdminUpdateSerializer(serializers.ModelSerializer):
         model = Boutique
         fields = ['nom', 'adresse', 'ville', 'telephone', 'taux_commission', 'statut']
 
+    def validate_taux_commission(self, value):
+        from orders.models import CodePromoAdmin
+        from django.db.models import Max
+        
+        cost_max = CodePromoAdmin.objects.filter(est_actif=True).aggregate(m=Max('reduction_pourcentage'))['m'] or Decimal('0')
+        if value < cost_max:
+            raise serializers.ValidationError(
+                f"🚨 SÉCURITÉ FINANCIÈRE : Ce taux de commission ({value}%) est inférieur au "
+                f"coût du code promo actif le plus élevé ({cost_max}%). "
+                f"Ajustez d'abord vos codes promo pour éviter toute perte financière."
+            )
+        return value
+
 
 class BoutiqueValidationSerializer(serializers.ModelSerializer):
     """Serializer pour la validation d'une boutique par l'admin (taux_commission obligatoire)"""
@@ -935,6 +1015,20 @@ class BoutiqueValidationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Boutique
         fields = ['taux_commission']
+
+    def validate_taux_commission(self, value):
+        from orders.models import CodePromoAdmin
+        from django.db.models import Max
+        
+        cost_max = CodePromoAdmin.objects.filter(est_actif=True).aggregate(m=Max('reduction_pourcentage'))['m'] or Decimal('0')
+        if value < cost_max:
+            raise serializers.ValidationError(
+                f"🚨 SÉCURITÉ FINANCIÈRE : Ce taux de commission ({value}%) est inférieur au "
+                f"coût du code promo actif le plus élevé ({cost_max}%). "
+                f"Ajustez d'abord vos codes promo pour éviter toute perte financière."
+            )
+        return value
+
 
 
 class DepenseSerializer(serializers.ModelSerializer):
@@ -985,3 +1079,37 @@ class FCMDeviceSerializer(serializers.Serializer):
             }
         )
         return device
+
+
+class VenteBoutiqueSerializer(serializers.ModelSerializer):
+    commande_numero = serializers.CharField(source='commande.numero_commande', read_only=True)
+    boutique_nom = serializers.CharField(source='boutique.nom', read_only=True)
+
+    class Meta:
+        from orders.models import VenteBoutique
+        model = VenteBoutique
+        fields = [
+            'id', 'commande', 'commande_numero', 'boutique', 'boutique_nom',
+            'montant_brut', 'taux_commission_applique', 'montant_commission_admin',
+            'montant_net_boutique', 'statut', 'date_creation', 'date_reglement'
+        ]
+
+
+class VersementBoutiqueSerializer(serializers.ModelSerializer):
+    boutique_nom = serializers.CharField(source='boutique.nom', read_only=True)
+    effectue_par_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        from orders.models import VersementBoutique
+        model = VersementBoutique
+        fields = [
+            'id', 'boutique', 'boutique_nom', 'montant', 'reference_transaction',
+            'mode_paiement', 'telephone_destination', 'note_admin',
+            'effectue_par', 'effectue_par_nom', 'date_versement'
+        ]
+
+    def get_effectue_par_nom(self, obj):
+        if obj.effectue_par:
+            return obj.effectue_par.get_full_name() or obj.effectue_par.email
+        return None
+

@@ -33,7 +33,8 @@ from .serializers import (
     NotificationSerializer, PayoutTransactionSerializer, PayoutRequestSerializer,
     LivreurSerializer, LivreurUpdateSerializer, LivreurCommandeSerializer,
     ServeusesSerializer, ServeusesUpdateSerializer, DepenseSerializer, ClientSerializer,
-    BoutiqueSerializer, BoutiqueApplicationSerializer, BoutiqueMeUpdateSerializer, BoutiqueAdminUpdateSerializer, BoutiqueValidationSerializer
+    BoutiqueSerializer, BoutiqueApplicationSerializer, BoutiqueMeUpdateSerializer, BoutiqueAdminUpdateSerializer, BoutiqueValidationSerializer, BoutiqueAdminDetailSerializer,
+    VenteBoutiqueSerializer, VersementBoutiqueSerializer
 )
 from .models import Prestataire, User, Notification, PayoutTransaction, CommissionLog, Livreur, Serveuse, Client, Depense, Boutique
 from orders.models import Commande
@@ -1260,7 +1261,9 @@ def me_boutique(request):
 
     if request.method == 'GET':
         serializer = BoutiqueSerializer(boutique, context={'request': request})
-        return Response(serializer.data)
+        data = serializer.data
+        data['produits'] = get_boutique_produits_paginated(boutique, request)
+        return Response(data)
 
     elif request.method == 'PATCH':
         serializer = BoutiqueMeUpdateSerializer(boutique, data=request.data, partial=True, context={'request': request})
@@ -1280,6 +1283,28 @@ def me_boutique(request):
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def me_boutique_produits(request):
+    """
+    GET: Liste paginée à 100 par page de TOUS les produits (Parfums & Accessoires) postés par la boutique de l'utilisateur connecté.
+    Filtres supportés :
+    - ?type=all|parfum|accessoire (défaut: all)
+    - ?categorie=<id_ou_slug> (id/slug de la CategorieParfum ou du TypeAccessoire)
+    - ?search=<terme> (nom, marque, SKU)
+    - ?actif=true|false
+    - ?ordering=-date_creation|prix_unitaire|stock_quantite|nom
+    - ?page=1
+    - ?page_size=100 (défaut: 100, max: 100)
+    """
+    user = request.user
+    if not hasattr(user, 'client') or not hasattr(user.client, 'boutique'):
+        return Response({"detail": "Vous n'avez pas de boutique."}, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = user.client.boutique
+    return Response(get_boutique_produits_paginated(boutique, request))
+
+
+@api_view(['GET'])
 @permission_classes([IsSuperadminOrServeuseReadOnly])
 def admin_boutiques_list(request):
     """
@@ -1295,20 +1320,123 @@ def admin_boutiques_list(request):
     return Response(serializer.data)
 
 
+def get_boutique_produits_paginated(boutique, request):
+    """
+    Récupère, filtre et pagine les produits (Parfums & Accessoires) d'une boutique.
+    Pagine à 100 éléments par page par défaut.
+    """
+    from catalogue.models import Parfum, Accessoire
+    from catalogue.serializers import ParfumSerializer, AccessoireSerializer
+    from django.db.models import Q
+
+    type_produit = request.query_params.get('type', 'all').lower() if request else 'all'
+    categorie = request.query_params.get('categorie') if request else None
+    search = request.query_params.get('search') if request else None
+    actif = request.query_params.get('actif') if request else None
+    ordering = request.query_params.get('ordering', '-date_creation') if request else '-date_creation'
+
+    try:
+        page = max(1, int(request.query_params.get('page', 1))) if request else 1
+    except (ValueError, TypeError):
+        page = 1
+
+    try:
+        page_size = min(100, max(1, int(request.query_params.get('page_size', 100)))) if request else 100
+    except (ValueError, TypeError):
+        page_size = 100
+
+    items = []
+
+    # 1. Parfums
+    if type_produit in ('all', 'parfum'):
+        qs_parfums = Parfum.objects.filter(boutique=boutique).select_related('categorie', 'boutique').prefetch_related('tags')
+        if search:
+            qs_parfums = qs_parfums.filter(
+                Q(nom__icontains=search) | Q(marque__icontains=search) | Q(reference_sku__icontains=search) | Q(description_courte__icontains=search)
+            )
+        if actif in ('true', '1', 'yes'):
+            qs_parfums = qs_parfums.filter(actif=True)
+        elif actif in ('false', '0', 'no'):
+            qs_parfums = qs_parfums.filter(actif=False)
+        if categorie:
+            if str(categorie).isdigit():
+                qs_parfums = qs_parfums.filter(categorie_id=int(categorie))
+            else:
+                qs_parfums = qs_parfums.filter(Q(categorie__slug=categorie) | Q(categorie__nom__icontains=categorie))
+        
+        for p in qs_parfums:
+            data = ParfumSerializer(p, context={'request': request}).data
+            data['type_produit'] = 'parfum'
+            items.append((p.date_creation, p.id, data))
+
+    # 2. Accessoires
+    if type_produit in ('all', 'accessoire'):
+        qs_accessoires = Accessoire.objects.filter(boutique=boutique).select_related('type_accessoire', 'boutique').prefetch_related('tags')
+        if search:
+            qs_accessoires = qs_accessoires.filter(
+                Q(nom__icontains=search) | Q(marque__icontains=search) | Q(reference_sku__icontains=search) | Q(description_courte__icontains=search)
+            )
+        if actif in ('true', '1', 'yes'):
+            qs_accessoires = qs_accessoires.filter(actif=True)
+        elif actif in ('false', '0', 'no'):
+            qs_accessoires = qs_accessoires.filter(actif=False)
+        if categorie:
+            if str(categorie).isdigit():
+                qs_accessoires = qs_accessoires.filter(type_accessoire_id=int(categorie))
+            else:
+                qs_accessoires = qs_accessoires.filter(Q(type_accessoire__slug=categorie) | Q(type_accessoire__nom__icontains=categorie))
+        
+        for a in qs_accessoires:
+            data = AccessoireSerializer(a, context={'request': request}).data
+            data['type_produit'] = 'accessoire'
+            items.append((a.date_creation, a.id, data))
+
+    # Tri global
+    reverse_sort = ordering.startswith('-')
+    sort_key_name = ordering.lstrip('-')
+
+    if sort_key_name == 'prix_unitaire':
+        items.sort(key=lambda x: Decimal(str(x[2].get('prix_unitaire', 0))), reverse=reverse_sort)
+    elif sort_key_name == 'nom':
+        items.sort(key=lambda x: str(x[2].get('nom', '')).lower(), reverse=reverse_sort)
+    elif sort_key_name in ('stock_quantite', 'stock'):
+        items.sort(key=lambda x: int(x[2].get('stock_quantite', 0)), reverse=reverse_sort)
+    else:
+        items.sort(key=lambda x: x[0], reverse=reverse_sort)
+
+    total_items = len(items)
+    total_pages = (total_items + page_size - 1) // page_size if total_items > 0 else 1
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_items = [item[2] for item in items[start_idx:end_idx]]
+
+    return {
+        "count": total_items,
+        "total_pages": total_pages,
+        "current_page": page,
+        "page_size": page_size,
+        "next": page + 1 if page < total_pages else None,
+        "previous": page - 1 if page > 1 else None,
+        "results": page_items
+    }
+
+
 @api_view(['GET', 'PATCH', 'DELETE'])
 @permission_classes([IsSuperadminOrServeuseReadOnly])
 @parser_classes([MultiPartParser, FormParser, JSONParser])
 def admin_boutique_detail(request, pk):
     """
-    GET: Détails d'une boutique (Admin).
+    GET: Détails d'une boutique (Admin) incluant ses produits postés paginés à 100 par page.
     PATCH: Modifier une boutique (statut, nom, etc.) par un Admin.
     DELETE: Supprimer une boutique (Admin).
     """
     boutique = get_object_or_404(Boutique, pk=pk)
 
     if request.method == 'GET':
-        serializer = BoutiqueSerializer(boutique, context={'request': request})
-        return Response(serializer.data)
+        serializer = BoutiqueAdminDetailSerializer(boutique, context={'request': request})
+        data = dict(serializer.data)
+        data['produits'] = get_boutique_produits_paginated(boutique, request)
+        return Response(data)
 
     elif request.method == 'PATCH':
         serializer = BoutiqueAdminUpdateSerializer(boutique, data=request.data, partial=True, context={'request': request})
@@ -1320,6 +1448,24 @@ def admin_boutique_detail(request, pk):
     elif request.method == 'DELETE':
         boutique.delete()
         return Response({"detail": "Boutique supprimée avec succès."}, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET'])
+@permission_classes([IsSuperadminOrServeuseReadOnly])
+def admin_boutique_produits(request, pk):
+    """
+    GET: Endpoint dédié pour lister les produits (Parfums & Accessoires) postés par la boutique <pk> avec pagination à 100 par page et filtres.
+    Filtres supportés :
+    - ?type=all|parfum|accessoire
+    - ?categorie=<id_ou_slug>
+    - ?search=<terme>
+    - ?actif=true|false
+    - ?ordering=-date_creation|prix_unitaire|stock_quantite|nom
+    - ?page=1
+    - ?page_size=100
+    """
+    boutique = get_object_or_404(Boutique, pk=pk)
+    return Response(get_boutique_produits_paginated(boutique, request))
 
 
 @api_view(['POST', 'PATCH'])
@@ -1378,6 +1524,165 @@ def validate_boutique(request, pk):
         }, status=status.HTTP_200_OK)
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def me_boutique_ventes(request):
+    """
+    GET: Liste des ventes des produits appartenant à la boutique de l'utilisateur connecté.
+    """
+    user = request.user
+    if not hasattr(user, 'client') or not hasattr(user.client, 'boutique'):
+        return Response({"detail": "Vous n'avez pas de boutique."}, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = user.client.boutique
+    from orders.models import VenteBoutique
+    ventes = VenteBoutique.objects.filter(boutique=boutique).select_related('commande')
+
+    serializer = VenteBoutiqueSerializer(ventes, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def me_boutique_portefeuille(request):
+    """
+    GET: Synthèse du portefeuille et solde de la boutique de l'utilisateur connecté.
+    """
+    user = request.user
+    if not hasattr(user, 'client') or not hasattr(user.client, 'boutique'):
+        return Response({"detail": "Vous n'avez pas de boutique."}, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = user.client.boutique
+    from orders.models import VenteBoutique, VersementBoutique
+    from django.db.models import Sum
+
+    total_brut = VenteBoutique.objects.filter(boutique=boutique, statut='valide').aggregate(s=Sum('montant_brut'))['s'] or Decimal('0.00')
+    total_commission_admin = VenteBoutique.objects.filter(boutique=boutique, statut='valide').aggregate(s=Sum('montant_commission_admin'))['s'] or Decimal('0.00')
+    total_net = VenteBoutique.objects.filter(boutique=boutique, statut='valide').aggregate(s=Sum('montant_net_boutique'))['s'] or Decimal('0.00')
+
+    versements = VersementBoutique.objects.filter(boutique=boutique)
+    versements_data = VersementBoutiqueSerializer(versements[:10], many=True).data
+
+    return Response({
+        "boutique_id": boutique.id,
+        "nom_boutique": boutique.nom,
+        "solde_disponible": str(boutique.solde_disponible),
+        "solde_total_recu": str(boutique.solde_total_recu),
+        "chiffre_affaires_brut": str(total_brut),
+        "total_commissions_admin": str(total_commission_admin),
+        "total_net_gagne": str(total_net),
+        "telephone_paiement": boutique.telephone_paiement,
+        "mode_paiement_prefere": boutique.mode_paiement_prefere,
+        "versements_recents": versements_data
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsSuperadmin])
+def admin_boutiques_financier(request):
+    """
+    GET: Synthèse financière globale de toutes les boutiques partenaires pour l'Admin (Superadmin uniquement).
+    """
+    from orders.models import VenteBoutique, VersementBoutique
+    from django.db.models import Sum
+
+    boutiques = Boutique.objects.filter(statut='actif')
+    res = []
+    for b in boutiques:
+        ca_brut = VenteBoutique.objects.filter(boutique=b, statut='valide').aggregate(s=Sum('montant_brut'))['s'] or Decimal('0.00')
+        comm_admin = VenteBoutique.objects.filter(boutique=b, statut='valide').aggregate(s=Sum('montant_commission_admin'))['s'] or Decimal('0.00')
+        net_b = VenteBoutique.objects.filter(boutique=b, statut='valide').aggregate(s=Sum('montant_net_boutique'))['s'] or Decimal('0.00')
+
+        res.append({
+            "id": b.id,
+            "nom": b.nom,
+            "proprietaire": b.proprietaire_nom,
+            "taux_commission": str(b.taux_commission),
+            "solde_disponible": str(b.solde_disponible),
+            "solde_total_recu": str(b.solde_total_recu),
+            "chiffre_affaires_brut": str(ca_brut),
+            "commissions_admin_perdues": str(comm_admin),
+            "net_boutique_cumule": str(net_b),
+            "telephone_paiement": b.telephone_paiement,
+            "mode_paiement_prefere": b.mode_paiement_prefere,
+        })
+
+    return Response(res)
+
+
+@api_view(['POST'])
+@permission_classes([IsSuperadmin])
+def admin_boutique_effectuer_versement(request, pk):
+    """
+    POST: L'Admin enregistre un versement (Payout) à une boutique et déduit son solde_disponible.
+    La clé d'idempotence ('idempotency_key', 'reference_transaction' ou header 'X-Idempotency-Key') est OBLIGATOIRE.
+    """
+    boutique = get_object_or_404(Boutique, pk=pk)
+    montant = Decimal(str(request.data.get('montant', 0)))
+    mode_paiement = request.data.get('mode_paiement', boutique.mode_paiement_prefere or 'OM')
+    telephone = request.data.get('telephone_destination', boutique.telephone_paiement or boutique.telephone)
+    note_admin = request.data.get('note_admin', '')
+
+    idempotency_key = request.data.get('idempotency_key') or request.data.get('reference_transaction') or request.META.get('HTTP_X_IDEMPOTENCY_KEY')
+
+    if not idempotency_key or not str(idempotency_key).strip():
+        return Response({
+            "detail": "La clé d'idempotence ('idempotency_key' ou 'reference_transaction') est obligatoire pour effectuer un versement."
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    idempotency_key = str(idempotency_key).strip()
+
+    from orders.models import VersementBoutique
+    existing_versement = VersementBoutique.objects.filter(reference_transaction=idempotency_key).first()
+    if existing_versement:
+        return Response({
+            "detail": f"Ce versement a déjà été enregistré (Traitement idempotent).",
+            "idempotent": True,
+            "versement": VersementBoutiqueSerializer(existing_versement).data,
+            "nouveau_solde_disponible": str(existing_versement.boutique.solde_disponible)
+        }, status=status.HTTP_200_OK)
+
+    if montant <= 0:
+        return Response({"detail": "Le montant du versement doit être supérieur à 0."}, status=status.HTTP_400_BAD_REQUEST)
+
+    if montant > boutique.solde_disponible:
+        return Response({
+            "detail": f"Le montant ({montant} FCFA) dépasse le solde disponible de la boutique ({boutique.solde_disponible} FCFA)."
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    ref = idempotency_key
+
+    versement = VersementBoutique.objects.create(
+        boutique=boutique,
+        montant=montant,
+        reference_transaction=ref,
+        mode_paiement=mode_paiement,
+        telephone_destination=telephone,
+        note_admin=note_admin,
+        effectue_par=request.user
+    )
+
+    boutique.solde_disponible -= montant
+    boutique.solde_total_recu += montant
+    boutique.save(update_fields=['solde_disponible', 'solde_total_recu'])
+
+    Notification.objects.create(
+        recipient=boutique.user,
+        type='versement_boutique',
+        title="Versement reçu !",
+        message=f"Un versement de {montant} FCFA a été effectué sur votre compte ({ref}).",
+        url="/me/boutique/portefeuille/",
+        metadata={'versement_id': versement.id, 'montant': str(montant), 'reference': ref}
+    )
+
+    return Response({
+        "detail": f"Versement de {montant} FCFA enregistré avec succès pour {boutique.nom}.",
+        "versement": VersementBoutiqueSerializer(versement).data,
+        "nouveau_solde_disponible": str(boutique.solde_disponible)
+    }, status=status.HTTP_201_CREATED)
+
 
 @api_view(['GET'])
 @permission_classes([IsSuperadminOrServeuseReadOnly])

@@ -3,7 +3,8 @@ from utilisateur.views import (
     manage_me, change_email, upload_photo_profil, GoogleLogin, apply_prestataire, supprimer_compte, 
     cancel_prestataire_application, list_prestataire_requests, validate_prestataire,
     prestataire_dashboard, prestataire_finance_history, prestataire_payouts_list,
-    apply_boutique, cancel_boutique_application, me_boutique, admin_boutiques_list, admin_boutique_detail, validate_boutique,
+    apply_boutique, cancel_boutique_application, me_boutique, me_boutique_produits, admin_boutiques_list, admin_boutique_detail, admin_boutique_produits, validate_boutique,
+    me_boutique_ventes, me_boutique_portefeuille, admin_boutiques_financier, admin_boutique_effectuer_versement,
     # Admin views
     admin_users_list, admin_user_toggle_status,
     admin_prestataires_list, admin_prestataire_update, admin_delete_prestataire,
@@ -65,6 +66,10 @@ urlpatterns = [
     # Workflow Boutique (Côté Client)
     path('boutique/apply/', apply_boutique, name='boutique-apply'),
     path('boutique/cancel/', cancel_boutique_application, name='boutique-cancel'),
+    path('boutique/produits/', me_boutique_produits, name='boutique-produits'),
+    path('me/boutique/produits/', me_boutique_produits, name='me-boutique-produits'),
+    path('boutique/ventes/', me_boutique_ventes, name='boutique-ventes'),
+    path('boutique/portefeuille/', me_boutique_portefeuille, name='boutique-portefeuille'),
 
     # Webhook public pour Campay Payouts
     path('payout/webhook/', campay_payout_webhook, name='campay-payout-webhook'),
@@ -88,8 +93,11 @@ urlpatterns = [
     
     # Admin Boutique Endpoints
     path('admin/boutiques/', admin_boutiques_list, name='admin-boutiques-list'),
+    path('admin/boutiques/financier/', admin_boutiques_financier, name='admin-boutiques-financier'),
     path('admin/boutiques/validate/<int:pk>/', validate_boutique, name='admin-boutique-validate'),
     path('admin/boutiques/<int:pk>/', admin_boutique_detail, name='admin-boutique-detail'),
+    path('admin/boutiques/<int:pk>/produits/', admin_boutique_produits, name='admin-boutique-produits'),
+    path('admin/boutiques/<int:pk>/effectuer-versement/', admin_boutique_effectuer_versement, name='admin-boutique-effectuer-versement'),
 
     # Admin Delivery Endpoints
     path('admin/livreurs/', admin_livreurs_list, name='admin-livreurs-list'),

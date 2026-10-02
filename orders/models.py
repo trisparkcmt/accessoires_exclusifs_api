@@ -732,6 +732,79 @@ class Commande(models.Model):
                 },
             )
 
+    def traiter_ventes_boutiques(self, original):
+        from utilisateur.models import Notification
+        from collections import defaultdict
+        
+        is_paid = self.statut_paiement == 'payé' and self.statut not in ['annulée', 'remboursée']
+        is_cancelled = self.statut in ['annulée', 'remboursée']
+
+        if is_paid:
+            ventes_par_boutique = defaultdict(Decimal)
+
+            for ligne in self.lignes_parfums.all():
+                if ligne.parfum and ligne.parfum.boutique:
+                    ventes_par_boutique[ligne.parfum.boutique] += ligne.sous_total
+
+            for ligne in self.lignes_accessoires.all():
+                if ligne.accessoire and ligne.accessoire.boutique:
+                    ventes_par_boutique[ligne.accessoire.boutique] += ligne.sous_total
+
+            for boutique, montant_brut in ventes_par_boutique.items():
+                taux = boutique.taux_commission or Decimal('0')
+                commission_admin = (montant_brut * (taux / Decimal('100'))).quantize(Decimal('0.01'))
+                net_boutique = montant_brut - commission_admin
+
+                vente, created = VenteBoutique.objects.get_or_create(
+                    commande=self,
+                    boutique=boutique,
+                    defaults={
+                        'montant_brut': montant_brut,
+                        'taux_commission_applique': taux,
+                        'montant_commission_admin': commission_admin,
+                        'montant_net_boutique': net_boutique,
+                        'statut': 'valide',
+                    }
+                )
+
+                if created:
+                    boutique.solde_disponible += net_boutique
+                    boutique.save(update_fields=['solde_disponible'])
+
+                    Notification.objects.create(
+                        recipient=boutique.user,
+                        type='vente_boutique',
+                        title="Nouvelle vente enregistrée !",
+                        message=(
+                            f"Vos produits ont fait l'objet d'une commande ({self.numero_commande}). "
+                            f"Gain net crédité : {net_boutique} FCFA."
+                        ),
+                        url=f'/api/v1/orders/commandes/{self.numero_commande}/',
+                        metadata={
+                            'commande_id': self.pk,
+                            'numero_commande': self.numero_commande,
+                            'montant_net': str(net_boutique),
+                        }
+                    )
+                elif vente.statut == 'en_attente':
+                    vente.montant_brut = montant_brut
+                    vente.taux_commission_applique = taux
+                    vente.montant_commission_admin = commission_admin
+                    vente.montant_net_boutique = net_boutique
+                    vente.statut = 'valide'
+                    vente.save()
+
+                    boutique.solde_disponible += net_boutique
+                    boutique.save(update_fields=['solde_disponible'])
+        elif is_cancelled:
+            ventes_a_annuler = self.ventes_boutiques.filter(statut='valide')
+            for vente in ventes_a_annuler:
+                boutique = vente.boutique
+                boutique.solde_disponible = max(Decimal('0'), boutique.solde_disponible - vente.montant_net_boutique)
+                boutique.save(update_fields=['solde_disponible'])
+                vente.statut = 'annule'
+                vente.save(update_fields=['statut'])
+
     def save(self, *args, **kwargs):
         if not self.numero_commande:
             for _ in range(10):
@@ -771,6 +844,7 @@ class Commande(models.Model):
             
         # 3. Commissions et Notifications
         self.traiter_commissions(original)
+        self.traiter_ventes_boutiques(original)
         self.traiter_livreur_notification(original)
         self.traiter_notification_parfum_perso(original)
 
@@ -1078,3 +1152,55 @@ class CommandeLigneDiffuseurParfum(models.Model):
 
     def __str__(self):
         return f"{self.quantite}x {self.nom_snapshot}"
+
+
+# ============================================================
+# VENTES ET VERSEMENTS BOUTIQUES PARTENAIRES
+# ============================================================
+class VenteBoutique(models.Model):
+    STATUT_CHOICES = [
+        ('en_attente', 'En attente'),
+        ('valide', 'Validé'),
+        ('paye', 'Versement effectué'),
+        ('annule', 'Annulé'),
+    ]
+
+    commande = models.ForeignKey('orders.Commande', on_delete=models.CASCADE, related_name='ventes_boutiques')
+    boutique = models.ForeignKey('utilisateur.Boutique', on_delete=models.CASCADE, related_name='ventes')
+    montant_brut = models.DecimalField(max_digits=12, decimal_places=2, help_text="Total des ventes de cette boutique dans cette commande")
+    taux_commission_applique = models.DecimalField(max_digits=5, decimal_places=2, help_text="Taux de commission Admin en %")
+    montant_commission_admin = models.DecimalField(max_digits=12, decimal_places=2, help_text="Part conservée par l'Admin")
+    montant_net_boutique = models.DecimalField(max_digits=12, decimal_places=2, help_text="Part nette à reverser à la boutique")
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='en_attente')
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_reglement = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'vente_boutique'
+        verbose_name = 'Vente Boutique'
+        verbose_name_plural = 'Ventes Boutiques'
+        ordering = ['-date_creation']
+
+    def __str__(self):
+        return f"Vente #{self.commande.numero_commande} — {self.boutique.nom} ({self.montant_net_boutique} FCFA)"
+
+
+class VersementBoutique(models.Model):
+    boutique = models.ForeignKey('utilisateur.Boutique', on_delete=models.CASCADE, related_name='versements')
+    montant = models.DecimalField(max_digits=12, decimal_places=2)
+    reference_transaction = models.CharField(max_length=100, unique=True)
+    mode_paiement = models.CharField(max_length=50, default='OM')
+    telephone_destination = models.CharField(max_length=20, blank=True)
+    note_admin = models.TextField(blank=True)
+    effectue_par = models.ForeignKey('utilisateur.User', on_delete=models.SET_NULL, null=True, related_name='versements_boutiques_effectues')
+    date_versement = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'versement_boutique'
+        verbose_name = 'Versement Boutique'
+        verbose_name_plural = 'Versements Boutiques'
+        ordering = ['-date_versement']
+
+    def __str__(self):
+        return f"Versement {self.reference_transaction} — {self.boutique.nom} ({self.montant} FCFA)"
+

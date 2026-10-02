@@ -1333,7 +1333,6 @@ class PrestataireCancelAndDeleteTest(APITestCase):
         self.assertFalse(Prestataire.objects.filter(pk=prestataire.pk).exists())
 
 
-<<<<<<< HEAD
 from catalogue.models import Parfum, Accessoire, CategorieParfum, TypeAccessoire
 
 class BoutiqueProduitCatalogTest(APITestCase):

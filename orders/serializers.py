@@ -414,6 +414,25 @@ class CodePromoAdminSerializer(serializers.ModelSerializer):
                 clients.append(client)
         return clients
 
+    def validate(self, attrs):
+        reduction = attrs.get('reduction_pourcentage', getattr(self.instance, 'reduction_pourcentage', Decimal('0')))
+        from utilisateur.models import Boutique
+        from django.db.models import Min
+        
+        boutiques_actives = Boutique.objects.filter(statut='actif')
+        if boutiques_actives.exists():
+            min_taux = boutiques_actives.aggregate(m=Min('taux_commission'))['m'] or Decimal('0')
+            if reduction > min_taux:
+                raise serializers.ValidationError({
+                    "reduction_pourcentage": (
+                        f"🚨 SÉCURITÉ FINANCIÈRE : Ce taux de réduction ({reduction}%) "
+                        f"est supérieur au taux de commission boutique le plus bas ({min_taux}%). "
+                        f"Vous risquez de perdre de l'argent sur les ventes multi-boutiques !"
+                    )
+                })
+        return attrs
+
+
 
 class CommandeLigneParfumSerializer(serializers.ModelSerializer):
     class Meta:
