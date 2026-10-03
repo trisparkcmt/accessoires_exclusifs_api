@@ -205,6 +205,7 @@ class BoutiqueVentesTest(TestCase):
         cmd = Commande.objects.create(
             client=self.client_boutique,
             livraison_nom_complet='Test Client',
+            sous_total=Decimal('10000.00'),
             total_ttc=Decimal('10000.00')
         )
         CommandeLigneParfum.objects.create(
