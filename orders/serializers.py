@@ -435,15 +435,65 @@ class CodePromoAdminSerializer(serializers.ModelSerializer):
 
 
 class CommandeLigneParfumSerializer(serializers.ModelSerializer):
+    boutique_id = serializers.SerializerMethodField()
+    boutique_nom = serializers.SerializerMethodField()
+    boutique_details = serializers.SerializerMethodField()
+
     class Meta:
         model = CommandeLigneParfum
-        fields = ['id', 'parfum', 'nom_snapshot', 'quantite', 'prix_unitaire_snapshot', 'remise_ligne', 'sous_total']
+        fields = [
+            'id', 'parfum', 'nom_snapshot', 'quantite', 'prix_unitaire_snapshot',
+            'remise_ligne', 'sous_total', 'boutique_id', 'boutique_nom', 'boutique_details'
+        ]
+
+    def get_boutique_id(self, obj):
+        return obj.parfum.boutique_id if obj.parfum and obj.parfum.boutique_id else None
+
+    def get_boutique_nom(self, obj):
+        return obj.parfum.boutique.nom if obj.parfum and obj.parfum.boutique else None
+
+    def get_boutique_details(self, obj):
+        if obj.parfum and obj.parfum.boutique:
+            b = obj.parfum.boutique
+            return {
+                'id': b.id,
+                'nom': b.nom,
+                'telephone': b.telephone,
+                'ville': b.ville,
+                'statut': b.statut
+            }
+        return None
 
 
 class CommandeLigneAccessoireSerializer(serializers.ModelSerializer):
+    boutique_id = serializers.SerializerMethodField()
+    boutique_nom = serializers.SerializerMethodField()
+    boutique_details = serializers.SerializerMethodField()
+
     class Meta:
         model = CommandeLigneAccessoire
-        fields = ['id', 'accessoire', 'nom_snapshot', 'quantite', 'prix_unitaire_snapshot', 'remise_ligne', 'sous_total']
+        fields = [
+            'id', 'accessoire', 'nom_snapshot', 'quantite', 'prix_unitaire_snapshot',
+            'remise_ligne', 'sous_total', 'boutique_id', 'boutique_nom', 'boutique_details'
+        ]
+
+    def get_boutique_id(self, obj):
+        return obj.accessoire.boutique_id if obj.accessoire and obj.accessoire.boutique_id else None
+
+    def get_boutique_nom(self, obj):
+        return obj.accessoire.boutique.nom if obj.accessoire and obj.accessoire.boutique else None
+
+    def get_boutique_details(self, obj):
+        if obj.accessoire and obj.accessoire.boutique:
+            b = obj.accessoire.boutique
+            return {
+                'id': b.id,
+                'nom': b.nom,
+                'telephone': b.telephone,
+                'ville': b.ville,
+                'statut': b.statut
+            }
+        return None
 
 
 class CommandeProduitFiniEssenceSerializer(serializers.ModelSerializer):
@@ -613,6 +663,7 @@ class CommandeSerializer(serializers.ModelSerializer):
     client_email = serializers.CharField(source='client.user.email', read_only=True)
     livreur_nom = serializers.SerializerMethodField()
     prestataire_code = serializers.CharField(source='prestataire.code_promo', read_only=True)
+    boutiques_fournisseurs = serializers.SerializerMethodField()
     
     class Meta:
         model = Commande
@@ -624,6 +675,7 @@ class CommandeSerializer(serializers.ModelSerializer):
             'livraison_nom_complet', 'livraison_quartier', 'livraison_ville', 'livraison_telephone',
             'date_livraison_estimee', 'date_livraison_reelle', 'note_client', 'note_interne',
             'motif_echec_livraison', 'date_creation', 'date_modification',
+            'boutiques_fournisseurs',
             'lignes_parfums', 'lignes_accessoires', 'lignes_produit_fini_essence',
             'lignes_parfums_perso', 'lignes_essence_personnalisee',
             'lignes_diffuseurs', 'facture'
@@ -633,6 +685,46 @@ class CommandeSerializer(serializers.ModelSerializer):
         if obj.livreur:
             return f"{obj.livreur.nom} {obj.livreur.prenom}"
         return None
+
+    def get_boutiques_fournisseurs(self, obj):
+        """
+        Retourne la liste des boutiques ayant fourni au moins un produit dans cette commande,
+        avec les montants des ventes associés si déjà calculés.
+        """
+        boutiques_dict = {}
+
+        # 1. Indexer les enregistrements VenteBoutique rattachés s'ils existent
+        ventes_by_boutique = {}
+        if hasattr(obj, 'ventes_boutiques'):
+            for v in obj.ventes_boutiques.all():
+                ventes_by_boutique[v.boutique_id] = v
+
+        def add_boutique(b):
+            if not b or b.id in boutiques_dict:
+                return
+            v = ventes_by_boutique.get(b.id)
+            boutiques_dict[b.id] = {
+                'id': b.id,
+                'nom': b.nom,
+                'telephone': b.telephone,
+                'ville': b.ville,
+                'statut': b.statut,
+                'montant_brut': str(v.montant_brut) if v else None,
+                'montant_commission_admin': str(v.montant_commission_admin) if v else None,
+                'montant_net_boutique': str(v.montant_net_boutique) if v else None,
+            }
+
+        # 2. Inspecter les Parfums
+        for ligne in obj.lignes_parfums.all():
+            if ligne.parfum and ligne.parfum.boutique:
+                add_boutique(ligne.parfum.boutique)
+
+        # 3. Inspecter les Accessoires
+        for ligne in obj.lignes_accessoires.all():
+            if ligne.accessoire and ligne.accessoire.boutique:
+                add_boutique(ligne.accessoire.boutique)
+
+        return list(boutiques_dict.values())
 
 
 class CompositionDirecteLigneSerializer(serializers.Serializer):

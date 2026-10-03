@@ -196,3 +196,38 @@ class BoutiqueVentesTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data['count'], 2)
         self.assertEqual(resp.data['page_size'], 100)
+
+    def test_commande_details_inclut_boutique_fournisseur(self):
+        """Test que la réponse des détails d'une commande contient l'indication de la boutique ayant fourni le produit."""
+        from orders.models import Commande, CommandeLigneParfum
+        from orders.serializers import CommandeSerializer
+
+        cmd = Commande.objects.create(
+            client=self.client_boutique,
+            livraison_nom_complet='Test Client',
+            total_ttc=Decimal('10000.00')
+        )
+        CommandeLigneParfum.objects.create(
+            commande=cmd,
+            parfum=self.parfum_boutique,
+            nom_snapshot=self.parfum_boutique.nom,
+            quantite=1,
+            prix_unitaire_snapshot=Decimal('10000.00'),
+            sous_total=Decimal('10000.00')
+        )
+
+        serializer = CommandeSerializer(cmd)
+        data = serializer.data
+
+        # Vérifier que les boutiques fournisseurs sont listées au niveau de la commande
+        self.assertIn('boutiques_fournisseurs', data)
+        self.assertEqual(len(data['boutiques_fournisseurs']), 1)
+        self.assertEqual(data['boutiques_fournisseurs'][0]['id'], self.boutique.id)
+        self.assertEqual(data['boutiques_fournisseurs'][0]['nom'], self.boutique.nom)
+
+        # Vérifier que la ligne de parfum contient l'indication de la boutique
+        self.assertEqual(len(data['lignes_parfums']), 1)
+        self.assertEqual(data['lignes_parfums'][0]['boutique_id'], self.boutique.id)
+        self.assertEqual(data['lignes_parfums'][0]['boutique_nom'], self.boutique.nom)
+        self.assertIsNotNone(data['lignes_parfums'][0]['boutique_details'])
+
