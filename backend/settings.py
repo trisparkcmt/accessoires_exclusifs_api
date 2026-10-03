@@ -314,11 +314,11 @@ SOCIALACCOUNT_PROVIDERS = {
     }
 }
 
-# URL du Frontend (Variable d'environnement ou localhost par défaut)
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+# URL du Frontend (Variable d'environnement ou https://dev.accessoiresexclusifs.com par défaut)
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://dev.accessoiresexclusifs.com')
 
 # URL du Backend/API (utilisé pour les liens dans les emails — reset password, etc.)
-BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000' if DEBUG else 'https://api.accessoiresexclusifs.com')
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000' if DEBUG else 'https://dev-api.accessoiresexclusifs.com')
 
 # Adaptateur personnalisé pour gérer la redirection des emails vers le Frontend
 ACCOUNT_ADAPTER = 'utilisateur.adapters.CustomAccountAdapter'

@@ -599,7 +599,7 @@ def meubler_site_par_defaut(sender, **kwargs):
             site, created = Site.objects.get_or_create(
                 id=site_id,
                 defaults={
-                    'domain': 'accessoiresexclusifs.com',
+                    'domain': 'dev.accessoiresexclusifs.com',
                     'name': 'Accessoires Exclusifs',
                 }
             )

@@ -309,7 +309,7 @@ def confirm_email_direct(request, key):
         except EmailConfirmation.DoesNotExist:
             confirmation = None
 
-    frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+    frontend_url = getattr(settings, 'FRONTEND_URL', 'https://dev.accessoiresexclusifs.com')
 
     if confirmation is None or confirmation.confirm(request) is None:
         error_html = """<!doctype html>
