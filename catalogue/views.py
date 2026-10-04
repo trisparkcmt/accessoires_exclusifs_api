@@ -246,7 +246,9 @@ class ParfumViewSet(viewsets.ModelViewSet):
         user = request.user if request else None
 
         if is_privileged_dashboard_user(request):
-            return Parfum.objects.all().select_related('categorie', 'boutique').prefetch_related('tags')
+            # L'admin ne voit QUE les parfums globaux (sans boutique) dans son catalogue.
+            # Les parfums ajoutés par une boutique sont visibles dans les détails de la boutique.
+            return Parfum.objects.filter(boutique__isnull=True).select_related('categorie', 'boutique').prefetch_related('tags')
         
         base_qs = Parfum.objects.select_related('categorie', 'boutique').prefetch_related('tags')
         boutique = None

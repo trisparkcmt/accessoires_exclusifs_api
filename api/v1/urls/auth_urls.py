@@ -5,6 +5,7 @@ from utilisateur.views import (
     prestataire_dashboard, prestataire_finance_history, prestataire_payouts_list,
     apply_boutique, cancel_boutique_application, me_boutique, me_boutique_produits, admin_boutiques_list, admin_boutique_detail, admin_boutique_produits, validate_boutique,
     me_boutique_ventes, me_boutique_portefeuille, admin_boutiques_financier, admin_boutique_effectuer_versement,
+    admin_boutique_parfum_toggle_actif,
     # Admin views
     admin_users_list, admin_user_toggle_status,
     admin_prestataires_list, admin_prestataire_update, admin_delete_prestataire,
@@ -97,6 +98,7 @@ urlpatterns = [
     path('admin/boutiques/validate/<int:pk>/', validate_boutique, name='admin-boutique-validate'),
     path('admin/boutiques/<int:pk>/', admin_boutique_detail, name='admin-boutique-detail'),
     path('admin/boutiques/<int:pk>/produits/', admin_boutique_produits, name='admin-boutique-produits'),
+    path('admin/boutiques/<int:pk>/parfums/<int:parfum_pk>/toggle-actif/', admin_boutique_parfum_toggle_actif, name='admin-boutique-parfum-toggle-actif'),
     path('admin/boutiques/<int:pk>/effectuer-versement/', admin_boutique_effectuer_versement, name='admin-boutique-effectuer-versement'),
 
     # Admin Delivery Endpoints

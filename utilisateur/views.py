@@ -1468,6 +1468,43 @@ def admin_boutique_produits(request, pk):
     return Response(get_boutique_produits_paginated(boutique, request))
 
 
+@api_view(['PATCH'])
+@permission_classes([IsSuperadminOrServeuseReadOnly])
+def admin_boutique_parfum_toggle_actif(request, pk, parfum_pk):
+    """
+    PATCH: Activer ou désactiver un parfum appartenant à une boutique (Admin uniquement).
+    L'admin ne peut modifier QUE le champ `actif`. Toute autre modification est ignorée.
+
+    Body: { "actif": true } ou { "actif": false }
+    """
+    from catalogue.models import Parfum
+    boutique = get_object_or_404(Boutique, pk=pk)
+    parfum = get_object_or_404(Parfum, pk=parfum_pk, boutique=boutique)
+
+    actif = request.data.get('actif')
+    if actif is None:
+        return Response(
+            {"detail": "Le champ 'actif' est requis."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if not isinstance(actif, bool):
+        return Response(
+            {"detail": "Le champ 'actif' doit être un booléen (true ou false)."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    parfum.actif = actif
+    parfum.save(update_fields=['actif'])
+
+    return Response({
+        "detail": f"Parfum {'activé' if actif else 'désactivé'} avec succès.",
+        "parfum_id": parfum.pk,
+        "nom": parfum.nom,
+        "actif": parfum.actif,
+        "boutique_id": boutique.pk,
+        "boutique_nom": boutique.nom,
+    }, status=status.HTTP_200_OK)
+
 @api_view(['POST', 'PATCH'])
 @permission_classes([IsSuperadmin])
 @parser_classes([JSONParser, FormParser])
