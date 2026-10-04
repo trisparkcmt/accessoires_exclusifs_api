@@ -394,12 +394,12 @@ class AdminPromoTestCase(APITestCase):
         self.assertIn("FCFA de commission", notif_versement.message)
         self.assertIn("PREST20", notif_versement.message)
         
-        # 5. Rembourser la commande (statut = 'remboursée')
+        # 5. Simulation de l'annulation d'une commande (statut = 'annulée')
         # Nettoyer les notifications
         Notification.objects.all().delete()
         
-        commande.statut = 'remboursée'
-        commande.statut_paiement = 'échoué' # Ou changer statut pour simuler annulation/remboursement
+        Commande.objects.filter(pk=commande.pk).update(statut='annulée', statut_paiement='échoué')
+        commande.refresh_from_db()
         commande.save()
         
         # Recharger le prestataire et vérifier que le solde a été récupéré
@@ -409,5 +409,5 @@ class AdminPromoTestCase(APITestCase):
         # Vérifier que le prestataire a reçu une notification de remboursement/annulation
         notif_annulation = Notification.objects.filter(recipient=self.client_user2, type='commission').first()
         self.assertIsNotNone(notif_annulation)
-        self.assertIn("retirée suite à l'annulation ou au remboursement", notif_annulation.message)
+        self.assertIn("retirée suite à l'annulation", notif_annulation.message)
 

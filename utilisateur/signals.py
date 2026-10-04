@@ -85,9 +85,9 @@ def capturer_ancien_statut_commande(sender, instance, **kwargs):
 def notifier_changement_commande(sender, instance, created, **kwargs):
     """
     Gestion stricte des notifications selon les règles métier demandées :
-    - Client : notifié UNIQUEMENT quand la commande est 'livrée' ou 'remboursée'.
+    - Client : notifié UNIQUEMENT quand la commande est 'livrée'.
     - Serveuses & Admins : notifiés lors d'une NOUVELLE commande passée.
-    - Prestataire : notifié lorsque son code promo génère une commission (payée/livrée) ou est remboursé.
+    - Prestataire : notifié lorsque son code promo génère une commission (payée/livrée).
     - Livreur : notifié lors d'une affectation, retrait d'affectation ou annulation de sa commande.
     """
     cmd_ref = getattr(instance, 'numero_commande', '') or f"#{instance.pk}"
@@ -118,7 +118,7 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
         ancien_livreur_id = getattr(instance, '_ancien_livreur_id', None)
         nouveau_livreur_id = instance.livreur_id
 
-        # --- A. NOTIFICATIONS CLIENT (Règle : UNIQUEMENT pour 'livrée' et 'remboursée') ---
+        # --- A. NOTIFICATIONS CLIENT (Règle : UNIQUEMENT pour 'livrée') ---
         if ancien_statut and ancien_statut != nouveau_statut and instance.client and instance.client.user:
             user_client = instance.client.user
             if nouveau_statut == 'livrée' and ancien_statut != 'livrée':
@@ -130,17 +130,8 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                     url=f"/api/v1/orders/commandes/{instance.pk}/",
                     metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref), 'statut': 'livrée'}
                 )
-            elif nouveau_statut == 'remboursée' and ancien_statut != 'remboursée':
-                Notification.objects.create(
-                    recipient=user_client,
-                    type='commande_remboursee',
-                    title=f"Commande {cmd_ref} remboursée 💳",
-                    message=f"Votre commande **{cmd_ref}** a été remboursée.",
-                    url=f"/api/v1/orders/commandes/{instance.pk}/",
-                    metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref), 'statut': 'remboursée'}
-                )
 
-        # --- B. NOTIFICATIONS PRESTATAIRE (quand son code promo génère une commission ou est remboursé) ---
+        # --- B. NOTIFICATIONS PRESTATAIRE (quand son code promo génère une commission) ---
         if instance.prestataire and instance.prestataire.client and instance.prestataire.client.user:
             user_prestataire = instance.prestataire.client.user
             if nouveau_statut in ['validé', 'livrée'] and ancien_statut not in ['validé', 'livrée']:
@@ -160,15 +151,6 @@ def notifier_changement_commande(sender, instance, created, **kwargs):
                         'commission_montant': str(instance.commission_montant),
                         'code_promo': str(code_promo_val),
                     }
-                )
-            elif nouveau_statut == 'remboursée' and ancien_statut != 'remboursée':
-                Notification.objects.create(
-                    recipient=user_prestataire,
-                    type='commission_annulee',
-                    title="Commande avec votre code remboursée ⚠️",
-                    message=f"La commande **{cmd_ref}** liée à votre code promo a été remboursée.",
-                    url="/api/v1/utilisateur/prestataire/dashboard/",
-                    metadata={'commande_id': str(instance.pk), 'numero_commande': str(cmd_ref)}
                 )
 
         # --- C. NOTIFICATIONS LIVREUR ---

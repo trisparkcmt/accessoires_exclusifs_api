@@ -75,7 +75,7 @@ class Panier(models.Model):
                 usage_unique_ok = not Commande.objects.filter(
                     client=self.client, 
                     code_promo_utilise__iexact=self.code_promo_applique
-                ).exclude(statut__in=['annulée', 'remboursée']).exists()
+                ).exclude(statut='annulée').exists()
             
             if promo_admin and self.client and usage_unique_ok and promo_admin.clients_autorises.filter(pk=self.client.pk).exists():
                 self.prestataire = None
@@ -193,7 +193,6 @@ class Commande(models.Model):
         ('validé', 'validé'),
         ('livrée', 'Livrée'),
         ('annulée', 'Annulée'),
-        ('remboursée', 'Remboursée'),
     ]
     STATUT_LIVRAISON_CHOICES = [
         ('en_attente_affectation', 'En attente affectation'),
@@ -266,7 +265,7 @@ class Commande(models.Model):
             except Commande.DoesNotExist:
                 return
 
-            # 1. Commande annulée ou remboursée -> Figée
+            # 1. Commande annulée -> Figée
             if original.statut == 'annulée':
                 if (
                     self.statut != 'annulée' or
@@ -275,15 +274,6 @@ class Commande(models.Model):
                     self.commission_statut != original.commission_statut
                 ):
                     raise ValidationError("Cette commande est annulée. Aucune modification de statut n'est possible sur une commande annulée.")
-
-            if original.statut == 'remboursée':
-                if (
-                    self.statut != 'remboursée' or
-                    self.statut_livraison != original.statut_livraison or
-                    self.statut_paiement != original.statut_paiement or
-                    self.commission_statut != original.commission_statut
-                ):
-                    raise ValidationError("Cette commande est remboursée. Elle est définitivement figée et ne peut plus être modifiée.")
 
             # 2. Impossible de retourner au statut 'en_attente'
             if original.statut != 'en_attente' and self.statut == 'en_attente':
@@ -301,9 +291,9 @@ class Commande(models.Model):
                 else:
                     raise ValidationError("Les statuts de livraison, paiement et commission ne peuvent être modifiés que lorsque la commande est au statut 'validé'.")
 
-            # 4. Statut 'remboursée' nécessite statut_paiement == 'payé'
-            if self.statut == 'remboursée' and self.statut_paiement != 'payé':
-                raise ValidationError("Une commande ne peut être mise au statut 'remboursée' que si son statut de paiement est 'payé'.")
+            # 4. Annulation d'une commande payée interdite
+            if original.statut_paiement == 'payé' and self.statut == 'annulée':
+                raise ValidationError("Une commande déjà payée ne peut pas être annulée.")
 
     def recalculer_commande(self):
         total_parfums = sum(ligne.sous_total for ligne in self.lignes_parfums.all())
@@ -330,7 +320,7 @@ class Commande(models.Model):
                 usage_unique_ok = not Commande.objects.filter(
                     client=self.client, 
                     code_promo_utilise__iexact=self.code_promo_utilise
-                ).exclude(pk=self.pk).exclude(statut__in=['annulée', 'remboursée']).exists()
+                ).exclude(pk=self.pk).exclude(statut='annulée').exists()
                 
             if promo_admin and self.client and usage_unique_ok and promo_admin.clients_autorises.filter(pk=self.client.pk).exists():
                 self.remise_code_promo = self.sous_total * (promo_admin.reduction_pourcentage / 100)
@@ -391,7 +381,7 @@ class Commande(models.Model):
                     ligne.save(update_fields=['mouvement_stock_genere'])
 
     def appliquer_stocks(self):
-        if self.statut in ['annulée', 'remboursée']:
+        if self.statut == 'annulée':
             return
 
         # 1. Produits personnalisés : décrémentation lors du passage à "validé"
@@ -525,7 +515,7 @@ class Commande(models.Model):
         # Données de l'ancien état
         prev_commission_montant = original.commission_montant if original else Decimal('0')
         
-        is_paid = self.statut_paiement == 'payé' and self.statut not in ['annulée', 'remboursée']
+        is_paid = self.statut_paiement == 'payé' and self.statut != 'annulée'
         
         if is_paid:
             if self.prestataire:
@@ -604,7 +594,7 @@ class Commande(models.Model):
                         message=f"La commission de {prev_commission_montant} FCFA pour la commande {self.numero_commande} a été retirée suite à la modification du code promo."
                     )
         else:
-            # Commande non payée, annulée ou remboursée
+            # Commande non payée ou annulée
             if self.commission_statut == 'versée':
                 prestataire_obj = self.prestataire or (original.prestataire if original else None)
                 if prestataire_obj:
@@ -616,19 +606,19 @@ class Commande(models.Model):
                         type_operation='bonus',
                         montant=-prev_commission_montant,
                         reference_commande=self.numero_commande,
-                        description=f"Annulation de commission suite à l'annulation/remboursement de la commande {self.numero_commande}"
+                        description=f"Annulation de commission suite à l'annulation de la commande {self.numero_commande}"
                     )
                     
-                    # Notification prestataire pour remboursement / annulation
+                    # Notification prestataire pour annulation
                     Notification.objects.create(
                         recipient=prestataire_obj.user,
                         type='commission',
                         title="Commission annulée",
-                        message=f"La commission de {prev_commission_montant} FCFA pour la commande {self.numero_commande} a été retirée suite à l'annulation ou au remboursement de la commande."
+                        message=f"La commission de {prev_commission_montant} FCFA pour la commande {self.numero_commande} a été retirée suite à l'annulation de la commande."
                     )
                 self.commission_statut = 'annulée'
                 Commande.objects.filter(pk=self.pk).update(commission_statut='annulée')
-            elif self.statut in ['annulée', 'remboursée'] and self.commission_statut == 'non_versée':
+            elif self.statut == 'annulée' and self.commission_statut == 'non_versée':
                 self.commission_statut = 'annulée'
                 Commande.objects.filter(pk=self.pk).update(commission_statut='annulée')
 
@@ -736,8 +726,8 @@ class Commande(models.Model):
         from utilisateur.models import Notification
         from collections import defaultdict
         
-        is_paid = self.statut_paiement == 'payé' and self.statut not in ['annulée', 'remboursée']
-        is_cancelled = self.statut in ['annulée', 'remboursée']
+        is_paid = self.statut_paiement == 'payé' and self.statut != 'annulée'
+        is_cancelled = self.statut == 'annulée'
 
         if is_paid:
             ventes_par_boutique = defaultdict(Decimal)

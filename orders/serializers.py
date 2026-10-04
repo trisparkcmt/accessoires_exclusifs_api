@@ -373,7 +373,7 @@ class AppliquerCodePromoSerializer(serializers.Serializer):
             raise serializers.ValidationError({"code_promo": "Vous n'êtes pas autorisé à utiliser ce code promo."})
             
         # Vérifier l'usage unique
-        if Commande.objects.filter(client=client, code_promo_utilise__iexact=code).exclude(statut__in=['annulée', 'remboursée']).exists():
+        if Commande.objects.filter(client=client, code_promo_utilise__iexact=code).exclude(statut='annulée').exists():
             raise serializers.ValidationError({"code_promo": "Vous avez déjà utilisé ce code promo."})
             
         data['promo_admin_obj'] = promo_admin

@@ -2817,9 +2817,9 @@ def admin_assign_delivery(request, pk):
             {"detail": "Veuillez d'abord mettre la commande au statut 'validé' avant de pouvoir modifier son statut de livraison ou l'assigner à un livreur."},
             status=status.HTTP_400_BAD_REQUEST
         )
-    elif commande.statut in ('annulée', 'remboursée'):
+    elif commande.statut == 'annulée':
         return Response(
-            {"detail": f"Cette commande est '{commande.statut}' et ne peut plus être assignée à un livreur."},
+            {"detail": "Cette commande est annulée et ne peut plus être assignée à un livreur."},
             status=status.HTTP_400_BAD_REQUEST
         )
 

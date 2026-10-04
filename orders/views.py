@@ -577,16 +577,10 @@ class CommandeDetailView(APIView):
         is_client_owner = hasattr(user, 'client') and commande.client == user.client
 
         if is_admin_or_serv:
-            # 1. Commande annulée ou remboursée -> Figée
+            # 1. Commande annulée -> Figée
             if commande.statut == 'annulée':
                 return Response(
                     {"detail": "Cette commande est annulée. Aucune modification de statut n'est possible sur une commande annulée."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            if commande.statut == 'remboursée':
-                return Response(
-                    {"detail": "Cette commande est remboursée. Elle est définitivement figée et ne peut plus être modifiée."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -617,14 +611,12 @@ class CommandeDetailView(APIView):
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-            # 4. Passage au statut 'remboursée' : uniquement si statut_paiement == 'payé'
-            if nouveau_statut == 'remboursée':
-                statut_paiement_apres = data.get('statut_paiement', commande.statut_paiement)
-                if statut_paiement_apres != 'payé':
-                    return Response(
-                        {"detail": "Une commande ne peut être mise au statut 'remboursée' que si son statut de paiement est 'payé'."},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+            # 4. Annulation d'une commande payée interdite
+            if commande.statut_paiement == 'payé' and nouveau_statut == 'annulée':
+                return Response(
+                    {"detail": "Une commande déjà payée ne peut pas être annulée."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
             # Application des modifications autorisées
             allowed_fields = {
@@ -731,7 +723,7 @@ class CommandeDetailView(APIView):
             if nouveau_statut == 'annulée' or action == 'annuler':
                 if commande.statut != 'en_attente':
                     return Response(
-                        {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée, annulée ou remboursée, vous ne pouvez plus l'annuler."},
+                        {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée ou annulée, vous ne pouvez plus l'annuler."},
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 commande.statut = 'annulée'
@@ -749,7 +741,7 @@ class CommandeDetailView(APIView):
         """
         Permet d'annuler une commande (met son statut à 'annulée' au lieu de supprimer le record).
         Client : autorisé uniquement si la commande est au statut 'en_attente'.
-        Admin/Serveuse : autorisé si la commande n'est pas déjà 'annulée' ou 'remboursée'.
+        Admin/Serveuse : autorisé si la commande n'est pas déjà 'annulée'.
         """
         commande = get_object_or_404(Commande, numero_commande=numero)
         self.check_object_permissions(request, commande)
@@ -759,9 +751,14 @@ class CommandeDetailView(APIView):
         is_admin_or_serv = user.is_superuser or is_active_serveuse(user)
 
         if is_admin_or_serv:
-            if commande.statut in ('annulée', 'remboursée'):
+            if commande.statut_paiement == 'payé':
                 return Response(
-                    {"detail": f"Cette commande est déjà au statut '{commande.statut}' et ne peut plus être annulée."},
+                    {"detail": "Une commande déjà payée ne peut pas être annulée."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if commande.statut == 'annulée':
+                return Response(
+                    {"detail": "Cette commande est déjà au statut 'annulée' et ne peut plus être annulée."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             commande.statut = 'annulée'
@@ -780,7 +777,7 @@ class CommandeDetailView(APIView):
 
         if commande.statut != 'en_attente':
             return Response(
-                {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée, annulée ou remboursée, vous ne pouvez plus l'annuler."},
+                {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée ou annulée, vous ne pouvez plus l'annuler."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -809,9 +806,14 @@ class CommandeAnnulerView(APIView):
         is_admin_or_serv = user.is_superuser or is_active_serveuse(user)
 
         if is_admin_or_serv:
-            if commande.statut in ('annulée', 'remboursée'):
+            if commande.statut_paiement == 'payé':
                 return Response(
-                    {"detail": f"Cette commande est déjà au statut '{commande.statut}' et ne peut plus être annulée."},
+                    {"detail": "Une commande déjà payée ne peut pas être annulée."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if commande.statut == 'annulée':
+                return Response(
+                    {"detail": "Cette commande est déjà au statut 'annulée' et ne peut plus être annulée."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             commande.statut = 'annulée'
@@ -830,7 +832,7 @@ class CommandeAnnulerView(APIView):
 
         if commande.statut != 'en_attente':
             return Response(
-                {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée, annulée ou remboursée, vous ne pouvez plus l'annuler."},
+                {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée ou annulée, vous ne pouvez plus l'annuler."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -1123,7 +1125,7 @@ class AdminStatistiquesBeneficesView(APIView):
         # Filtre de base sur les commandes :
         # On ne comptabilise que les commandes réellement PAYÉES (argent encaissé)
         # pour éviter de compter des revenus non encaissés.
-        filtre_commande = Q(statut_paiement='payé') & ~Q(statut__in=['annulée', 'remboursée'])
+        filtre_commande = Q(statut_paiement='payé') & ~Q(statut='annulée')
         if statut_cmd:
             filtre_commande &= Q(statut=statut_cmd)
         if date_debut:
