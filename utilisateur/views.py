@@ -1469,7 +1469,7 @@ def admin_boutique_produits(request, pk):
 
 
 @api_view(['PATCH'])
-@permission_classes([IsSuperadminOrServeuseReadOnly])
+@permission_classes([IsSuperadmin])
 def admin_boutique_parfum_toggle_actif(request, pk, parfum_pk):
     """
     PATCH: Activer ou désactiver un parfum appartenant à une boutique (Admin uniquement).
