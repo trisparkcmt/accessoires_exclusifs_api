@@ -4,7 +4,9 @@ import sys
 import django
 import csv
 import unicodedata
+import re
 from decimal import Decimal
+from django.db import transaction
 
 # Configuration de l'environnement Django
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -30,6 +32,7 @@ def create_or_update_superuser():
     user.set_password(password)
     user.save()
     if created:
+
         print(f"[+] Superutilisateur créé avec succès : {email}")
     else:
         print(f"[*] Superutilisateur mis à jour avec succès : {email}")
@@ -40,7 +43,7 @@ def get_or_create_categories():
     en gérant les correspondances insensibles à la casse.
     """
     categories = {}
-    for cat_name in ["MARQUE", "DUPE", "PARFUMS DE CREATEUR"]:
+    for cat_name in ["MARQUE", "DUPE", "PARFUMS DE DESIGNER"]:
         cat = CategorieParfum.objects.filter(nom__iexact=cat_name).first()
         if not cat:
             cat = CategorieParfum.objects.create(
@@ -53,7 +56,176 @@ def get_or_create_categories():
         categories[cat_name] = cat
     return categories
 
+@transaction.atomic
+def _importer_catalogue_tsv_sans_modification():
+    """Importe uniquement les produits absents, sans modifier les existants."""
+    csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalogue_parfums_complet.csv")
+    tag_columns = {
+        "concentration": "Concentration",
+        "saison": "Saison",
+        "famille olfative": "Famille olfactive",
+        "note de tete": "Note de tête",
+        "note de coeur": "Note de cœur",
+        "note de fond": "Note de fond",
+        "occasion": "Occasion",
+        "humeur": "Humeur",
+        "climat conseille": "Climat conseillé",
+        "signe astrologique": "Signe astrologique",
+    }
+
+    def normalize(value):
+        value = unicodedata.normalize("NFKD", (value or "").strip().casefold())
+        return " ".join("".join(char for char in value if not unicodedata.combining(char)).split())
+
+    def decimal_value(value, line_number):
+        cleaned = re.sub(r"[^0-9,.-]", "", (value or "").strip()).replace(",", "")
+        try:
+            amount = Decimal(cleaned)
+        except Exception as exc:
+            raise ValueError(f"Ligne {line_number}: prix invalide {value!r}") from exc
+        if amount < 0:
+            raise ValueError(f"Ligne {line_number}: le prix ne peut pas être négatif.")
+        return amount
+
+    def category_for(value, categories):
+        category = normalize(value)
+        if "niche" in category:
+            if "PARFUMS DE NICHE" not in categories:
+                categories["PARFUMS DE NICHE"], _ = CategorieParfum.objects.get_or_create(
+                    nom="PARFUMS DE NICHE",
+                    defaults={"description": "Parfums de niche"},
+                )
+            return categories["PARFUMS DE NICHE"]
+        if "designer" in category:
+            if "PARFUMS DE DESIGNER" not in categories:
+                existing = CategorieParfum.objects.filter(nom__iexact="PARFUMS DE DESIGNER").first()
+                if existing is None:
+                    raise ValueError("PARFUMS DE DESIGNER doit déjà exister en base.")
+                categories["PARFUMS DE DESIGNER"] = existing
+            return categories["PARFUMS DE DESIGNER"]
+        raise ValueError(f"Catégorie inconnue: {value!r}")
+
+    rows = []
+    with open(csv_path, "r", encoding="utf-8-sig", newline="") as source:
+        reader = csv.DictReader(source, delimiter="\t")
+        if not reader.fieldnames:
+            raise ValueError("En-tête CSV/TSV manquant.")
+        header = [normalize(name) for name in reader.fieldnames]
+        expected = {
+            "marque", "nom", "concentration", "contenance", "prix", "stock",
+            "description longue", "description courte", "description ia", "intensite",
+            "saison", "famille olfative", "note de tete", "note de coeur",
+            "note de fond", "occasion", "humeur", "climat conseille",
+            "signe astrologique", "categorie",
+        }
+        missing = expected.difference(header)
+        if missing:
+            raise ValueError(f"Colonnes manquantes: {', '.join(sorted(missing))}")
+
+        for line_number, raw in enumerate(reader, start=2):
+            if None in raw:
+                raise ValueError(f"Ligne {line_number}: nombre de colonnes incorrect.")
+            item = {normalize(key): (value or "").strip() for key, value in raw.items() if key}
+            if not item.get("nom") and not item.get("marque"):
+                continue
+            if not item.get("nom") or not item.get("marque"):
+                raise ValueError(f"Ligne {line_number}: nom et marque sont requis.")
+            size_match = re.search(r"\d+", item.get("contenance", ""))
+            stock_raw = item.get("stock", "")
+            try:
+                stock = int(stock_raw) if stock_raw else 0
+            except ValueError as exc:
+                raise ValueError(f"Ligne {line_number}: stock invalide {stock_raw!r}") from exc
+            if stock < 0:
+                raise ValueError(f"Ligne {line_number}: stock négatif interdit.")
+            intensity = normalize(item.get("intensite", ""))
+            intensity = {
+                "legere": "légère", "moderee": "moyenne", "moyenne": "moyenne", "legere a moderee": "moyenne",
+                "forte": "forte", "tres forte": "très forte", "": "",
+            }.get(intensity)
+            if intensity is None:
+                raise ValueError(f"Ligne {line_number}: intensité inconnue.")
+            rows.append({
+                "line": line_number,
+                "row": item,
+                "price": decimal_value(item.get("prix", ""), line_number),
+                "stock": stock,
+                "size": int(size_match.group()) if size_match else 100,
+                "intensity": intensity,
+            })
+
+    created = 0
+    updated = 0
+    unchanged = 0
+    seen = set()
+    categories = {}
+    tag_cache = {}
+    for parsed in rows:
+        item = parsed["row"]
+        identity = (
+            normalize(item["nom"]),
+            normalize(item["marque"]),
+            parsed["size"],
+            normalize(item.get("concentration", "")),
+        )
+        if identity in seen:
+            unchanged += 1
+            continue
+        seen.add(identity)
+        matches = Parfum.objects.filter(nom__iexact=item["nom"])
+        same_product = matches.filter(
+            contenance_ml=parsed["size"], marque__iexact=item["marque"]
+        )
+        existing_parfum = same_product.first()
+
+        if existing_parfum:
+            if existing_parfum.prix_unitaire != parsed["price"]:
+                ancien_prix = existing_parfum.prix_unitaire
+                existing_parfum.prix_unitaire = parsed["price"]
+                existing_parfum.save(update_fields=["prix_unitaire"])
+                updated += 1
+                print(
+                    f"[~] Prix mis à jour: {existing_parfum.nom} ({existing_parfum.marque}, {existing_parfum.contenance_ml}ml) "
+                    f"-> {ancien_prix} FCFA => {parsed['price']} FCFA"
+                )
+            else:
+                unchanged += 1
+                print(
+                    f"[*] Existant inchangé: {item['nom']} "
+                    f"({item['marque']}, {parsed['size']} ml, {item.get('concentration', '')})"
+                )
+            continue
+
+        parfum = Parfum.objects.create(
+            nom=item["nom"], marque=item["marque"],
+            categorie=category_for(item.get("categorie", ""), categories),
+            contenance_ml=parsed["size"], prix_unitaire=parsed["price"],
+            stock_quantite=parsed["stock"], intensite=parsed["intensity"],
+            duree=item.get("concentration", ""),
+            notes_tete=item.get("note de tete", ""),
+            notes_coeur=item.get("note de coeur", ""),
+            notes_fond=item.get("note de fond", ""),
+            description_courte=item.get("description courte", ""),
+            description_longue=item.get("description longue", ""),
+            description_ia=item.get("description ia", ""),
+            actif=True,
+        )
+        for column, tag_name in tag_columns.items():
+            value = item.get(column, "")
+            if not value:
+                continue
+            tag = tag_cache.get(tag_name)
+            if tag is None:
+                tag, _ = Tag.objects.get_or_create(nom=tag_name)
+                tag_cache[tag_name] = tag
+            TagParfum.objects.create(parfum=parfum, tag=tag, valeur=value)
+        created += 1
+        print(f"[+] Créé: {parfum.nom} ({parfum.marque})")
+
+    print(f"Import terminé: {created} créés, {updated} prix mis à jour, {unchanged} inchangés.")
+
 def import_parfums():
+    return _importer_catalogue_tsv_sans_modification()
     """Importe le catalogue CSV, affecte l'image principale et conserve les attributs en tags (y compris Type/concentration)."""
     csv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalogue_parfums_complet.csv")
     colonnes_en_tags = [
@@ -2417,5 +2589,4 @@ def import_parfums():
     print(f"==========================================")
 
 if __name__ == "__main__":
-    create_or_update_superuser()
     import_parfums()

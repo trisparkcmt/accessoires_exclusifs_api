@@ -603,7 +603,9 @@ class CommandeDetailView(APIView):
             champs_proteges_demandes = CHAMPS_PROTEGES.intersection(data.keys())
 
             target_statut = nouveau_statut or commande.statut
-            if champs_proteges_demandes and target_statut != 'validé':
+            # Les champs secondaires sont modifiables si la commande est 'validée' ou 'livrée'
+            statuts_autorises_secondaires = {'validé', 'livrée'}
+            if champs_proteges_demandes and target_statut not in statuts_autorises_secondaires:
                 if commande.statut == 'en_attente':
                     return Response(
                         {"detail": "Veuillez d'abord mettre la commande au statut 'validé' avant tout autre opération."},
@@ -611,7 +613,7 @@ class CommandeDetailView(APIView):
                     )
                 else:
                     return Response(
-                        {"detail": "Les statuts de livraison, paiement et commission ne peuvent être modifiés que lorsque la commande est au statut 'validé'."},
+                        {"detail": "Les statuts de livraison, paiement et commission ne peuvent être modifiés que lorsque la commande est au statut 'validé' ou 'livrée'."},
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
@@ -645,6 +647,16 @@ class CommandeDetailView(APIView):
 
             for k, v in update_data.items():
                 setattr(commande, k, v)
+
+            # Logique automatique : si statut_livraison passe à 'livrée' → paiement = 'payé'
+            if update_data.get('statut_livraison') == 'livrée' and 'statut_paiement' not in update_data:
+                commande.statut_paiement = 'payé'
+                if not commande.date_livraison_reelle:
+                    commande.date_livraison_reelle = timezone.now()
+
+            # Logique automatique : si statut_livraison passe à 'échouée' → paiement = 'échoué'
+            if update_data.get('statut_livraison') == 'échouée' and 'statut_paiement' not in update_data:
+                commande.statut_paiement = 'échoué'
 
             commande.save()
             return Response(CommandeSerializer(commande, context={'request': request}).data, status=status.HTTP_200_OK)
@@ -1108,8 +1120,12 @@ class AdminStatistiquesBeneficesView(APIView):
         date_fin   = request.query_params.get('date_fin')
         statut_cmd = request.query_params.get('statut', 'validé')  # par défaut : commandes validées
 
-        # Filtre de base sur les commandes
-        filtre_commande = Q(statut=statut_cmd) if statut_cmd else Q()
+        # Filtre de base sur les commandes :
+        # On ne comptabilise que les commandes réellement PAYÉES (argent encaissé)
+        # pour éviter de compter des revenus non encaissés.
+        filtre_commande = Q(statut_paiement='payé') & ~Q(statut__in=['annulée', 'remboursée'])
+        if statut_cmd:
+            filtre_commande &= Q(statut=statut_cmd)
         if date_debut:
             filtre_commande &= Q(date_creation__date__gte=date_debut)
         if date_fin:
