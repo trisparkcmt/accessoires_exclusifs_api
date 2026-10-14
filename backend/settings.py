@@ -398,6 +398,14 @@ EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', 'qvfs vdfn uyny xjqw')
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', f'ACCESSOIRES EXCLUSIFS <{EMAIL_SEND}>')
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
+# ============================================================
+# ADMINS — Reçoivent les emails d'erreur 500 Django automatiques
+# L'email d'alerte se définit via la variable d'env ALERT_ADMIN_EMAIL
+# ============================================================
+_alert_email = os.getenv('ALERT_ADMIN_EMAIL', EMAIL_SEND)
+ADMINS = [('Admin Accessoires Exclusifs', _alert_email)]
+MANAGERS = ADMINS
+
 # Configuration des cookies pour le domaine et ses sous-domaines (Production VPS)
 SESSION_COOKIE_SAMESITE = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
 SESSION_COOKIE_SECURE = os.getenv('SESSION_COOKIE_SECURE', str(not DEBUG)).lower() in ('true', '1', 'yes')
@@ -543,8 +551,17 @@ except Exception as _e:
 
 
 # ============================================================
-# LOGGING — Affichage des erreurs 500 dans les logs Gunicorn (stdout/stderr)
+# LOGGING — Logs console + email d'alerte sur les erreurs critiques
+# En production (DEBUG=False) : envoi email automatique sur ERROR+
+# En développement (DEBUG=True)  : logs console uniquement
 # ============================================================
+_log_handlers_django = ['console']
+_log_handlers_security = ['console']
+
+if not DEBUG:
+    _log_handlers_django = ['console', 'mail_admins']
+    _log_handlers_security = ['console', 'mail_admins']
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -553,11 +570,28 @@ LOGGING = {
             'format': '[{asctime}] {levelname} [{name}:{lineno}] {message}',
             'style': '{',
         },
+        'simple': {
+            'format': '[{levelname}] {message}',
+            'style': '{',
+        },
+    },
+    'filters': {
+        'require_debug_false': {
+            '()': 'django.utils.log.RequireDebugFalse',
+        },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
+        },
+        # Handler email — envoie un email à ADMINS sur chaque erreur en production
+        'mail_admins': {
+            'level': 'ERROR',
+            'filters': ['require_debug_false'],   # jamais en DEBUG local
+            'class': 'django.utils.log.AdminEmailHandler',
+            'formatter': 'verbose',
+            'include_html': False,
         },
     },
     'root': {
@@ -565,13 +599,39 @@ LOGGING = {
         'level': 'WARNING',
     },
     'loggers': {
+        # Erreurs Django générales (dont 500 serveur)
         'django': {
-            'handlers': ['console'],
+            'handlers': _log_handlers_django,
             'level': 'ERROR',
             'propagate': False,
         },
+        # Erreurs de requêtes HTTP (500 notamment) + alerte email
         'django.request': {
-            'handlers': ['console'],
+            'handlers': _log_handlers_django,
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        # Sécurité — tentatives de connexion suspectes, CSRF fails, etc.
+        'django.security': {
+            'handlers': _log_handlers_security,
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        # Alerte sur les erreurs de l'app orders (race conditions, paiements, etc.)
+        'orders': {
+            'handlers': _log_handlers_django,
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        # Alerte sur les erreurs des utilisateurs / boutiques
+        'utilisateur': {
+            'handlers': _log_handlers_django,
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        # Alerte sur les erreurs du catalogue
+        'catalogue': {
+            'handlers': _log_handlers_django,
             'level': 'ERROR',
             'propagate': False,
         },
