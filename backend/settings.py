@@ -421,6 +421,61 @@ CSRF_COOKIE_DOMAIN = os.getenv('CSRF_COOKIE_DOMAIN', None if DEBUG else '.access
 
 
 # ============================================================
+# CACHE — Redis (partagé entre workers Gunicorn)
+# En production  : Redis obligatoire (rate limiting + sessions partagés)
+# En dev local   : Redis si dispo, sinon LocMemCache (fallback automatique)
+# Variable d'env : REDIS_URL=redis://127.0.0.1:6379/1
+# ============================================================
+_redis_url = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1')
+
+if not DEBUG:
+    # Production — Redis requis
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': _redis_url,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                'SOCKET_CONNECT_TIMEOUT': 5,
+                'SOCKET_TIMEOUT': 5,
+                'IGNORE_EXCEPTIONS': False,  # Planter si Redis down en prod
+                'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+            },
+            'KEY_PREFIX': 'ae_prod',
+            'TIMEOUT': 300,  # 5 minutes par défaut
+        }
+    }
+else:
+    # Dev — Redis si disponible, LocMemCache sinon (pas de blocage)
+    try:
+        import redis as _redis_test
+        _r = _redis_test.StrictRedis.from_url(_redis_url, socket_connect_timeout=1)
+        _r.ping()
+        CACHES = {
+            'default': {
+                'BACKEND': 'django_redis.cache.RedisCache',
+                'LOCATION': _redis_url,
+                'OPTIONS': {
+                    'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                    'SOCKET_CONNECT_TIMEOUT': 2,
+                    'SOCKET_TIMEOUT': 2,
+                    'IGNORE_EXCEPTIONS': True,  # Silencieux en dev
+                },
+                'KEY_PREFIX': 'ae_dev',
+                'TIMEOUT': 300,
+            }
+        }
+    except Exception:
+        # Redis absent en dev → cache mémoire local (pas de rate limiting partagé)
+        CACHES = {
+            'default': {
+                'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+                'LOCATION': 'ae-dev-cache',
+            }
+        }
+
+
+# ============================================================
 # DRF SPECTACULAR (Swagger / OpenAPI)
 # ============================================================
 SPECTACULAR_SETTINGS = {
