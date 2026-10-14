@@ -1684,29 +1684,39 @@ def admin_boutique_effectuer_versement(request, pk):
     if montant <= 0:
         return Response({"detail": "Le montant du versement doit être supérieur à 0."}, status=status.HTTP_400_BAD_REQUEST)
 
-    if montant > boutique.solde_disponible:
-        return Response({
-            "detail": f"Le montant ({montant} FCFA) dépasse le solde disponible de la boutique ({boutique.solde_disponible} FCFA)."
-        }, status=status.HTTP_400_BAD_REQUEST)
+    # transaction.atomic() + select_for_update() pour éviter les race conditions sur le solde_disponible
+    # (deux admins qui versent simultanément ne peuvent pas dépasser le solde réel)
+    from django.db import transaction as db_transaction
+    try:
+        with db_transaction.atomic():
+            boutique_locked = Boutique.objects.select_for_update().get(pk=pk)
 
-    ref = idempotency_key
+            if montant > boutique_locked.solde_disponible:
+                return Response({
+                    "detail": f"Le montant ({montant} FCFA) dépasse le solde disponible de la boutique ({boutique_locked.solde_disponible} FCFA)."
+                }, status=status.HTTP_400_BAD_REQUEST)
 
-    versement = VersementBoutique.objects.create(
-        boutique=boutique,
-        montant=montant,
-        reference_transaction=ref,
-        mode_paiement=mode_paiement,
-        telephone_destination=telephone,
-        note_admin=note_admin,
-        effectue_par=request.user
-    )
+            ref = idempotency_key
 
-    boutique.solde_disponible -= montant
-    boutique.solde_total_recu += montant
-    boutique.save(update_fields=['solde_disponible', 'solde_total_recu'])
+            versement = VersementBoutique.objects.create(
+                boutique=boutique_locked,
+                montant=montant,
+                reference_transaction=ref,
+                mode_paiement=mode_paiement,
+                telephone_destination=telephone,
+                note_admin=note_admin,
+                effectue_par=request.user
+            )
+
+            boutique_locked.solde_disponible -= montant
+            boutique_locked.solde_total_recu += montant
+            boutique_locked.save(update_fields=['solde_disponible', 'solde_total_recu'])
+
+    except Boutique.DoesNotExist:
+        return Response({"detail": "Boutique introuvable."}, status=status.HTTP_404_NOT_FOUND)
 
     Notification.objects.create(
-        recipient=boutique.user,
+        recipient=boutique_locked.user,
         type='versement_boutique',
         title="Versement reçu !",
         message=f"Un versement de {montant} FCFA a été effectué sur votre compte ({ref}).",
@@ -1715,10 +1725,11 @@ def admin_boutique_effectuer_versement(request, pk):
     )
 
     return Response({
-        "detail": f"Versement de {montant} FCFA enregistré avec succès pour {boutique.nom}.",
+        "detail": f"Versement de {montant} FCFA enregistré avec succès pour {boutique_locked.nom}.",
         "versement": VersementBoutiqueSerializer(versement).data,
-        "nouveau_solde_disponible": str(boutique.solde_disponible)
+        "nouveau_solde_disponible": str(boutique_locked.solde_disponible)
     }, status=status.HTTP_201_CREATED)
+
 
 
 @api_view(['GET'])

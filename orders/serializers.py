@@ -371,13 +371,19 @@ class AppliquerCodePromoSerializer(serializers.Serializer):
         # Vérifier si le client est dans la liste autorisée
         if not promo_admin.clients_autorises.filter(pk=client.pk).exists():
             raise serializers.ValidationError({"code_promo": "Vous n'êtes pas autorisé à utiliser ce code promo."})
-            
-        # Vérifier l'usage unique
-        if Commande.objects.filter(client=client, code_promo_utilise__iexact=code).exclude(statut='annulée').exists():
-            raise serializers.ValidationError({"code_promo": "Vous avez déjà utilisé ce code promo."})
-            
+
+        # Vérifier l'usage unique avec select_for_update pour éviter la race condition
+        # entre la vérification et la création de la commande (double soumission simultanée)
+        from django.db import transaction
+        with transaction.atomic():
+            from utilisateur.models import Client as ClientModel
+            ClientModel.objects.select_for_update().get(pk=client.pk)
+            if Commande.objects.filter(client=client, code_promo_utilise__iexact=code).exclude(statut='annulée').exists():
+                raise serializers.ValidationError({"code_promo": "Vous avez déjà utilisé ce code promo."})
+
         data['promo_admin_obj'] = promo_admin
         return data
+
 
   
 class UserToClientRelatedField(serializers.PrimaryKeyRelatedField):

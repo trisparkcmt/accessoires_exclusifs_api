@@ -337,24 +337,26 @@ class Commande(models.Model):
         # Pour les matières premières (ingrédients et essences), la règle métier stipule qu'une fois
         # mélangés, ils ne peuvent plus être séparés. On n'effectue donc aucun retour en stock pour eux.
         # Seuls les produits finis standards (Parfums, Accessoires, Produits Finis Essences) sont réintégrés.
-        
-        # 1. Parfums standard
+        from django.db.models import F
+        from catalogue.models import Parfum as ParfumModel, Accessoire as AccessoireModel
+
+        # 1. Parfums standard — mise à jour atomique via F() pour éviter les race conditions
         for ligne in self.lignes_parfums.all():
             if ligne.mouvement_stock_genere:
                 if ligne.parfum:
-                    parfum = ligne.parfum
-                    parfum.stock_quantite += ligne.quantite
-                    parfum.save(update_fields=['stock_quantite'])
+                    ParfumModel.objects.filter(pk=ligne.parfum_id).update(
+                        stock_quantite=F('stock_quantite') + ligne.quantite
+                    )
                 ligne.mouvement_stock_genere = False
                 ligne.save(update_fields=['mouvement_stock_genere'])
 
-        # 2. Accessoires standard
+        # 2. Accessoires standard — mise à jour atomique via F()
         for ligne in self.lignes_accessoires.all():
             if ligne.mouvement_stock_genere:
                 if ligne.accessoire:
-                    accessoire = ligne.accessoire
-                    accessoire.stock_quantite += ligne.quantite
-                    accessoire.save(update_fields=['stock_quantite'])
+                    AccessoireModel.objects.filter(pk=ligne.accessoire_id).update(
+                        stock_quantite=F('stock_quantite') + ligne.quantite
+                    )
                 ligne.mouvement_stock_genere = False
                 ligne.save(update_fields=['mouvement_stock_genere'])
 
@@ -370,46 +372,52 @@ class Commande(models.Model):
                 ligne.mouvement_stock_genere = False
                 ligne.save(update_fields=['mouvement_stock_genere'])
 
-            # 4. Diffuseurs standard
-            for ligne in self.lignes_diffuseurs.all():
-                if ligne.mouvement_stock_genere:
-                    if ligne.diffuseur:
-                        diffuseur = ligne.diffuseur
-                        diffuseur.stock_quantite += ligne.quantite
-                        diffuseur.save(update_fields=['stock_quantite'])
-                    ligne.mouvement_stock_genere = False
-                    ligne.save(update_fields=['mouvement_stock_genere'])
+        # 4. Diffuseurs standard — mise à jour atomique via F()
+        for ligne in self.lignes_diffuseurs.all():
+            if ligne.mouvement_stock_genere:
+                if ligne.diffuseur:
+                    from catalogue.models import DiffuseurParfum
+                    DiffuseurParfum.objects.filter(pk=ligne.diffuseur_id).update(
+                        stock_quantite=F('stock_quantite') + ligne.quantite
+                    )
+                ligne.mouvement_stock_genere = False
+                ligne.save(update_fields=['mouvement_stock_genere'])
 
     def appliquer_stocks(self):
+        from django.db.models import F
+        from catalogue.models import Parfum as ParfumModel, Accessoire as AccessoireModel
+
         if self.statut == 'annulée':
             return
 
         # 1. Produits personnalisés : décrémentation lors du passage à "validé"
         if self.statut == 'validé':
-            # Parfums personnalisés
+            # Parfums personnalisés — select_for_update sur flacon et ingrédients pour éviter oversell
             for ligne in self.lignes_parfums_perso.all():
                 if not ligne.proportions_mises_a_jour:
                     cost_total = Decimal('0')
-                    # Flacon
+                    # Flacon — verrouillage pour mise à jour atomique
                     if ligne.parfum_personnalise.flacon:
-                        flacon = ligne.parfum_personnalise.flacon
-                        flacon.stock_quantite -= ligne.quantite
-                        flacon.save(update_fields=['stock_quantite'])
+                        from catalogue.models import Flacon
+                        flacon = Flacon.objects.select_for_update().get(pk=ligne.parfum_personnalise.flacon_id)
+                        Flacon.objects.filter(pk=flacon.pk).update(
+                            stock_quantite=F('stock_quantite') - ligne.quantite
+                        )
                         cost_total += Decimal(str(ligne.quantite)) * (flacon.prix_achat or Decimal('0'))
-                    # Essences
+                    # Essences (les lots sont déjà protégés par select_for_update dans prelever_lots)
                     p_perso = ligne.parfum_personnalise
                     total_prix_p_perso = p_perso.prix_total if p_perso.prix_total else Decimal('1')
                     for l_perf in p_perso.lignes.all():
                         if l_perf.essence:
                             lot = l_perf.essence
                             quantite_prelevee_ml = Decimal(str(ligne.quantite)) * l_perf.quantite_ml
-                            lot.stock_ml -= quantite_prelevee_ml
-                            lot.save(update_fields=['stock_ml'])
-                            
+                            from catalogue.models import LotEssence
+                            LotEssence.objects.filter(pk=lot.pk).update(
+                                stock_ml=F('stock_ml') - quantite_prelevee_ml
+                            )
                             # Calcul de la part de vente et création de la consommation
                             ratio_vente = l_perf.prix_ligne / total_prix_p_perso
                             vente_attribuee = ratio_vente * ligne.sous_total
-                            
                             from catalogue.models import LotEssenceConsommation
                             LotEssenceConsommation.objects.create(
                                 lot_essence=lot,
@@ -417,46 +425,55 @@ class Commande(models.Model):
                                 quantite_ml=quantite_prelevee_ml,
                                 prix_vente_attribue=vente_attribuee
                             )
+                            lot.refresh_from_db(fields=['prix_achat_par_ml'])
                             cost_total += quantite_prelevee_ml * (lot.prix_achat_par_ml or Decimal('0'))
                         elif l_perf.essence_personnalisee:
                             essence_perso = l_perf.essence_personnalisee
                             for l_ess in essence_perso.lignes.all():
-                                ing = l_ess.ingredient
+                                from catalogue.models import Ingredient
+                                ing_pk = l_ess.ingredient_id
                                 quantite_prelevee_ml = Decimal(str(ligne.quantite)) * l_perf.quantite_ml * l_ess.quantite_ml
-                                ing.stock_ml -= quantite_prelevee_ml
-                                ing.save(update_fields=['stock_ml'])
+                                # Mise à jour atomique via F() pour éviter les race conditions sur les ingrédients
+                                Ingredient.objects.filter(pk=ing_pk).update(
+                                    stock_ml=F('stock_ml') - quantite_prelevee_ml
+                                )
+                                ing = l_ess.ingredient
                                 cost_total += quantite_prelevee_ml * (ing.prix_achat_par_ml or Decimal('0'))
-                    
+
                     ligne.prix_achat_total_snapshot = cost_total
                     ligne.proportions_mises_a_jour = True
                     ligne.save(update_fields=['proportions_mises_a_jour', 'prix_achat_total_snapshot'])
 
-            # Essences personnalisées
+            # Essences personnalisées — F() sur ingrédients
             for ligne in self.lignes_essence_personnalisee.all():
                 if not ligne.proportions_mises_a_jour:
                     cost_total = Decimal('0')
                     essence_perso = ligne.essence_personnalise
                     if essence_perso:
                         for l_ess in essence_perso.lignes.all():
-                            ing = l_ess.ingredient
+                            from catalogue.models import Ingredient
+                            ing_pk = l_ess.ingredient_id
                             quantite_prelevee_ml = Decimal(str(ligne.quantite)) * l_ess.quantite_ml
-                            ing.stock_ml -= quantite_prelevee_ml
-                            ing.save(update_fields=['stock_ml'])
+                            Ingredient.objects.filter(pk=ing_pk).update(
+                                stock_ml=F('stock_ml') - quantite_prelevee_ml
+                            )
+                            ing = l_ess.ingredient
                             cost_total += quantite_prelevee_ml * (ing.prix_achat_par_ml or Decimal('0'))
-                    
+
                     ligne.prix_achat_total_snapshot = cost_total
                     ligne.proportions_mises_a_jour = True
                     ligne.save(update_fields=['proportions_mises_a_jour', 'prix_achat_total_snapshot'])
 
-        # 2. Produits standards : décrémentation lors du paiement
+        # 2. Produits standards : décrémentation lors du paiement — F() atomique pour éviter oversell
         if self.statut_paiement == 'payé':
             # Parfums standard
             for ligne in self.lignes_parfums.all():
                 if not ligne.mouvement_stock_genere:
                     if ligne.parfum:
-                        parfum = ligne.parfum
-                        parfum.stock_quantite -= ligne.quantite
-                        parfum.save(update_fields=['stock_quantite'])
+                        parfum = ParfumModel.objects.select_for_update().get(pk=ligne.parfum_id)
+                        ParfumModel.objects.filter(pk=parfum.pk).update(
+                            stock_quantite=F('stock_quantite') - ligne.quantite
+                        )
                         ligne.prix_achat_total_snapshot = Decimal(str(ligne.quantite)) * (parfum.prix_achat or Decimal('0'))
                     ligne.mouvement_stock_genere = True
                     ligne.save(update_fields=['mouvement_stock_genere', 'prix_achat_total_snapshot'])
@@ -465,26 +482,25 @@ class Commande(models.Model):
             for ligne in self.lignes_accessoires.all():
                 if not ligne.mouvement_stock_genere:
                     if ligne.accessoire:
-                        accessoire = ligne.accessoire
-                        accessoire.stock_quantite -= ligne.quantite
-                        accessoire.save(update_fields=['stock_quantite'])
+                        accessoire = AccessoireModel.objects.select_for_update().get(pk=ligne.accessoire_id)
+                        AccessoireModel.objects.filter(pk=accessoire.pk).update(
+                            stock_quantite=F('stock_quantite') - ligne.quantite
+                        )
                         ligne.prix_achat_total_snapshot = Decimal(str(ligne.quantite)) * (accessoire.prix_achat or Decimal('0'))
                     ligne.mouvement_stock_genere = True
                     ligne.save(update_fields=['mouvement_stock_genere', 'prix_achat_total_snapshot'])
 
-            # Produits finis essence standard
+            # Produits finis essence standard (lots déjà protégés par select_for_update dans prelever_lots)
             for ligne in self.lignes_produit_fini_essence.all():
                 if not ligne.mouvement_stock_genere:
                     if ligne.produit_fini_essence:
                         prod = ligne.produit_fini_essence
                         quantite_ml = Decimal(str(ligne.quantite)) * Decimal(str(prod.taille_ml))
                         prelevements = prod.essence.prelever_lots(quantite_ml)
-                        
-                        # Enregistrer les consommations par lot
+
                         cost_total = Decimal('0')
                         for lot, prelevement_ml in prelevements:
                             vente_attribuee = (prelevement_ml / quantite_ml) * ligne.sous_total
-                            
                             from catalogue.models import LotEssenceConsommation
                             LotEssenceConsommation.objects.create(
                                 lot_essence=lot,
@@ -493,37 +509,41 @@ class Commande(models.Model):
                                 prix_vente_attribue=vente_attribuee
                             )
                             cost_total += prelevement_ml * (lot.prix_achat_par_ml or Decimal('0'))
-                        
+
                         ligne.prix_achat_total_snapshot = cost_total
                     ligne.mouvement_stock_genere = True
                     ligne.save(update_fields=['mouvement_stock_genere', 'prix_achat_total_snapshot'])
 
-                # Diffuseurs standard
-                for ligne in self.lignes_diffuseurs.all():
-                    if not ligne.mouvement_stock_genere:
-                        if ligne.diffuseur:
-                            diffuseur = ligne.diffuseur
-                            diffuseur.stock_quantite -= ligne.quantite
-                            diffuseur.save(update_fields=['stock_quantite'])
-                            ligne.prix_achat_total_snapshot = Decimal(str(ligne.quantite)) * (diffuseur.prix_achat or Decimal('0'))
-                        ligne.mouvement_stock_genere = True
-                        ligne.save(update_fields=['mouvement_stock_genere', 'prix_achat_total_snapshot'])
+            # Diffuseurs standard
+            for ligne in self.lignes_diffuseurs.all():
+                if not ligne.mouvement_stock_genere:
+                    if ligne.diffuseur:
+                        from catalogue.models import DiffuseurParfum
+                        diffuseur = DiffuseurParfum.objects.select_for_update().get(pk=ligne.diffuseur_id)
+                        DiffuseurParfum.objects.filter(pk=diffuseur.pk).update(
+                            stock_quantite=F('stock_quantite') - ligne.quantite
+                        )
+                        ligne.prix_achat_total_snapshot = Decimal(str(ligne.quantite)) * (diffuseur.prix_achat or Decimal('0'))
+                    ligne.mouvement_stock_genere = True
+                    ligne.save(update_fields=['mouvement_stock_genere', 'prix_achat_total_snapshot'])
 
     def traiter_commissions(self, original):
-        from utilisateur.models import CommissionLog, Notification
-        
+        from utilisateur.models import CommissionLog, Notification, Prestataire
+
         # Données de l'ancien état
         prev_commission_montant = original.commission_montant if original else Decimal('0')
-        
+
         is_paid = self.statut_paiement == 'payé' and self.statut != 'annulée'
-        
+
         if is_paid:
             if self.prestataire:
                 if self.commission_statut == 'non_versée':
-                    # Attribution de la commission
-                    self.prestataire.solde_commission += self.commission_montant
-                    self.prestataire.save(update_fields=['solde_commission'])
-                    
+                    # select_for_update pour éviter les race conditions sur le solde_commission
+                    with transaction.atomic():
+                        prest = Prestataire.objects.select_for_update().get(pk=self.prestataire_id)
+                        prest.solde_commission += self.commission_montant
+                        prest.save(update_fields=['solde_commission'])
+
                     CommissionLog.objects.create(
                         prestataire=self.prestataire,
                         type_operation='vente',
@@ -531,10 +551,10 @@ class Commande(models.Model):
                         reference_commande=self.numero_commande,
                         description=f"Commission sur vente pour la commande {self.numero_commande}"
                     )
-                    
+
                     self.commission_statut = 'versée'
                     Commande.objects.filter(pk=self.pk).update(commission_statut='versée')
-                    
+
                     # Notification prestataire
                     code_msg = (
                         f" grâce à votre code promo {self.code_promo_utilise}"
@@ -560,9 +580,11 @@ class Commande(models.Model):
                 elif self.commission_statut == 'versée' and self.commission_montant != prev_commission_montant:
                     # Ajustement si modification de la commande
                     diff = self.commission_montant - prev_commission_montant
-                    self.prestataire.solde_commission += diff
-                    self.prestataire.save(update_fields=['solde_commission'])
-                    
+                    with transaction.atomic():
+                        prest = Prestataire.objects.select_for_update().get(pk=self.prestataire_id)
+                        prest.solde_commission += diff
+                        prest.save(update_fields=['solde_commission'])
+
                     CommissionLog.objects.create(
                         prestataire=self.prestataire,
                         type_operation='bonus',
@@ -573,9 +595,11 @@ class Commande(models.Model):
             else:
                 # Si le prestataire a été retiré après versement
                 if self.commission_statut == 'versée' and original and original.prestataire:
-                    original.prestataire.solde_commission -= prev_commission_montant
-                    original.prestataire.save(update_fields=['solde_commission'])
-                    
+                    with transaction.atomic():
+                        prest_orig = Prestataire.objects.select_for_update().get(pk=original.prestataire_id)
+                        prest_orig.solde_commission -= prev_commission_montant
+                        prest_orig.save(update_fields=['solde_commission'])
+
                     CommissionLog.objects.create(
                         prestataire=original.prestataire,
                         type_operation='bonus',
@@ -585,7 +609,7 @@ class Commande(models.Model):
                     )
                     self.commission_statut = 'annulée'
                     Commande.objects.filter(pk=self.pk).update(commission_statut='annulée')
-                    
+
                     # Notification prestataire pour annulation/retrait
                     Notification.objects.create(
                         recipient=original.prestataire.user,
@@ -598,9 +622,11 @@ class Commande(models.Model):
             if self.commission_statut == 'versée':
                 prestataire_obj = self.prestataire or (original.prestataire if original else None)
                 if prestataire_obj:
-                    prestataire_obj.solde_commission -= prev_commission_montant
-                    prestataire_obj.save(update_fields=['solde_commission'])
-                    
+                    with transaction.atomic():
+                        prest_obj = Prestataire.objects.select_for_update().get(pk=prestataire_obj.pk)
+                        prest_obj.solde_commission -= prev_commission_montant
+                        prest_obj.save(update_fields=['solde_commission'])
+
                     CommissionLog.objects.create(
                         prestataire=prestataire_obj,
                         type_operation='bonus',
@@ -608,7 +634,7 @@ class Commande(models.Model):
                         reference_commande=self.numero_commande,
                         description=f"Annulation de commission suite à l'annulation de la commande {self.numero_commande}"
                     )
-                    
+
                     # Notification prestataire pour annulation
                     Notification.objects.create(
                         recipient=prestataire_obj.user,
@@ -723,9 +749,9 @@ class Commande(models.Model):
             )
 
     def traiter_ventes_boutiques(self, original):
-        from utilisateur.models import Notification
+        from utilisateur.models import Notification, Boutique
         from collections import defaultdict
-        
+
         is_paid = self.statut_paiement == 'payé' and self.statut != 'annulée'
         is_cancelled = self.statut == 'annulée'
 
@@ -733,65 +759,71 @@ class Commande(models.Model):
             ventes_par_boutique = defaultdict(Decimal)
 
             for ligne in self.lignes_parfums.all():
-                if ligne.parfum and ligne.parfum.boutique:
-                    ventes_par_boutique[ligne.parfum.boutique] += ligne.sous_total
+                if ligne.parfum and ligne.parfum.boutique_id:
+                    ventes_par_boutique[ligne.parfum.boutique_id] += ligne.sous_total
 
             for ligne in self.lignes_accessoires.all():
-                if ligne.accessoire and ligne.accessoire.boutique:
-                    ventes_par_boutique[ligne.accessoire.boutique] += ligne.sous_total
+                if ligne.accessoire and ligne.accessoire.boutique_id:
+                    ventes_par_boutique[ligne.accessoire.boutique_id] += ligne.sous_total
 
-            for boutique, montant_brut in ventes_par_boutique.items():
-                taux = boutique.taux_commission or Decimal('0')
-                commission_admin = (montant_brut * (taux / Decimal('100'))).quantize(Decimal('0.01'))
-                net_boutique = montant_brut - commission_admin
+            for boutique_id, montant_brut in ventes_par_boutique.items():
+                # select_for_update pour éviter les race conditions sur le solde de la boutique
+                with transaction.atomic():
+                    boutique = Boutique.objects.select_for_update().get(pk=boutique_id)
+                    taux = boutique.taux_commission or Decimal('0')
+                    commission_admin = (montant_brut * (taux / Decimal('100'))).quantize(Decimal('0.01'))
+                    net_boutique = montant_brut - commission_admin
 
-                vente, created = VenteBoutique.objects.get_or_create(
-                    commande=self,
-                    boutique=boutique,
-                    defaults={
-                        'montant_brut': montant_brut,
-                        'taux_commission_applique': taux,
-                        'montant_commission_admin': commission_admin,
-                        'montant_net_boutique': net_boutique,
-                        'statut': 'valide',
-                    }
-                )
-
-                if created:
-                    boutique.solde_disponible += net_boutique
-                    boutique.save(update_fields=['solde_disponible'])
-
-                    Notification.objects.create(
-                        recipient=boutique.user,
-                        type='vente_boutique',
-                        title="Nouvelle vente enregistrée !",
-                        message=(
-                            f"Vos produits ont fait l'objet d'une commande ({self.numero_commande}). "
-                            f"Gain net crédité : {net_boutique} FCFA."
-                        ),
-                        url=f'/api/v1/orders/commandes/{self.numero_commande}/',
-                        metadata={
-                            'commande_id': self.pk,
-                            'numero_commande': self.numero_commande,
-                            'montant_net': str(net_boutique),
+                    vente, created = VenteBoutique.objects.get_or_create(
+                        commande=self,
+                        boutique=boutique,
+                        defaults={
+                            'montant_brut': montant_brut,
+                            'taux_commission_applique': taux,
+                            'montant_commission_admin': commission_admin,
+                            'montant_net_boutique': net_boutique,
+                            'statut': 'valide',
                         }
                     )
-                elif vente.statut == 'en_attente':
-                    vente.montant_brut = montant_brut
-                    vente.taux_commission_applique = taux
-                    vente.montant_commission_admin = commission_admin
-                    vente.montant_net_boutique = net_boutique
-                    vente.statut = 'valide'
-                    vente.save()
 
-                    boutique.solde_disponible += net_boutique
-                    boutique.save(update_fields=['solde_disponible'])
+                    if created:
+                        boutique.solde_disponible += net_boutique
+                        boutique.save(update_fields=['solde_disponible'])
+
+                        Notification.objects.create(
+                            recipient=boutique.user,
+                            type='vente_boutique',
+                            title="Nouvelle vente enregistrée !",
+                            message=(
+                                f"Vos produits ont fait l'objet d'une commande ({self.numero_commande}). "
+                                f"Gain net crédité : {net_boutique} FCFA."
+                            ),
+                            url=f'/api/v1/orders/commandes/{self.numero_commande}/',
+                            metadata={
+                                'commande_id': self.pk,
+                                'numero_commande': self.numero_commande,
+                                'montant_net': str(net_boutique),
+                            }
+                        )
+                    elif vente.statut == 'en_attente':
+                        vente.montant_brut = montant_brut
+                        vente.taux_commission_applique = taux
+                        vente.montant_commission_admin = commission_admin
+                        vente.montant_net_boutique = net_boutique
+                        vente.statut = 'valide'
+                        vente.save()
+
+                        boutique.solde_disponible += net_boutique
+                        boutique.save(update_fields=['solde_disponible'])
+
         elif is_cancelled:
             ventes_a_annuler = self.ventes_boutiques.filter(statut='valide')
             for vente in ventes_a_annuler:
-                boutique = vente.boutique
-                boutique.solde_disponible = max(Decimal('0'), boutique.solde_disponible - vente.montant_net_boutique)
-                boutique.save(update_fields=['solde_disponible'])
+                # select_for_update pour éviter les race conditions lors du débit du solde
+                with transaction.atomic():
+                    boutique = Boutique.objects.select_for_update().get(pk=vente.boutique_id)
+                    boutique.solde_disponible = max(Decimal('0'), boutique.solde_disponible - vente.montant_net_boutique)
+                    boutique.save(update_fields=['solde_disponible'])
                 vente.statut = 'annule'
                 vente.save(update_fields=['statut'])
 
