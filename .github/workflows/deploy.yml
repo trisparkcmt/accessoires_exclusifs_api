@@ -61,3 +61,52 @@ jobs:
             systemctl daemon-reload
             systemctl restart gunicorn
             systemctl reload nginx
+
+  notify:
+    name: Send Email Notification
+    runs-on: ubuntu-latest
+    needs: [test-prod, deploy]
+    if: always()
+    steps:
+      - name: Determine status
+        id: status
+        run: |
+          if [ "${{ needs.deploy.result }}" = "success" ] && [ "${{ needs.test-prod.result }}" = "success" ]; then
+            echo "status=✅ SUCCÈS" >> $GITHUB_OUTPUT
+            echo "emoji=✅" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.test-prod.result }}" = "failure" ]; then
+            echo "status=❌ ÉCHEC DES TESTS" >> $GITHUB_OUTPUT
+            echo "emoji=❌" >> $GITHUB_OUTPUT
+          else
+            echo "status=❌ ÉCHEC DU DÉPLOIEMENT" >> $GITHUB_OUTPUT
+            echo "emoji=❌" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send email alert
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          username: ${{ secrets.ALERT_EMAIL_USER }}
+          password: ${{ secrets.ALERT_EMAIL_PASSWORD }}
+          to: ${{ secrets.ALERT_EMAIL_TO }}
+          from: "CI/CD Accessoires Exclusifs <${{ secrets.ALERT_EMAIL_USER }}>"
+          subject: "[${{ steps.status.outputs.emoji }} PROD] Déploiement master — ${{ steps.status.outputs.status }}"
+          body: |
+            Bonjour,
+
+            Résultat du déploiement PRODUCTION (branche master) :
+
+            Statut      : ${{ steps.status.outputs.status }}
+            Commit      : ${{ github.sha }}
+            Message     : ${{ github.event.head_commit.message }}
+            Auteur      : ${{ github.event.head_commit.author.name }}
+            Date        : ${{ github.event.head_commit.timestamp }}
+
+            Tests       : ${{ needs.test-prod.result }}
+            Déploiement : ${{ needs.deploy.result }}
+
+            Voir le détail : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            --
+            CI/CD Accessoires Exclusifs
