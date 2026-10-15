@@ -29,10 +29,15 @@ python manage.py collectstatic --noinput --clear
 echo "🔍 [5/6] Vérification Django..."
 python manage.py check
 
-echo "🔄 [6/6] Mise à jour du service systemd et redémarrage de $SERVICE..."
+echo "🔄 [6/6] Mise à jour des services systemd et redémarrage (Gunicorn + Celery)..."
 cp "$APP_DIR/deploy/dev/gunicorn_dev.service" /etc/systemd/system/gunicorn_dev.service
+cp "$APP_DIR/deploy/dev/celery_dev.service" /etc/systemd/system/celery_dev.service
+cp "$APP_DIR/deploy/dev/celerybeat_dev.service" /etc/systemd/system/celerybeat_dev.service
 systemctl daemon-reload
+systemctl enable --now celery_dev.service celerybeat_dev.service 2>/dev/null || true
 systemctl restart "$SERVICE"
+systemctl restart celery_dev.service 2>/dev/null || true
+systemctl restart celerybeat_dev.service 2>/dev/null || true
 
 echo ""
 echo "✅ Déploiement dev terminé !"
