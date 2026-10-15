@@ -79,4 +79,22 @@ class CustomAccountAdapter(DefaultAccountAdapter):
         # Ajout de FRONTEND_URL à tous les contextes d'email pour le bouton général/footer
         context['frontend_url'] = settings.FRONTEND_URL
 
-        super().send_mail(template_prefix, email, context)
+        msg = self.render_mail(template_prefix, email, context)
+        try:
+            from utilisateur.tasks import send_email_async
+            html_content = None
+            if getattr(msg, 'alternatives', None):
+                for alt_content, mimetype in msg.alternatives:
+                    if mimetype == 'text/html':
+                        html_content = alt_content
+                        break
+            send_email_async.delay(
+                subject=msg.subject,
+                message=msg.body,
+                recipient_list=msg.to,
+                from_email=msg.from_email,
+                html_message=html_content,
+            )
+        except Exception:
+            # Fallback immédiat si Celery / Redis est temporairement indisponible
+            msg.send()

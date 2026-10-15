@@ -883,12 +883,17 @@ class Commande(models.Model):
             )
             if vient_detre_paye or commande_modifiee_apres_paiement:
                 try:
-                    from orders.services import generer_facture
-                    generer_facture(self)
-                except Exception as e:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.error(f"[FACTURE] Erreur génération facture pour {self.numero_commande}: {e}")
+                    from orders.tasks import generer_facture_async
+                    commande_id = self.id
+                    transaction.on_commit(lambda: generer_facture_async.delay(commande_id))
+                except Exception:
+                    try:
+                        from orders.services import generer_facture
+                        generer_facture(self)
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"[FACTURE] Erreur génération facture pour {self.numero_commande}: {e}")
 
 
 

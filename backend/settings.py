@@ -94,6 +94,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'storages',
+    'django_celery_beat',
    
     
     'allauth',
@@ -416,11 +417,86 @@ CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', str(not DEBUG)).lower() in 
 SESSION_COOKIE_DOMAIN = os.getenv('SESSION_COOKIE_DOMAIN', None if DEBUG else '.accessoiresexclusifs.com')
 CSRF_COOKIE_DOMAIN = os.getenv('CSRF_COOKIE_DOMAIN', None if DEBUG else '.accessoiresexclusifs.com')
 
+# ============================================================
+# CACHE — Redis (partagé entre workers Gunicorn)
+# ============================================================
+import sys
+_is_testing = 'test' in sys.argv
+_redis_url = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1')
 
-
+if not DEBUG and not _is_testing:
+    # Production — Redis requis
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': _redis_url,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                'SOCKET_CONNECT_TIMEOUT': 5,
+                'SOCKET_TIMEOUT': 5,
+                'IGNORE_EXCEPTIONS': False,
+                'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+            },
+            'KEY_PREFIX': 'ae_prod',
+            'TIMEOUT': 300,
+        }
+    }
+else:
+    # Dev ou Tests — Redis si disponible, LocMemCache sinon
+    try:
+        import redis as _redis_test
+        _r = _redis_test.StrictRedis.from_url(_redis_url, socket_connect_timeout=1)
+        _r.ping()
+        CACHES = {
+            'default': {
+                'BACKEND': 'django_redis.cache.RedisCache',
+                'LOCATION': _redis_url,
+                'OPTIONS': {
+                    'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                    'SOCKET_CONNECT_TIMEOUT': 2,
+                    'SOCKET_TIMEOUT': 2,
+                    'IGNORE_EXCEPTIONS': True,
+                },
+                'KEY_PREFIX': 'ae_dev',
+                'TIMEOUT': 300,
+            }
+        }
+    except Exception:
+        CACHES = {
+            'default': {
+                'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+                'LOCATION': 'ae-dev-cache',
+            }
+        }
 
 
 # ============================================================
+# CELERY — Tâches asynchrones (Redis Broker & Result Backend)
+# ============================================================
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0'))
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0'))
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes max par tâche
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60
+
+# En mode test unitaire : exécution immédiate sans broker externe
+if _is_testing:
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True
+
+# Celery Beat — Planification des tâches périodiques (ex: paniers abandonnés)
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_BEAT_SCHEDULE = {
+    'relancer-paniers-abandonnes-toutes-les-heures': {
+        'task': 'orders.tasks.relancer_paniers_abandonnes_task',
+        'schedule': 3600.0,  # Chaque heure
+    },
+}
+
 # DRF SPECTACULAR (Swagger / OpenAPI)
 # ============================================================
 SPECTACULAR_SETTINGS = {
