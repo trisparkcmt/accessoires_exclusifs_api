@@ -14,6 +14,8 @@ from orders.models import (
     CommandeLigneAccessoire,
     CommandeLigneParfum,
     CommandeLigneParfumPerso,
+    CommandeProduitFiniEssence,
+    CommandeLigneEssencePersonnalisee,
     CommandeLigneDiffuseurParfum,
 )
 from orders.serializers import ParfumPersoDetailSerializer
@@ -416,55 +418,100 @@ class MeClientSerializer(serializers.ModelSerializer):
 class MeFavoriSerializer(serializers.ModelSerializer):
     type_produit = serializers.SerializerMethodField()
     produit_id = serializers.SerializerMethodField()
+    id_produit = serializers.SerializerMethodField()
     nom_produit = serializers.SerializerMethodField()
     prix_produit = serializers.SerializerMethodField()
     image_produit = serializers.SerializerMethodField()
+    slug_produit = serializers.SerializerMethodField()
     detail_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Favori
         fields = [
-            'id', 'type_produit', 'produit_id', 'nom_produit',
-            'prix_produit', 'image_produit', 'detail_url', 'date_ajout'
+            'id', 'type_produit', 'produit_id', 'id_produit', 'nom_produit',
+            'prix_produit', 'image_produit', 'slug_produit', 'detail_url', 'date_ajout'
         ]
 
     def get_type_produit(self, obj):
-        return 'parfum' if obj.parfum_id else 'accessoire'
+        if obj.parfum_id:
+            return 'parfum'
+        elif obj.accessoire_id:
+            return 'accessoire'
+        elif obj.produit_fini_essence_id:
+            return 'produit_fini_essence'
+        return 'inconnu'
 
     def get_produit_id(self, obj):
-        if obj.parfum_id:
-            return obj.parfum_id
-        return obj.accessoire_id
+        return obj.parfum_id or obj.accessoire_id or obj.produit_fini_essence_id
+
+    def get_id_produit(self, obj):
+        return self.get_produit_id(obj)
 
     def get_nom_produit(self, obj):
-        produit = obj.parfum or obj.accessoire
-        return produit.nom if produit else None
+        if obj.parfum:
+            return obj.parfum.nom
+        if obj.accessoire:
+            return obj.accessoire.nom
+        if obj.produit_fini_essence:
+            essence = obj.produit_fini_essence.essence
+            nom_essence = essence.nom if essence else "Huile de parfum"
+            return f"{nom_essence} - {obj.produit_fini_essence.taille_ml}ml"
+        return None
 
     def get_prix_produit(self, obj):
-        produit = obj.parfum or obj.accessoire
-        return str(produit.prix_actuel) if produit else None
+        if obj.parfum:
+            return str(obj.parfum.prix_actuel)
+        if obj.accessoire:
+            return str(obj.accessoire.prix_actuel)
+        if obj.produit_fini_essence:
+            return str(obj.produit_fini_essence.prix_actuel)
+        return None
 
     def get_image_produit(self, obj):
-        produit = obj.parfum or obj.accessoire
-        image = getattr(produit, 'image_principale', None)
+        image = None
+        if obj.parfum and obj.parfum.image_principale:
+            image = obj.parfum.image_principale
+        elif obj.accessoire and obj.accessoire.image_principale:
+            image = obj.accessoire.image_principale
+        elif obj.produit_fini_essence:
+            if getattr(obj.produit_fini_essence, 'image_principale', None):
+                image = obj.produit_fini_essence.image_principale
+            elif obj.produit_fini_essence.essence and getattr(obj.produit_fini_essence.essence, 'image_principale', None):
+                image = obj.produit_fini_essence.essence.image_principale
+
         if not image:
             return None
+
         request = self.context.get('request')
         if request:
             return request.build_absolute_uri(image.url)
         return image.url
 
+    def get_slug_produit(self, obj):
+        if obj.parfum:
+            return obj.parfum.slug
+        if obj.accessoire:
+            return obj.accessoire.slug
+        if obj.produit_fini_essence and obj.produit_fini_essence.essence:
+            return obj.produit_fini_essence.essence.slug
+        return None
+
     def get_detail_url(self, obj):
-        produit = obj.parfum or obj.accessoire
-        if not produit:
+        request = self.context.get('request')
+        url = None
+        try:
+            if obj.parfum:
+                url = reverse('parfum-detail', kwargs={'slug': obj.parfum.slug})
+            elif obj.accessoire:
+                url = reverse('accessoire-detail', kwargs={'slug': obj.accessoire.slug})
+            elif obj.produit_fini_essence:
+                url = reverse('produitessence-detail', kwargs={'pk': obj.produit_fini_essence.pk})
+        except Exception:
             return None
 
-        if obj.parfum_id:
-            url = reverse('parfum-detail', kwargs={'slug': produit.slug})
-        else:
-            url = reverse('accessoire-detail', kwargs={'slug': produit.slug})
+        if not url:
+            return None
 
-        request = self.context.get('request')
         if request:
             return request.build_absolute_uri(url)
         return url
@@ -559,6 +606,30 @@ class MeCommandeLigneAccessoireSerializer(serializers.ModelSerializer):
         ]
 
 
+class MeCommandeLigneProduitFiniEssenceSerializer(serializers.ModelSerializer):
+    produit_fini_essence_id = serializers.IntegerField(source='produit_fini_essence.id', read_only=True)
+
+    class Meta:
+        model = CommandeProduitFiniEssence
+        fields = [
+            'id', 'produit_fini_essence_id', 'nom_snapshot', 'quantite',
+            'prix_unitaire_snapshot', 'remise_ligne', 'sous_total',
+            'mouvement_stock_genere'
+        ]
+
+
+class MeCommandeLigneEssencePersoSerializer(serializers.ModelSerializer):
+    essence_personnalise_id = serializers.IntegerField(source='essence_personnalise.id', read_only=True)
+    nom = serializers.CharField(source='essence_personnalise.nom', read_only=True)
+
+    class Meta:
+        model = CommandeLigneEssencePersonnalisee
+        fields = [
+            'id', 'essence_personnalise_id', 'nom', 'quantite',
+            'prix_snapshot', 'sous_total', 'statut_laboratoire', 'note_laboratoire'
+        ]
+
+
 class MeCommandeLigneDiffuseurSerializer(serializers.ModelSerializer):
     diffuseur_id = serializers.IntegerField(source='diffuseur.id', read_only=True)
 
@@ -576,6 +647,8 @@ class MeCommandeSerializer(serializers.ModelSerializer):
     lignes_parfums = MeCommandeLigneParfumSerializer(many=True, read_only=True)
     lignes_parfums_perso = MeCommandeLigneParfumPersoSerializer(many=True, read_only=True)
     lignes_accessoires = MeCommandeLigneAccessoireSerializer(many=True, read_only=True)
+    lignes_produit_fini_essence = MeCommandeLigneProduitFiniEssenceSerializer(many=True, read_only=True)
+    lignes_essence_personnalisee = MeCommandeLigneEssencePersoSerializer(many=True, read_only=True)
     lignes_diffuseurs = MeCommandeLigneDiffuseurSerializer(many=True, read_only=True)
 
     class Meta:
@@ -588,7 +661,8 @@ class MeCommandeSerializer(serializers.ModelSerializer):
             'livraison_ville', 'livraison_telephone',
             'date_livraison_estimee', 'date_livraison_reelle',
             'note_client', 'lignes_parfums', 'lignes_parfums_perso',
-            'lignes_accessoires', 'lignes_diffuseurs',
+            'lignes_accessoires', 'lignes_produit_fini_essence',
+            'lignes_essence_personnalisee', 'lignes_diffuseurs',
             'date_creation', 'date_modification'
         ]
 
@@ -603,13 +677,10 @@ class MeSerializer(serializers.ModelSerializer):
     photo = serializers.SerializerMethodField()
     client = serializers.SerializerMethodField()
     preferences = serializers.SerializerMethodField()
-    favoris = serializers.SerializerMethodField()
-    parfums_personnalises = serializers.SerializerMethodField()
-    commandes = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'roles', 'photo', 'client', 'preferences', 'favoris', 'parfums_personnalises', 'commandes']
+        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'roles', 'photo', 'client', 'preferences']
 
     def get_roles(self, obj):
         """
@@ -653,16 +724,6 @@ class MeSerializer(serializers.ModelSerializer):
             return None
         return MeClientSerializer(client).data
 
-    def get_favoris(self, obj):
-        client = self._get_client(obj)
-        if not client:
-            return []
-        return MeFavoriSerializer(
-            client.favoris.all(),
-            many=True,
-            context=self.context
-        ).data
-
     def get_preferences(self, obj):
         client = self._get_client(obj)
         preferences = {
@@ -678,45 +739,44 @@ class MeSerializer(serializers.ModelSerializer):
             return preferences
 
         tag_mapping = {
+            'famille olfactive': 'familles_olfactives',
             'famille_olfactive': 'familles_olfactives',
             'humeur': 'humeurs',
             'saison': 'saisons',
             'occasion': 'occasions',
+            'signe astrologique': 'signes_astrologiques',
             'signe_astrologique': 'signes_astrologiques',
+            'moment de la journée': 'moments_journee',
+            'moment de la journee': 'moments_journee',
             'moment_journee': 'moments_journee',
         }
         values = {key: set() for key in preferences}
 
-        for favori in client.favoris.all():
+        for favori in client.favoris.select_related('parfum', 'produit_fini_essence__essence').all():
             parfum = favori.parfum
-            if not parfum:
-                continue
-            if parfum.genre_cible:
-                values['genres'].add(parfum.genre_cible)
-            for tag in parfum.tags.all():
-                target = tag_mapping.get(tag.type)
-                if target:
-                    values[target].add(tag.nom)
+            if parfum:
+                if getattr(parfum, 'genre_cible', None):
+                    values['genres'].add(parfum.genre_cible)
+                if hasattr(parfum, 'tags_associes'):
+                    for tp in parfum.tags_associes.select_related('tag').all():
+                        tag_nom = getattr(tp.tag, 'nom', '').lower().strip() if tp.tag else ''
+                        target = tag_mapping.get(tag_nom)
+                        if target and tp.valeur:
+                            values[target].add(tp.valeur)
+
+            pfe = favori.produit_fini_essence
+            if pfe and pfe.essence:
+                essence = pfe.essence
+                if getattr(essence, 'genre_cible', None):
+                    values['genres'].add(essence.genre_cible)
+                if hasattr(essence, 'tags_associes'):
+                    for te in essence.tags_associes.select_related('tag').all():
+                        tag_nom = getattr(te.tag, 'nom', '').lower().strip() if te.tag else ''
+                        target = tag_mapping.get(tag_nom)
+                        if target and te.valeur:
+                            values[target].add(te.valeur)
 
         return {key: sorted(value) for key, value in values.items()}
-
-    def get_parfums_personnalises(self, obj):
-        client = self._get_client(obj)
-        if not client:
-            return []
-        return MeParfumPersonnaliseSerializer(
-            client.parfums_personnalises.all(),
-            many=True
-        ).data
-
-    def get_commandes(self, obj):
-        client = self._get_client(obj)
-        if not client:
-            return []
-        return MeCommandeSerializer(
-            client.commandes.all(),
-            many=True
-        ).data
 
 
 class PrestataireSerializer(serializers.ModelSerializer):

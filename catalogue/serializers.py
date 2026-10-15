@@ -975,10 +975,15 @@ class FavoriSerializer(serializers.ModelSerializer):
     type_produit = serializers.SerializerMethodField()
     slug_produit = serializers.SerializerMethodField()
     id_produit = serializers.SerializerMethodField()
+    produit_id = serializers.SerializerMethodField()
+    detail_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Favori
-        fields = ['id', 'date_ajout', 'nom_produit', 'prix_produit', 'image_produit', 'type_produit', 'slug_produit', 'id_produit']
+        fields = [
+            'id', 'date_ajout', 'nom_produit', 'prix_produit', 'image_produit',
+            'type_produit', 'slug_produit', 'id_produit', 'produit_id', 'detail_url'
+        ]
 
     def get_nom_produit(self, obj):
         if obj.parfum:
@@ -1035,6 +1040,18 @@ class FavoriSerializer(serializers.ModelSerializer):
             return obj.accessoire.id
         if obj.produit_fini_essence:
             return obj.produit_fini_essence.id
+        return None
+
+    def get_produit_id(self, obj):
+        return self.get_id_produit(obj)
+
+    def get_detail_url(self, obj):
+        if obj.parfum:
+            return f"/api/v1/shop/parfums/{obj.parfum.id}/"
+        if obj.accessoire:
+            return f"/api/v1/shop/accessoires/{obj.accessoire.id}/"
+        if obj.produit_fini_essence:
+            return f"/api/v1/shop/produits-essence/{obj.produit_fini_essence.id}/"
         return None
 
 

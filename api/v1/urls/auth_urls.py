@@ -52,6 +52,7 @@ urlpatterns = [
     # Profil utilisateur personnalisé
     path('me/', manage_me, name='me'),
     path('me', manage_me),
+    path('me/commandes/', __import__('orders.views', fromlist=['MesCommandesView']).MesCommandesView.as_view(), name='me-commandes'),
     path('me/change-email/', change_email, name='me-change-email'),
     path('me/photo/', upload_photo_profil, name='me-upload-photo'),
     path('me/boutique/', me_boutique, name='me-boutique'),

@@ -1736,6 +1736,35 @@ class FavoriViewSet(viewsets.ReadOnlyModelViewSet):
                     .order_by('-date_ajout'))
         except AttributeError:
             return Favori.objects.none()
+
+    def list(self, request, *args, **kwargs):
+        client = getattr(request.user, 'client', None)
+        if not client:
+            return Response({'favoris': [], 'parfums_personnalises': []})
+
+        favoris_qs = self.get_queryset()
+        favoris_data = self.get_serializer(favoris_qs, many=True).data
+
+        from utilisateur.serializers import MeParfumPersonnaliseSerializer
+        parfums_perso_qs = (
+            client.parfums_personnalises
+            .select_related('flacon')
+            .prefetch_related(
+                'lignes__essence__essence',
+                'lignes__essence_personnalisee'
+            )
+            .order_by('-date_creation')
+        )
+        parfums_perso_data = MeParfumPersonnaliseSerializer(
+            parfums_perso_qs,
+            many=True,
+            context=self.get_serializer_context()
+        ).data
+
+        return Response({
+            'favoris': favoris_data,
+            'parfums_personnalises': parfums_perso_data,
+        })
         
 class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()

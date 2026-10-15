@@ -485,6 +485,12 @@ class CommandePagination(PageNumberPagination):
     max_page_size = 1000
 
 
+class MesCommandesPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 200
+
+
 class CommandeListView(APIView):
     permission_classes = [IsAuthenticated, CommandePermission]
 
@@ -554,6 +560,81 @@ class CommandeListView(APIView):
         serializer = CommandeSerializer(commandes, many=True, context={'request': request})
         return Response(serializer.data)
 
+
+class MesCommandesView(APIView):
+    """
+    Retourne la liste paginée (50 par page) de toutes les commandes du client connecté
+    avec filtres (statut, statut_paiement, statut_livraison, search, date_debut, date_fin)
+    et le détail complet des lignes (parfums, accessoires, essences finies, créations, diffuseurs).
+    """
+    permission_classes = [IsAuthenticated]
+    pagination_class = MesCommandesPagination
+
+    def get(self, request, *args, **kwargs):
+        client = getattr(request.user, 'client', None)
+        paginator = self.pagination_class()
+
+        if not client:
+            page = paginator.paginate_queryset(Commande.objects.none(), request, view=self)
+            return paginator.get_paginated_response(page)
+
+        from utilisateur.serializers import MeCommandeSerializer
+        commandes = (
+            Commande.objects
+            .filter(client=client)
+            .select_related('livreur', 'prestataire')
+            .prefetch_related(
+                'lignes_parfums__parfum',
+                'lignes_parfums_perso__parfum_personnalise__flacon',
+                'lignes_parfums_perso__parfum_personnalise__lignes__essence__essence',
+                'lignes_parfums_perso__parfum_personnalise__lignes__essence_personnalisee',
+                'lignes_accessoires__accessoire',
+                'lignes_produit_fini_essence__produit_fini_essence',
+                'lignes_essence_personnalisee__essence_personnalise',
+                'lignes_diffuseurs__diffuseur',
+            )
+            .order_by('-date_creation')
+        )
+
+        # Filtres
+        statut = request.query_params.get('statut')
+        if statut:
+            commandes = commandes.filter(statut=statut)
+
+        statut_paiement = request.query_params.get('statut_paiement')
+        if statut_paiement:
+            commandes = commandes.filter(statut_paiement=statut_paiement)
+
+        statut_livraison = request.query_params.get('statut_livraison')
+        if statut_livraison:
+            commandes = commandes.filter(statut_livraison=statut_livraison)
+
+        search = request.query_params.get('search')
+        if search:
+            from django.db.models import Q
+            commandes = commandes.filter(
+                Q(numero_commande__icontains=search) |
+                Q(livraison_telephone__icontains=search) |
+                Q(livraison_ville__icontains=search) |
+                Q(livraison_quartier__icontains=search) |
+                Q(code_promo_utilise__icontains=search)
+            )
+
+        date_debut = request.query_params.get('date_debut')
+        if date_debut:
+            commandes = commandes.filter(date_creation__date__gte=date_debut)
+
+        date_fin = request.query_params.get('date_fin')
+        if date_fin:
+            commandes = commandes.filter(date_creation__date__lte=date_fin)
+
+        page = paginator.paginate_queryset(commandes, request, view=self)
+        if page is not None:
+            serializer = MeCommandeSerializer(page, many=True, context={'request': request})
+            return paginator.get_paginated_response(serializer.data)
+
+        serializer = MeCommandeSerializer(commandes, many=True, context={'request': request})
+        return Response(serializer.data)
 
 
 class CommandeDetailView(APIView):
