@@ -63,6 +63,9 @@ def get_image_url(request, image_field):
     """
     if not image_field:
         return None
+    raw_name = getattr(image_field, 'name', str(image_field))
+    if raw_name and (raw_name.startswith('http://') or raw_name.startswith('https://')):
+        return raw_name
     try:
         url = image_field.url
     except Exception:

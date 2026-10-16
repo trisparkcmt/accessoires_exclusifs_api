@@ -72,14 +72,62 @@ class OrderedSearchFilter(SearchFilter):
         return queryset
 
 
+import datetime
+from django.db.models import F, CharField
+from django.db.models.functions import Concat, MD5
+
+
 class CustomOrderingFilter(OrderingFilter):
     """
-    Conserve le tri par priorité de recherche lorsque `search` est utilisé sans paramètre `ordering` explicite.
+    - Conserve le tri par priorité de recherche lorsque `search` est utilisé sans paramètre `ordering` explicite.
+    - Pour les catalogues produits (view.allow_deterministic_random = True) :
+      * Dans le dashboard (admin, serveuse, boutique) : conserve le tri par date / standard habituel.
+      * Côté boutique publique : trie de façon pseudo-aléatoire déterministe (sans doublons sur les pages) :
+        - Par défaut (sans paramètre ordering).
+        - Ou si ?ordering=random (ou ?ordering=?) est explicitement demandé.
+        - Utilise ?seed=<valeur> s'il est fourni, ou la date du jour par défaut.
+      * Si un autre tri explicite est demandé (ex: ?ordering=prix_unitaire, ?ordering=-date_creation),
+        ce tri est respecté.
     """
+    def is_dashboard_request(self, request):
+        if not request:
+            return False
+        from utilisateur.permissions import is_dashboard_request, is_privileged_dashboard_user
+        if is_dashboard_request(request) or is_privileged_dashboard_user(request):
+            return True
+        params = getattr(request, 'query_params', getattr(request, 'GET', {}))
+        ctx = str(params.get('context', '')).strip().lower()
+        dash = str(params.get('dashboard', '')).strip().lower()
+        if ctx in ('dashboard', 'admin') or dash in ('true', '1', 'yes'):
+            return True
+        path = getattr(request, 'path', '')
+        if path.startswith('/admin'):
+            return True
+        return False
+
     def filter_queryset(self, request, queryset, view):
         params = getattr(request, 'query_params', getattr(request, 'GET', {}))
-        if params.get('search') and not params.get(self.ordering_param):
+        ordering_param_value = params.get(self.ordering_param)
+
+        # 1. Si une recherche textuelle est en cours et aucun ordering explicite n'a été demandé,
+        # on préserve l'ordre de pertinence de la recherche (search_priority).
+        if params.get('search') and not ordering_param_value:
             return queryset
+
+        # 2. Gestion du tri aléatoire déterministe pour les vues configurées (catalogue boutique)
+        if getattr(view, 'allow_deterministic_random', False):
+            # Pour les dashboards (admin / serveuse / boutique), on reste toujours sur le tri par date standard
+            if not self.is_dashboard_request(request):
+                # Si aucun tri n'est demandé (par défaut) OU si ?ordering=random est explicitement demandé
+                if not ordering_param_value or ordering_param_value in ('random', '?'):
+                    seed = params.get('seed')
+                    if not seed:
+                        seed = datetime.date.today().strftime('%Y%m%d')
+                    return queryset.annotate(
+                        _random_sort=MD5(Concat(F('id'), Value(str(seed)), output_field=CharField()))
+                    ).order_by('_random_sort', 'id')
+
+        # 3. Sinon, comportement DRF classique (respecte ?ordering=prix_unitaire, -date_creation, etc.)
         return super().filter_queryset(request, queryset, view)
 
 

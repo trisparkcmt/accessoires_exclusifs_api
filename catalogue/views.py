@@ -234,8 +234,9 @@ class ParfumViewSet(viewsets.ModelViewSet):
     parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = ParfumFilter
     search_fields      = ['marque', 'nom', 'description_courte', 'notes_tete', 'notes_coeur', 'notes_fond']
-    ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'contenance_ml']
+    ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'contenance_ml', 'random']
     ordering           = ['-date_creation', '-id']
+    allow_deterministic_random = True
     lookup_field       = 'slug'
 
     def get_queryset(self):
@@ -605,9 +606,12 @@ class LotEssenceViewSet(viewsets.ModelViewSet):
 class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
     serializer_class = ProduitFiniEssencePublicSerializer
     permission_classes = [IsAdminOrServeuseOrReadOnly]
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filter_backends = [DjangoFilterBackend, SearchFilter, CustomOrderingFilter]
     filterset_fields = ['essence', 'taille_ml']
     search_fields = ['essence__marque', 'essence__nom']
+    ordering_fields = ['prix', 'taille_ml', 'id', 'random']
+    ordering = ['-id']
+    allow_deterministic_random = True
 
     def get_queryset(self):
         from utilisateur.permissions import is_privileged_dashboard_user
@@ -1451,9 +1455,9 @@ class AccessoireViewSet(viewsets.ModelViewSet):
     parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = AccessoireFilter
     search_fields      = ['marque', 'nom', 'description_courte', 'matiere', 'couleur']
-    ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'poids_grammes']
-    # L'attribut 'ordering' par défaut est maintenant géré dynamiquement dans get_queryset
+    ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'poids_grammes', 'random']
     ordering           = ['-date_creation', '-id']
+    allow_deterministic_random = True
     lookup_field       = 'slug'
 
     def get_queryset(self):
@@ -1466,7 +1470,7 @@ class AccessoireViewSet(viewsets.ModelViewSet):
         if is_privileged_dashboard_user(request):
             return Accessoire.objects.all().select_related('type_accessoire', 'boutique').order_by('-date_creation', '-id')
 
-        base_qs = Accessoire.objects.select_related('type_accessoire', 'boutique').order_by('-date_creation', '-id')
+        base_qs = Accessoire.objects.select_related('type_accessoire', 'boutique')
         boutique = None
         if user and user.is_authenticated:
             try:
@@ -1991,11 +1995,12 @@ class DiffuseurParfumViewSet(viewsets.ModelViewSet):
 
     parser_classes = (MultiPartParser, FormParser, JSONParser)
     pagination_class = StandardPagination
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filter_backends = [DjangoFilterBackend, SearchFilter, CustomOrderingFilter]
     filterset_class = DiffuseurParfumFilter
     search_fields = ['nom', 'marque', 'description', 'reference_sku']
-    ordering_fields = ['prix_unitaire', 'date_creation', 'nom']
-    ordering = ['-date_creation']
+    ordering_fields = ['prix_unitaire', 'date_creation', 'nom', 'random']
+    ordering = ['-date_creation', '-id']
+    allow_deterministic_random = True
 
     def get_queryset(self):
         from .models import DiffuseurParfum
