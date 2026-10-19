@@ -39,7 +39,14 @@ if env_file.exists():
 DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-prod-key-change-in-env-file-accessoires-exclusifs!')
+# En production (DEBUG=False), DJANGO_SECRET_KEY DOIT être définie dans le .env
+_secret_key_default = 'django-insecure-dev-only-key-DO-NOT-USE-IN-PRODUCTION!' if os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes') else None
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', _secret_key_default)
+if not SECRET_KEY:
+    raise RuntimeError(
+        "[SÉCURITÉ] DJANGO_SECRET_KEY n'est pas définie. "
+        "Ajoutez-la dans votre fichier .env ou en variable d'environnement du serveur."
+    )
 
 
 allowed_hosts_env = os.getenv('ALLOWED_HOSTS')
@@ -302,6 +309,10 @@ SOCIALACCOUNT_LOGIN_ON_GET = _get_bool_env('SOCIALACCOUNT_LOGIN_ON_GET', True)
 SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = _get_bool_env('SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT', True)
 SOCIALACCOUNT_EMAIL_AUTHENTICATION = _get_bool_env('SOCIALACCOUNT_EMAIL_AUTHENTICATION', True)
 
+# Client ID Google OAuth2 — utilisé pour valider l'audience du token One Tap
+# OBLIGATOIRE pour la sécurité : un token émis pour une autre app ne doit pas être accepté
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
+
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
         'SCOPE': [
@@ -311,7 +322,10 @@ SOCIALACCOUNT_PROVIDERS = {
         'AUTH_PARAMS': {
             'access_type': 'online',
         },
-        'OAUTH_PKCE_ENABLED': True, # Recommandé pour la sécurité
+        'OAUTH_PKCE_ENABLED': True,  # Recommandé pour la sécurité
+        'APP': {
+            'client_id': GOOGLE_CLIENT_ID,
+        },
     }
 }
 
@@ -394,7 +408,14 @@ EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes')
 EMAIL_SEND = os.getenv('EMAIL_SEND', 'accessoiresexclusifs@gmail.com')
 EMAIL_HOST_USER = EMAIL_SEND
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', 'qvfs vdfn uyny xjqw')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+if not EMAIL_HOST_PASSWORD and not DEBUG:
+    import warnings
+    warnings.warn(
+        "[SÉCURITÉ] EMAIL_HOST_PASSWORD n'est pas définie. "
+        "Les emails ne pourront pas être envoyés en production.",
+        RuntimeWarning
+    )
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', f'ACCESSOIRES EXCLUSIFS <{EMAIL_SEND}>')
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
@@ -509,7 +530,7 @@ SPECTACULAR_SETTINGS = {
 
 
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AQ.Ab8RN6Iq8YW3z9UjZr6hqbk0Y_kqub1urxxHsMwueAYngM8RRA')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
 GROQ_MODEL = os.getenv('GROQ_MODEL', 'qwen/qwen3.8-27b')
 HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY', os.getenv('HF_API_KEY', ''))
@@ -528,6 +549,15 @@ CAMPAY_API_TOKEN = os.getenv('CAMPAY_API_TOKEN', '')
 CAMPAY_USERNAME = os.getenv('CAMPAY_USERNAME', '')
 CAMPAY_PASSWORD = os.getenv('CAMPAY_PASSWORD', '')
 CAMPAY_WEBHOOK_SECRET = os.getenv('CAMPAY_WEBHOOK_SECRET', '')
+# Avertissement en production si le secret Campay n'est pas configuré
+if not CAMPAY_WEBHOOK_SECRET and not DEBUG:
+    import warnings
+    warnings.warn(
+        "[SÉCURITÉ] CAMPAY_WEBHOOK_SECRET n'est pas définie. "
+        "Les webhooks Campay ne seront pas vérifiés — risque d'injection de faux événements de paiement. "
+        "Définissez CAMPAY_WEBHOOK_SECRET dans votre .env de production.",
+        RuntimeWarning
+    )
 CAMPAY_WEBHOOK_SIGNATURE_HEADER = os.getenv('CAMPAY_WEBHOOK_SIGNATURE_HEADER', 'X-Campay-Signature')
 # URL appelée par Campay quand une transaction est finalisée (envoyée DANS chaque requête /withdraw/)
 # Définir cette variable sur votre VPS / serveur : CAMPAY_WEBHOOK_URL=https://votre-domaine.com/api/v1/auth/payout/webhook/

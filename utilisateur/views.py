@@ -2152,8 +2152,17 @@ import hashlib
 
 
 def _is_valid_campay_webhook_signature(request):
+    """
+    Vérifie la signature HMAC-SHA256 du webhook Campay.
+    FAIL-CLOSED : si le secret n'est pas configuré, toutes les requêtes sont rejetées
+    (sauf en mode DEBUG où l'absence de secret autorise les requêtes — usage dev uniquement).
+    """
     secret = getattr(settings, 'CAMPAY_WEBHOOK_SECRET', '')
     if not secret:
+        # En production, sans secret, on rejette systématiquement (fail-closed)
+        if not getattr(settings, 'DEBUG', False):
+            return False
+        # En dev uniquement, on laisse passer pour faciliter les tests locaux
         return True
 
     if request.method != 'POST':
@@ -2527,20 +2536,51 @@ class GoogleLogin(SocialLoginView):
         from utilisateur.models import User
         from utilisateur.serializers import UserSerializer
 
-        id_info = None
-        # 1. Vérification via la bibliothèque google-auth
-        try:
-            id_info = google_id_token.verify_oauth2_token(
-                token_str,
-                google_requests.Request(),
-                clock_skew_in_seconds=10
+        # Client ID Google : obligatoire pour valider que le token est bien destiné à notre app
+        google_client_id = getattr(settings, 'GOOGLE_CLIENT_ID', '')
+        if not google_client_id and not getattr(settings, 'DEBUG', False):
+            return Response(
+                {"detail": "Authentification Google One Tap non configurée (GOOGLE_CLIENT_ID manquant)."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
             )
+
+        id_info = None
+        # 1. Vérification via la bibliothèque google-auth avec validation de l'audience
+        try:
+            verify_kwargs = {
+                'clock_skew_in_seconds': 10,
+            }
+            if google_client_id:
+                id_info = google_id_token.verify_oauth2_token(
+                    token_str,
+                    google_requests.Request(),
+                    audience=google_client_id,
+                    **verify_kwargs
+                )
+            else:
+                # Dev uniquement — sans audience, on accepte tout token Google valide
+                id_info = google_id_token.verify_oauth2_token(
+                    token_str,
+                    google_requests.Request(),
+                    **verify_kwargs
+                )
         except Exception:
             # 2. Fallback via l'endpoint API google tokeninfo
             try:
                 resp = http_requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={token_str}", timeout=10)
                 if resp.status_code == 200:
-                    id_info = resp.json()
+                    fallback_info = resp.json()
+                    # Valider l'audience si on dispose du client_id
+                    if google_client_id:
+                        aud = fallback_info.get('aud', '')
+                        azp = fallback_info.get('azp', '')
+                        if aud != google_client_id and azp != google_client_id:
+                            # Token valide mais émis pour une autre application
+                            id_info = None
+                        else:
+                            id_info = fallback_info
+                    else:
+                        id_info = fallback_info
             except Exception:
                 id_info = None
 

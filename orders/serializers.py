@@ -927,10 +927,10 @@ class PasserCommandeSerializer(serializers.Serializer):
             except AttributeError:
                 raise serializers.ValidationError({"detail": "Profil client introuvable."})
         else:
-            client_telephone = validated_data.get('client_telephone', '').strip()
-            if client_telephone:
-                from utilisateur.models import Client
-                client = Client.objects.filter(user__telephone=client_telephone).first()
+            # Commande invité : pas d'association à un compte client sans authentification.
+            # Ne pas chercher un client par numéro de téléphone — cela permettrait
+            # à n'importe qui de rattacher une commande à un compte existant (usurpation).
+            client = None
             
         with transaction.atomic():
             # Créer la commande
@@ -1181,10 +1181,10 @@ class PasserCommandeCompositionDirecteSerializer(serializers.Serializer):
             except AttributeError:
                 pass
         else:
-            client_telephone = validated_data.get('client_telephone', '').strip()
-            if client_telephone:
-                from utilisateur.models import Client
-                client = Client.objects.filter(user__telephone=client_telephone).first()
+            # Commande invité : pas d'association à un compte client sans authentification.
+            # Ne pas chercher un client par numéro de téléphone — cela permettrait
+            # à n'importe qui de rattacher une commande à un compte existant (usurpation).
+            client = None
 
         flacon = validated_data['flacon_obj']
         nom = validated_data.get('nom', '').strip() or "Création Sur Mesure Express"

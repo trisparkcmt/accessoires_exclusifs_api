@@ -98,3 +98,6 @@ Thumbs.db
 
 
 test_de_mon_api/
+# Clés de service Firebase Admin SDK
+*-firebase-adminsdk-*.json
+access-exclu-firebase-adminsdk-*.json
