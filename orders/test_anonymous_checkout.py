@@ -206,7 +206,11 @@ class AnonymousCheckoutTestCase(APITestCase):
         self.assertEqual(cmd.livraison_nom_complet, "Passant de passage")
         self.assertEqual(cmd.livraison_telephone, "+22501020304")
 
-    def test_anonymous_checkout_attaches_to_existing_client_by_phone(self):
+    def test_anonymous_checkout_does_not_attach_to_existing_client_by_phone(self):
+        """
+        Sécurité : une commande passée en invité (anonyme) ne doit pas être rattachée
+        automatiquement à un profil client existant par simple concordance du numéro de téléphone.
+        """
         # 1. Ajouter un parfum personnalisé au panier anonyme
         payload = {
             "flacon_id": self.flacon_30ml.id,
@@ -229,10 +233,10 @@ class AnonymousCheckoutTestCase(APITestCase):
         response_cmd = self.client.post(self.passer_commande_url, payload_cmd, format='json')
         self.assertEqual(response_cmd.status_code, status.HTTP_201_CREATED)
 
-        # Vérifier la commande en base
+        # Vérifier la commande en base : pas de rattachement à un profil client sans auth
         commande_id = response_cmd.data['id']
         cmd = Commande.objects.get(id=commande_id)
-        self.assertEqual(cmd.client, self.client_profile)
+        self.assertIsNone(cmd.client)
         self.assertEqual(cmd.livraison_nom_complet, "Jean Eudes")
 
     def test_authenticated_checkout_unchanged(self):

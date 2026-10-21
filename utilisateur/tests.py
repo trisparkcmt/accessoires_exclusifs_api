@@ -1488,6 +1488,7 @@ class NotificationDeletionAndGoogleOneTapTest(APITestCase):
         self.assertFalse(Notification.objects.filter(pk=self.notif_user.pk).exists())
         self.assertTrue(Notification.objects.filter(pk=self.notif_global.pk).exists())
 
+    @override_settings(GOOGLE_CLIENT_ID='test-google-client-id.apps.googleusercontent.com')
     @patch('google.oauth2.id_token.verify_oauth2_token')
     def test_google_one_tap_login(self, mock_verify):
         mock_verify.return_value = {

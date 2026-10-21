@@ -297,7 +297,7 @@ class IACompositionRulesTests(TestCase):
 class IALanguageDetectionTests(TestCase):
     from unittest.mock import patch
 
-    @patch.dict('os.environ', {'LLM_PROVIDER': 'gemini'})
+    @patch.dict('os.environ', {'LLM_PROVIDER': 'gemini', 'GEMINI_API_KEY': 'fake-key-for-test'})
     @patch('google.genai.Client')
     def test_demander_recommandation_ia_includes_current_prompt_language_rules(self, mock_genai):
         from laboratoire.utils_ia import demander_recommandation_ia
