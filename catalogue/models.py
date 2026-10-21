@@ -328,6 +328,10 @@ class Parfum(models.Model):
         if not self.slug:
             random_suffix = ''.join(random.choices(string.digits, k=5))
             self.slug = f"{slugify(self.nom)}-{random_suffix}"
+        if not self.reference_sku or not str(self.reference_sku).strip():
+            self.reference_sku = None
+        else:
+            self.reference_sku = str(self.reference_sku).strip()
         super().save(*args, **kwargs)
 
     @property
@@ -750,6 +754,10 @@ class Accessoire(models.Model):
         if not self.slug:
             random_suffix = ''.join(random.choices(string.digits, k=5))
             self.slug = f"{slugify(self.nom)}-{random_suffix}"
+        if not self.reference_sku or not str(self.reference_sku).strip():
+            self.reference_sku = None
+        else:
+            self.reference_sku = str(self.reference_sku).strip()
         super().save(*args, **kwargs)
 
     @property
@@ -858,6 +866,10 @@ class Flacon(models.Model):
         if not self.slug:
             random_suffix = ''.join(random.choices(string.digits, k=5))
             self.slug = f"{slugify(f'{self.nom}-{self.contenance_ml}')}-{random_suffix}"
+        if not self.reference_sku or not str(self.reference_sku).strip():
+            self.reference_sku = None
+        else:
+            self.reference_sku = str(self.reference_sku).strip()
         super().save(*args, **kwargs)
 
 
@@ -1063,6 +1075,10 @@ class DiffuseurParfum(models.Model):
         if not self.slug:
             from django.utils.text import slugify
             self.slug = slugify(self.nom)
+        if not self.reference_sku or not str(self.reference_sku).strip():
+            self.reference_sku = None
+        else:
+            self.reference_sku = str(self.reference_sku).strip()
         super().save(*args, **kwargs)
 
     @property

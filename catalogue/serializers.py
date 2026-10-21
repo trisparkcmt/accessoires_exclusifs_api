@@ -188,8 +188,15 @@ class ParfumSerializer(serializers.ModelSerializer):
     image_supp_2        = serializers.ImageField(required=False, allow_null=True)
     image_supp_3        = serializers.ImageField(required=False, allow_null=True)
     image_supp_4        = serializers.ImageField(required=False, allow_null=True)
+    reference_sku       = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     produits_similaires = serializers.SerializerMethodField()
     is_favori = serializers.SerializerMethodField()
+
+    def validate_reference_sku(self, value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value if value else None
 
     class Meta:
         model  = Parfum
@@ -760,8 +767,15 @@ class AccessoireSerializer(serializers.ModelSerializer):
     image_supp_2     = serializers.ImageField(required=False, allow_null=True)
     image_supp_3     = serializers.ImageField(required=False, allow_null=True)
     image_supp_4     = serializers.ImageField(required=False, allow_null=True)
+    reference_sku    = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     produits_similaires = serializers.SerializerMethodField()
     is_favori = serializers.SerializerMethodField()
+
+    def validate_reference_sku(self, value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value if value else None
 
     class Meta:
         model  = Accessoire
@@ -902,6 +916,13 @@ class FlaconSerializer(serializers.ModelSerializer):
     image_supp_2     = serializers.ImageField(required=False, allow_null=True)
     image_supp_3     = serializers.ImageField(required=False, allow_null=True)
     image_supp_4     = serializers.ImageField(required=False, allow_null=True)
+    reference_sku    = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def validate_reference_sku(self, value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value if value else None
 
     class Meta:
         model  = Flacon
@@ -1172,7 +1193,14 @@ class DiffuseurParfumSerializer(serializers.ModelSerializer):
     image_supp_2 = serializers.ImageField(required=False, allow_null=True)
     image_supp_3 = serializers.ImageField(required=False, allow_null=True)
     image_supp_4 = serializers.ImageField(required=False, allow_null=True)
+    reference_sku = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     produits_similaires = serializers.SerializerMethodField()
+
+    def validate_reference_sku(self, value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value if value else None
 
     class Meta:
         model = DiffuseurParfum
