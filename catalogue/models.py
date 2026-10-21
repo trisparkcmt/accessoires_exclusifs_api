@@ -262,6 +262,11 @@ class Parfum(models.Model):
     reference_sku = models.CharField(max_length=100, unique=True, null=True, blank=True)
     description_courte = models.CharField(max_length=500, blank=True)
     description_longue = models.TextField(blank=True)
+    inspire_de = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text="Parfum de luxe dont ce produit est inspiré (ex: Sauvage Dior, Bleu de Chanel…)"
+    )
     
     # Notes olfactives
     notes_tete = models.CharField(max_length=300, blank=True)

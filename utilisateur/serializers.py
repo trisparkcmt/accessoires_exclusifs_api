@@ -424,12 +424,14 @@ class MeFavoriSerializer(serializers.ModelSerializer):
     image_produit = serializers.SerializerMethodField()
     slug_produit = serializers.SerializerMethodField()
     detail_url = serializers.SerializerMethodField()
+    inspire_de = serializers.SerializerMethodField()
 
     class Meta:
         model = Favori
         fields = [
             'id', 'type_produit', 'produit_id', 'id_produit', 'nom_produit',
-            'prix_produit', 'image_produit', 'slug_produit', 'detail_url', 'date_ajout'
+            'prix_produit', 'image_produit', 'slug_produit', 'detail_url',
+            'inspire_de', 'date_ajout'
         ]
 
     def get_type_produit(self, obj):
@@ -446,6 +448,11 @@ class MeFavoriSerializer(serializers.ModelSerializer):
 
     def get_id_produit(self, obj):
         return self.get_produit_id(obj)
+
+    def get_inspire_de(self, obj):
+        if obj.parfum:
+            return obj.parfum.inspire_de
+        return None
 
     def get_nom_produit(self, obj):
         if obj.parfum:
@@ -569,14 +576,18 @@ class MeParfumPersonnaliseSerializer(serializers.ModelSerializer):
 
 class MeCommandeLigneParfumSerializer(serializers.ModelSerializer):
     parfum_id = serializers.IntegerField(source='parfum.id', read_only=True)
+    inspire_de = serializers.SerializerMethodField()
 
     class Meta:
         model = CommandeLigneParfum
         fields = [
-            'id', 'parfum_id', 'nom_snapshot', 'quantite',
+            'id', 'parfum_id', 'nom_snapshot', 'inspire_de', 'quantite',
             'prix_unitaire_snapshot', 'remise_ligne', 'sous_total',
             'mouvement_stock_genere'
         ]
+
+    def get_inspire_de(self, obj):
+        return obj.parfum.inspire_de if obj.parfum else ""
 
 
 class MeCommandeLigneParfumPersoSerializer(serializers.ModelSerializer):

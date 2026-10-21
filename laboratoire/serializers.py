@@ -31,7 +31,7 @@ class AccessoireLabSerializer(serializers.ModelSerializer):
 class ParfumLabSerializer(serializers.ModelSerializer):
     class Meta:
         model = Parfum
-        fields = ['id', 'nom', 'prix_unitaire', 'image_principale']
+        fields = ['id', 'nom', 'inspire_de', 'prix_unitaire', 'image_principale']
         read_only_fields = fields
 
 class DiffuseurLabSerializer(serializers.ModelSerializer):

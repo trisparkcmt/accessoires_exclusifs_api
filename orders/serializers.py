@@ -31,16 +31,20 @@ class LigneParfumReadSerializer(serializers.ModelSerializer):
     nom = serializers.CharField(source='parfum.nom', read_only=True)
     contenance_ml = serializers.IntegerField(source='parfum.contenance_ml', read_only=True)
     image = serializers.SerializerMethodField()
+    inspire_de = serializers.SerializerMethodField()
     
     class Meta:
         model = PanierLigneParfum
-        fields = ['id', 'parfum', 'nom', 'image', 'contenance_ml', 'quantite', 'prix_unitaire_snapshot', 'sous_total']
+        fields = ['id', 'parfum', 'nom', 'inspire_de', 'image', 'contenance_ml', 'quantite', 'prix_unitaire_snapshot', 'sous_total']
 
     def get_image(self, obj):
         request = self.context.get('request')
         if obj.parfum.image_principale:
             return request.build_absolute_uri(obj.parfum.image_principale.url) if request else obj.parfum.image_principale.url
         return None
+
+    def get_inspire_de(self, obj):
+        return obj.parfum.inspire_de if obj.parfum else ""
 
 
 class LigneAccessoireReadSerializer(serializers.ModelSerializer):
@@ -441,6 +445,7 @@ class CodePromoAdminSerializer(serializers.ModelSerializer):
 
 
 class CommandeLigneParfumSerializer(serializers.ModelSerializer):
+    inspire_de = serializers.SerializerMethodField()
     boutique_id = serializers.SerializerMethodField()
     boutique_nom = serializers.SerializerMethodField()
     boutique_details = serializers.SerializerMethodField()
@@ -448,9 +453,12 @@ class CommandeLigneParfumSerializer(serializers.ModelSerializer):
     class Meta:
         model = CommandeLigneParfum
         fields = [
-            'id', 'parfum', 'nom_snapshot', 'quantite', 'prix_unitaire_snapshot',
+            'id', 'parfum', 'nom_snapshot', 'inspire_de', 'quantite', 'prix_unitaire_snapshot',
             'remise_ligne', 'sous_total', 'boutique_id', 'boutique_nom', 'boutique_details'
         ]
+
+    def get_inspire_de(self, obj):
+        return obj.parfum.inspire_de if obj.parfum else ""
 
     def get_boutique_id(self, obj):
         return obj.parfum.boutique_id if obj.parfum and obj.parfum.boutique_id else None

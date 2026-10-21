@@ -19,7 +19,7 @@ class ParfumSimilaireSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Parfum
-        fields = ['id', 'nom', 'slug', 'prix_actuel', 'image_principale']
+        fields = ['id', 'nom', 'slug', 'inspire_de', 'prix_actuel', 'image_principale']
 
     def get_prix_actuel(self, obj):
         prix = obj.prix_promotionnel or obj.prix_unitaire
@@ -195,7 +195,7 @@ class ParfumSerializer(serializers.ModelSerializer):
         model  = Parfum
         fields = [
             'id', 'marque','nom', 'slug', 'reference_sku',
-            'description_courte', 'contenance_ml',
+            'description_courte', 'inspire_de', 'contenance_ml',
             'prix_unitaire', 'prix_actuel',
             'prix_promotionnel', 'date_debut', 'date_fin',
             'taux_reduction', 'en_promotion',
@@ -981,12 +981,20 @@ class FavoriSerializer(serializers.ModelSerializer):
     produit_id = serializers.SerializerMethodField()
     detail_url = serializers.SerializerMethodField()
 
+    inspire_de = serializers.SerializerMethodField()
+
     class Meta:
         model = Favori
         fields = [
             'id', 'date_ajout', 'nom_produit', 'prix_produit', 'image_produit',
-            'type_produit', 'slug_produit', 'id_produit', 'produit_id', 'detail_url'
+            'type_produit', 'slug_produit', 'id_produit', 'produit_id', 'detail_url',
+            'inspire_de'
         ]
+
+    def get_inspire_de(self, obj):
+        if obj.parfum:
+            return obj.parfum.inspire_de
+        return None
 
     def get_nom_produit(self, obj):
         if obj.parfum:
