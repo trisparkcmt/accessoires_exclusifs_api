@@ -28,7 +28,7 @@ from utilisateur.permissions import is_active_serveuse
 from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Flacon, Favori, Ingredient, ProduitFiniEssence, Tag, TypeAccessoire, TypeFlacon, NotificationCatalogue, MouvementStock, EntrepriseInfo
 from .serializers import (
     AccessoireAdminDetailSerializer, AccessoireAdminListSerializer, AccessoirePublicDetailSerializer, AccessoirePublicListSerializer, AccessoireSimilaireSerializer, CategorieParfumSerializer, EssenceLaboDetailSerializer, EssenceLaboListSerializer, LotEssenceSerializer, ParfumAdminDetailSerializer, ParfumAdminListSerializer, ParfumPublicDetailSerializer, ParfumPublicListSerializer, ParfumSerializer, EssenceSerializer, EssencePublicSerializer,
-    AccessoireSerializer, FlaconSerializer, FlaconPublicSerializer, ParfumSimilaireSerializer, EssenceCreateFullSerializer,
+    AccessoireSerializer, FlaconSerializer, FlaconPublicSerializer, FlaconAdminSerializer, ParfumSimilaireSerializer, EssenceCreateFullSerializer,
     IngredientSerializer, FavoriSerializer, ProduitFiniEssencePublicSerializer, ProduitFiniEssenceSerializer, PromotionSerializer, TagSelectSerializer, TagSerializer, TypeAccessoireSerializer, TypeFlaconSerializer, NotificationCatalogueSerializer, NotificationCatalogueUpdateSerializer, EntrepriseInfoSerializer,
     get_image_url, UnifiedBestsellerHotsellerSerializer,
 )
@@ -785,6 +785,52 @@ class BeneficesViewSet(viewsets.ViewSet):
                 'type': 'parfum',
                 'id': parfum.id,
                 'nom': parfum.nom,
+                'prix_vente': str(prix_vente.quantize(Decimal('0.01'))),
+                'prix_achat': str(prix_achat.quantize(Decimal('0.01'))),
+                'benefice': str(benefice.quantize(Decimal('0.01'))),
+                'marge_percent': round(float(marge), 2),
+            })
+
+        for acc in Accessoire.objects.filter(actif=True):
+            prix_vente = acc.prix_promotionnel_effectif or acc.prix_unitaire
+            prix_achat = acc.prix_achat or Decimal('0')
+            benefice = prix_vente - prix_achat
+            marge = ((benefice / prix_vente) * 100) if prix_vente else 0
+            produits.append({
+                'type': 'accessoire',
+                'id': acc.id,
+                'nom': acc.nom,
+                'prix_vente': str(prix_vente.quantize(Decimal('0.01'))),
+                'prix_achat': str(prix_achat.quantize(Decimal('0.01'))),
+                'benefice': str(benefice.quantize(Decimal('0.01'))),
+                'marge_percent': round(float(marge), 2),
+            })
+
+        for flacon in Flacon.objects.filter(actif=True):
+            prix_vente = flacon.prix_unitaire
+            prix_achat = flacon.prix_achat or Decimal('0')
+            benefice = prix_vente - prix_achat
+            marge = ((benefice / prix_vente) * 100) if prix_vente else 0
+            produits.append({
+                'type': 'flacon',
+                'id': flacon.id,
+                'nom': flacon.nom,
+                'prix_vente': str(prix_vente.quantize(Decimal('0.01'))),
+                'prix_achat': str(prix_achat.quantize(Decimal('0.01'))),
+                'benefice': str(benefice.quantize(Decimal('0.01'))),
+                'marge_percent': round(float(marge), 2),
+            })
+
+        from catalogue.models import DiffuseurParfum
+        for diff in DiffuseurParfum.objects.filter(actif=True):
+            prix_vente = diff.prix_promotionnel_effectif or diff.prix_unitaire
+            prix_achat = diff.prix_achat or Decimal('0')
+            benefice = prix_vente - prix_achat
+            marge = ((benefice / prix_vente) * 100) if prix_vente else 0
+            produits.append({
+                'type': 'diffuseur',
+                'id': diff.id,
+                'nom': diff.nom,
                 'prix_vente': str(prix_vente.quantize(Decimal('0.01'))),
                 'prix_achat': str(prix_achat.quantize(Decimal('0.01'))),
                 'benefice': str(benefice.quantize(Decimal('0.01'))),
@@ -1722,6 +1768,9 @@ class FlaconViewSet(viewsets.ModelViewSet):
         return obj
 
     def get_serializer_class(self):
+        from utilisateur.permissions import is_privileged_dashboard_user
+        if is_privileged_dashboard_user(self.request):
+            return FlaconAdminSerializer
         if self.action == 'list':
             return FlaconPublicSerializer
         return FlaconSerializer

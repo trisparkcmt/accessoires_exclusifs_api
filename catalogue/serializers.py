@@ -956,6 +956,7 @@ class FlaconSerializer(serializers.ModelSerializer):
 
 class FlaconAdminSerializer(FlaconSerializer):
     """Flacon avec prix d'achat et bénéfice (admin uniquement)"""
+    prix_achat = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True, required=False)
     benefice_unitaire = serializers.SerializerMethodField()
 
     class Meta(FlaconSerializer.Meta):

@@ -1297,32 +1297,58 @@ class AdminStatistiquesBeneficesView(APIView):
             })
 
         # ===================================================================
-        # 2. PARFUMS — ventes + bénéfice (snapshot)
+        # 2. PARFUMS — ventes + bénéfice (Maison vs Boutiques)
         # ===================================================================
         from orders.models import CommandeLigneParfum
-        parfums_agg = CommandeLigneParfum.objects.filter(
-            commande__in=commandes_ids
+        parfums_maison_agg = CommandeLigneParfum.objects.filter(
+            commande__in=commandes_ids,
+            parfum__boutique__isnull=True
         ).aggregate(
             nb_ventes=Count('id'),
             ca=Sum('sous_total'),
             cout=Sum('prix_achat_total_snapshot'),
         )
-        ca_parfums   = Decimal(str(parfums_agg['ca']   or 0))
-        cout_parfums = Decimal(str(parfums_agg['cout'] or 0))
+        parfums_boutiques_agg = CommandeLigneParfum.objects.filter(
+            commande__in=commandes_ids,
+            parfum__boutique__isnull=False
+        ).aggregate(
+            nb_ventes=Count('id'),
+            ca=Sum('sous_total'),
+            cout=Sum('prix_achat_total_snapshot'),
+        )
+        ca_parfums_maison   = Decimal(str(parfums_maison_agg['ca'] or 0))
+        cout_parfums_maison = Decimal(str(parfums_maison_agg['cout'] or 0))
+        ca_parfums_boutiques   = Decimal(str(parfums_boutiques_agg['ca'] or 0))
+        cout_parfums_boutiques = Decimal(str(parfums_boutiques_agg['cout'] or 0))
+        ca_parfums   = ca_parfums_maison + ca_parfums_boutiques
+        cout_parfums = cout_parfums_maison + cout_parfums_boutiques
 
         # ===================================================================
-        # 3. ACCESSOIRES — ventes + bénéfice (snapshot)
+        # 3. ACCESSOIRES — ventes + bénéfice (Maison vs Boutiques)
         # ===================================================================
         from orders.models import CommandeLigneAccessoire
-        access_agg = CommandeLigneAccessoire.objects.filter(
-            commande__in=commandes_ids
+        access_maison_agg = CommandeLigneAccessoire.objects.filter(
+            commande__in=commandes_ids,
+            accessoire__boutique__isnull=True
         ).aggregate(
             nb_ventes=Count('id'),
             ca=Sum('sous_total'),
             cout=Sum('prix_achat_total_snapshot'),
         )
-        ca_access   = Decimal(str(access_agg['ca']   or 0))
-        cout_access = Decimal(str(access_agg['cout'] or 0))
+        access_boutiques_agg = CommandeLigneAccessoire.objects.filter(
+            commande__in=commandes_ids,
+            accessoire__boutique__isnull=False
+        ).aggregate(
+            nb_ventes=Count('id'),
+            ca=Sum('sous_total'),
+            cout=Sum('prix_achat_total_snapshot'),
+        )
+        ca_access_maison   = Decimal(str(access_maison_agg['ca'] or 0))
+        cout_access_maison = Decimal(str(access_maison_agg['cout'] or 0))
+        ca_access_boutiques   = Decimal(str(access_boutiques_agg['ca'] or 0))
+        cout_access_boutiques = Decimal(str(access_boutiques_agg['cout'] or 0))
+        ca_access   = ca_access_maison + ca_access_boutiques
+        cout_access = cout_access_maison + cout_access_boutiques
 
         # ===================================================================
         # 4. PARFUMS PERSONNALISÉS (Labo) — ventes + bénéfice (snapshot)
@@ -1353,16 +1379,163 @@ class AdminStatistiquesBeneficesView(APIView):
         cout_ep = Decimal(str(ep_agg['cout'] or 0))
 
         # ===================================================================
-        # 6. TOTAUX GLOBAUX
+        # 5b. DIFFUSEURS — ventes + bénéfice (snapshot)
+        # ===================================================================
+        from orders.models import CommandeLigneDiffuseurParfum
+        diff_agg = CommandeLigneDiffuseurParfum.objects.filter(
+            commande__in=commandes_ids
+        ).aggregate(
+            nb_ventes=Count('id'),
+            ca=Sum('sous_total'),
+            cout=Sum('prix_achat_total_snapshot'),
+        )
+        ca_diff   = Decimal(str(diff_agg['ca']   or 0))
+        cout_diff = Decimal(str(diff_agg['cout'] or 0))
+
+        # ===================================================================
+        # 5c. VENTES BOUTIQUES PARTENAIRES (Commissions Admin & Net Boutiques)
+        # ===================================================================
+        from orders.models import VenteBoutique
+        from utilisateur.models import Boutique
+        vb_global_agg = VenteBoutique.objects.filter(
+            commande__in=commandes_ids
+        ).aggregate(
+            ca_brut=Sum('montant_brut'),
+            commissions=Sum('montant_commission_admin'),
+            net_boutiques=Sum('montant_net_boutique'),
+        )
+        ca_boutiques_brut = Decimal(str(vb_global_agg['ca_brut'] or 0))
+        commissions_admin_boutiques = Decimal(str(vb_global_agg['commissions'] or 0))
+        net_a_reverser_boutiques = Decimal(str(vb_global_agg['net_boutiques'] or 0))
+
+        ventes_par_boutique = []
+        for b in Boutique.objects.all().order_by('nom'):
+            vb_b_agg = VenteBoutique.objects.filter(
+                commande__in=commandes_ids,
+                boutique=b
+            ).aggregate(
+                nb=Count('id'),
+                ca=Sum('montant_brut'),
+                comm=Sum('montant_commission_admin'),
+                net=Sum('montant_net_boutique'),
+            )
+            if vb_b_agg['nb']:
+                ventes_par_boutique.append({
+                    'boutique_id': b.id,
+                    'boutique_nom': b.nom,
+                    'nb_ventes': vb_b_agg['nb'],
+                    'chiffre_affaires_brut': str(Decimal(str(vb_b_agg['ca'] or 0)).quantize(Decimal('0.01'))),
+                    'commission_admin': str(Decimal(str(vb_b_agg['comm'] or 0)).quantize(Decimal('0.01'))),
+                    'net_boutique': str(Decimal(str(vb_b_agg['net'] or 0)).quantize(Decimal('0.01'))),
+                })
+
+        # ===================================================================
+        # 6. TOTAUX GLOBAUX & PAR BOUTIQUE
         # ===================================================================
         ca_essences_total   = sum((Decimal(e['ca_total'])   for e in essences_list), Decimal('0'))
         cout_essences_total = sum((Decimal(e['cout_total']) for e in essences_list), Decimal('0'))
 
-        ca_global      = ca_essences_total + ca_parfums + ca_access + ca_perso + ca_ep
-        cout_global    = cout_essences_total + cout_parfums + cout_access + cout_perso + cout_ep
-        benefice_global = ca_global - cout_global
+        # Totaux exclusifs de la boutique globale maison (exclut les produits boutiques partenaires)
+        ca_maison = ca_essences_total + ca_parfums_maison + ca_access_maison + ca_perso + ca_ep + ca_diff
+        cout_maison = cout_essences_total + cout_parfums_maison + cout_access_maison + cout_perso + cout_ep + cout_diff
+        benefice_maison = ca_maison - cout_maison
+
+        # Totaux plateforme
+        ca_global = ca_maison + ca_boutiques_brut
+        cout_global = cout_maison + cout_parfums_boutiques + cout_access_boutiques
+        benefice_global = benefice_maison + commissions_admin_boutiques
 
         nb_commandes = len(commandes_ids)
+
+        # ===================================================================
+        # 7. VALEUR EN STOCK DU MARCHAND (basée uniquement sur les prix de vente)
+        # ===================================================================
+        from catalogue.models import Accessoire, DiffuseurParfum, Flacon, LotEssence, Parfum
+        from utilisateur.models import Boutique
+        from django.db.models import ExpressionWrapper, DecimalField, F
+
+        def _calc_stock_valeur(qs, price_field='prix_unitaire', qty_field='stock_quantite'):
+            agg = qs.annotate(
+                val=ExpressionWrapper(
+                    F(qty_field) * F(price_field),
+                    output_field=DecimalField(max_digits=14, decimal_places=2)
+                )
+            ).aggregate(
+                total_valeur=Sum('val'),
+                total_quantite=Sum(qty_field)
+            )
+            v = Decimal(str(agg['total_valeur'] or 0))
+            q = agg['total_quantite'] or 0
+            return v, q
+
+        # Stock Parfums (Global, Maison, Boutiques)
+        v_parfums_global, q_parfums_global = _calc_stock_valeur(
+            Parfum.objects.filter(actif=True, stock_quantite__gt=0)
+        )
+        v_parfums_maison, q_parfums_maison = _calc_stock_valeur(
+            Parfum.objects.filter(boutique__isnull=True, actif=True, stock_quantite__gt=0)
+        )
+        v_parfums_boutiques, q_parfums_boutiques = _calc_stock_valeur(
+            Parfum.objects.filter(boutique__isnull=False, actif=True, stock_quantite__gt=0)
+        )
+
+        # Stock Accessoires (Global, Maison, Boutiques)
+        v_access_global, q_access_global = _calc_stock_valeur(
+            Accessoire.objects.filter(actif=True, stock_quantite__gt=0)
+        )
+        v_access_maison, q_access_maison = _calc_stock_valeur(
+            Accessoire.objects.filter(boutique__isnull=True, actif=True, stock_quantite__gt=0)
+        )
+        v_access_boutiques, q_access_boutiques = _calc_stock_valeur(
+            Accessoire.objects.filter(boutique__isnull=False, actif=True, stock_quantite__gt=0)
+        )
+
+        # Stock Autres (Maison / Plateforme)
+        v_diffuseurs, q_diffuseurs = _calc_stock_valeur(
+            DiffuseurParfum.objects.filter(actif=True, stock_quantite__gt=0)
+        )
+        v_flacons, q_flacons = _calc_stock_valeur(
+            Flacon.objects.filter(actif=True, stock_quantite__gt=0)
+        )
+        v_essences, q_essences_ml = _calc_stock_valeur(
+            LotEssence.objects.filter(actif=True, stock_ml__gt=0, essence__actif=True),
+            price_field='essence__prix_par_ml',
+            qty_field='stock_ml'
+        )
+
+        v_autres_global = v_diffuseurs + v_flacons + v_essences
+        v_total_global = v_parfums_global + v_access_global + v_autres_global
+
+        v_maison_totale = v_parfums_maison + v_access_maison + v_autres_global
+        v_boutiques_totale = v_parfums_boutiques + v_access_boutiques
+
+        # Détail par boutique
+        boutiques_details = []
+        for b in Boutique.objects.all().order_by('nom'):
+            bp_val, bp_qty = _calc_stock_valeur(
+                Parfum.objects.filter(boutique=b, actif=True, stock_quantite__gt=0)
+            )
+            ba_val, ba_qty = _calc_stock_valeur(
+                Accessoire.objects.filter(boutique=b, actif=True, stock_quantite__gt=0)
+            )
+            b_total_val = bp_val + ba_val
+            b_total_qty = bp_qty + ba_qty
+
+            boutiques_details.append({
+                'boutique_id': b.id,
+                'boutique_nom': b.nom,
+                'statut': b.statut,
+                'valeur_totale': str(b_total_val.quantize(Decimal('0.01'))),
+                'quantite_totale': b_total_qty,
+                'parfums': {
+                    'valeur_totale': str(bp_val.quantize(Decimal('0.01'))),
+                    'quantite_totale': bp_qty,
+                },
+                'accessoires': {
+                    'valeur_totale': str(ba_val.quantize(Decimal('0.01'))),
+                    'quantite_totale': ba_qty,
+                },
+            })
 
         return Response({
             'filtres_appliques': {
@@ -1375,6 +1548,19 @@ class AdminStatistiquesBeneficesView(APIView):
                 'chiffre_affaires': str(ca_global.quantize(Decimal('0.01'))),
                 'cout_total':       str(cout_global.quantize(Decimal('0.01'))),
                 'benefice_net':     str(benefice_global.quantize(Decimal('0.01'))),
+                'boutique_globale_maison': {
+                    'description': "Chiffre d'affaires et bénéfices générés exclusivement par les produits propres de la maison.",
+                    'chiffre_affaires': str(ca_maison.quantize(Decimal('0.01'))),
+                    'cout_total':       str(cout_maison.quantize(Decimal('0.01'))),
+                    'benefice_net':     str(benefice_maison.quantize(Decimal('0.01'))),
+                },
+                'boutiques_partenaires': {
+                    'description': "Ventes réalisées par les boutiques partenaires, commissions gagnées par l'admin et montants reversés.",
+                    'chiffre_affaires_brut':   str(ca_boutiques_brut.quantize(Decimal('0.01'))),
+                    'commission_admin_gagne': str(commissions_admin_boutiques.quantize(Decimal('0.01'))),
+                    'net_a_reverser':         str(net_a_reverser_boutiques.quantize(Decimal('0.01'))),
+                    'detail_ventes_par_boutique': ventes_par_boutique,
+                },
             },
             'par_categorie': {
                 'essences': {
@@ -1384,16 +1570,40 @@ class AdminStatistiquesBeneficesView(APIView):
                     'detail_par_essence':  essences_list,
                 },
                 'parfums': {
-                    'nb_ventes':        parfums_agg['nb_ventes'] or 0,
+                    'nb_ventes':        (parfums_maison_agg['nb_ventes'] or 0) + (parfums_boutiques_agg['nb_ventes'] or 0),
                     'chiffre_affaires': str(ca_parfums.quantize(Decimal('0.01'))),
                     'cout_total':       str(cout_parfums.quantize(Decimal('0.01'))),
                     'benefice':         str((ca_parfums - cout_parfums).quantize(Decimal('0.01'))),
+                    'maison': {
+                        'nb_ventes':        parfums_maison_agg['nb_ventes'] or 0,
+                        'chiffre_affaires': str(ca_parfums_maison.quantize(Decimal('0.01'))),
+                        'cout_total':       str(cout_parfums_maison.quantize(Decimal('0.01'))),
+                        'benefice':         str((ca_parfums_maison - cout_parfums_maison).quantize(Decimal('0.01'))),
+                    },
+                    'boutiques': {
+                        'nb_ventes':        parfums_boutiques_agg['nb_ventes'] or 0,
+                        'chiffre_affaires': str(ca_parfums_boutiques.quantize(Decimal('0.01'))),
+                        'cout_total':       str(cout_parfums_boutiques.quantize(Decimal('0.01'))),
+                        'benefice':         str((ca_parfums_boutiques - cout_parfums_boutiques).quantize(Decimal('0.01'))),
+                    },
                 },
                 'accessoires': {
-                    'nb_ventes':        access_agg['nb_ventes'] or 0,
+                    'nb_ventes':        (access_maison_agg['nb_ventes'] or 0) + (access_boutiques_agg['nb_ventes'] or 0),
                     'chiffre_affaires': str(ca_access.quantize(Decimal('0.01'))),
                     'cout_total':       str(cout_access.quantize(Decimal('0.01'))),
                     'benefice':         str((ca_access - cout_access).quantize(Decimal('0.01'))),
+                    'maison': {
+                        'nb_ventes':        access_maison_agg['nb_ventes'] or 0,
+                        'chiffre_affaires': str(ca_access_maison.quantize(Decimal('0.01'))),
+                        'cout_total':       str(cout_access_maison.quantize(Decimal('0.01'))),
+                        'benefice':         str((ca_access_maison - cout_access_maison).quantize(Decimal('0.01'))),
+                    },
+                    'boutiques': {
+                        'nb_ventes':        access_boutiques_agg['nb_ventes'] or 0,
+                        'chiffre_affaires': str(ca_access_boutiques.quantize(Decimal('0.01'))),
+                        'cout_total':       str(cout_access_boutiques.quantize(Decimal('0.01'))),
+                        'benefice':         str((ca_access_boutiques - cout_access_boutiques).quantize(Decimal('0.01'))),
+                    },
                 },
                 'parfums_personnalises': {
                     'nb_ventes':        perso_agg['nb_ventes'] or 0,
@@ -1406,6 +1616,79 @@ class AdminStatistiquesBeneficesView(APIView):
                     'chiffre_affaires': str(ca_ep.quantize(Decimal('0.01'))),
                     'cout_total':       str(cout_ep.quantize(Decimal('0.01'))),
                     'benefice':         str((ca_ep - cout_ep).quantize(Decimal('0.01'))),
+                },
+                'diffuseurs': {
+                    'nb_ventes':        diff_agg['nb_ventes'] or 0,
+                    'chiffre_affaires': str(ca_diff.quantize(Decimal('0.01'))),
+                    'cout_total':       str(cout_diff.quantize(Decimal('0.01'))),
+                    'benefice':         str((ca_diff - cout_diff).quantize(Decimal('0.01'))),
+                },
+            },
+            'valeur_stock_marchand': {
+                'description': "Valeur marchande actuelle du stock calculée uniquement sur la base des prix de vente.",
+                'valeur_totale_globale': str(v_total_global.quantize(Decimal('0.01'))),
+                'par_type_produit_global': {
+                    'parfums': {
+                        'valeur_totale': str(v_parfums_global.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_parfums_global,
+                    },
+                    'accessoires': {
+                        'valeur_totale': str(v_access_global.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_access_global,
+                    },
+                    'autres': {
+                        'valeur_totale': str(v_autres_global.quantize(Decimal('0.01'))),
+                        'detail': {
+                            'diffuseurs': {
+                                'valeur_totale': str(v_diffuseurs.quantize(Decimal('0.01'))),
+                                'quantite_totale': q_diffuseurs,
+                            },
+                            'flacons': {
+                                'valeur_totale': str(v_flacons.quantize(Decimal('0.01'))),
+                                'quantite_totale': q_flacons,
+                            },
+                            'essences_labo': {
+                                'valeur_totale': str(v_essences.quantize(Decimal('0.01'))),
+                                'stock_ml_total': str(Decimal(str(q_essences_ml)).quantize(Decimal('0.01'))),
+                            },
+                        },
+                    },
+                },
+                'produits_maison': {
+                    'valeur_totale': str(v_maison_totale.quantize(Decimal('0.01'))),
+                    'parfums': {
+                        'valeur_totale': str(v_parfums_maison.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_parfums_maison,
+                    },
+                    'accessoires': {
+                        'valeur_totale': str(v_access_maison.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_access_maison,
+                    },
+                    'diffuseurs': {
+                        'valeur_totale': str(v_diffuseurs.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_diffuseurs,
+                    },
+                    'flacons': {
+                        'valeur_totale': str(v_flacons.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_flacons,
+                    },
+                    'essences_labo': {
+                        'valeur_totale': str(v_essences.quantize(Decimal('0.01'))),
+                        'stock_ml_total': str(Decimal(str(q_essences_ml)).quantize(Decimal('0.01'))),
+                    },
+                },
+                'produits_boutiques': {
+                    'valeur_totale': str(v_boutiques_totale.quantize(Decimal('0.01'))),
+                    'quantite_totale': q_parfums_boutiques + q_access_boutiques,
+                    'parfums': {
+                        'valeur_totale': str(v_parfums_boutiques.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_parfums_boutiques,
+                    },
+                    'accessoires': {
+                        'valeur_totale': str(v_access_boutiques.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_access_boutiques,
+                    },
+                    'detail_par_boutique': boutiques_details,
                 },
             },
         }, status=status.HTTP_200_OK)

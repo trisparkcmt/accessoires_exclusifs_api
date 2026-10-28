@@ -611,7 +611,7 @@ class TypeFlaconAdmin(admin.ModelAdmin):
 class FlaconAdmin(admin.ModelAdmin):
     list_display = (
         'id', 'apercu_image_col', 'nom', 'type_flacon',
-        'contenance_ml', 'matiere', 'prix_unitaire',
+        'contenance_ml', 'matiere', 'prix_unitaire', 'prix_achat',
         'statut_stock', 'actif'
     )
     list_filter     = ('type_flacon', 'matiere', 'couleur', 'actif', 'date_creation')
