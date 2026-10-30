@@ -1223,14 +1223,24 @@ class VenteBoutique(models.Model):
 
 
 class VersementBoutique(models.Model):
+    STATUT_CHOICES = [
+        ('en_cours', 'En cours'),
+        ('succes', 'Succès'),
+        ('echec', 'Échec'),
+    ]
+
     boutique = models.ForeignKey('utilisateur.Boutique', on_delete=models.CASCADE, related_name='versements')
     montant = models.DecimalField(max_digits=12, decimal_places=2)
     reference_transaction = models.CharField(max_length=100, unique=True)
+    campay_processing_number = models.CharField(max_length=100, blank=True, null=True, db_index=True)
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='succes')
+    motif_echec = models.TextField(blank=True, null=True)
     mode_paiement = models.CharField(max_length=50, default='OM')
     telephone_destination = models.CharField(max_length=20, blank=True)
     note_admin = models.TextField(blank=True)
     effectue_par = models.ForeignKey('utilisateur.User', on_delete=models.SET_NULL, null=True, related_name='versements_boutiques_effectues')
     date_versement = models.DateTimeField(auto_now_add=True)
+    date_finalisation = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         db_table = 'versement_boutique'
@@ -1239,5 +1249,6 @@ class VersementBoutique(models.Model):
         ordering = ['-date_versement']
 
     def __str__(self):
-        return f"Versement {self.reference_transaction} — {self.boutique.nom} ({self.montant} FCFA)"
+        return f"Versement {self.reference_transaction} — {self.boutique.nom} ({self.montant} FCFA) [{self.statut}]"
+
 

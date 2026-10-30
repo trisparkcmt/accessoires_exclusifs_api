@@ -12,6 +12,7 @@ from utilisateur.views import (
     admin_global_stats,
     # Payouts
     admin_prestataire_payout, admin_payouts_list, campay_payout_webhook, admin_poll_campay_payout,
+    admin_poll_campay_boutique_versement,
     # Livreur & Admin Delivery views
     livreur_dashboard, livreur_commandes_list, livreur_update_delivery_status,
     admin_livreurs_list, admin_promote_to_livreur, admin_update_livreur,
@@ -101,6 +102,7 @@ urlpatterns = [
     path('admin/boutiques/<int:pk>/produits/', admin_boutique_produits, name='admin-boutique-produits'),
     path('admin/boutiques/<int:pk>/parfums/<int:parfum_pk>/toggle-actif/', admin_boutique_parfum_toggle_actif, name='admin-boutique-parfum-toggle-actif'),
     path('admin/boutiques/<int:pk>/effectuer-versement/', admin_boutique_effectuer_versement, name='admin-boutique-effectuer-versement'),
+    path('admin/boutiques/versements/<int:pk>/verifier/', admin_poll_campay_boutique_versement, name='admin-boutique-versement-check-status'),
 
     # Admin Delivery Endpoints
     path('admin/livreurs/', admin_livreurs_list, name='admin-livreurs-list'),

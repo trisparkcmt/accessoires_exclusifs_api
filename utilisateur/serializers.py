@@ -1175,8 +1175,9 @@ class VersementBoutiqueSerializer(serializers.ModelSerializer):
         model = VersementBoutique
         fields = [
             'id', 'boutique', 'boutique_nom', 'montant', 'reference_transaction',
+            'campay_processing_number', 'statut', 'motif_echec',
             'mode_paiement', 'telephone_destination', 'note_admin',
-            'effectue_par', 'effectue_par_nom', 'date_versement'
+            'effectue_par', 'effectue_par_nom', 'date_versement', 'date_finalisation'
         ]
 
     def get_effectue_par_nom(self, obj):

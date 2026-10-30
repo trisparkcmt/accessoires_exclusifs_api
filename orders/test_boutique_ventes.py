@@ -232,3 +232,98 @@ class BoutiqueVentesTest(TestCase):
         self.assertEqual(data['lignes_parfums'][0]['boutique_nom'], self.boutique.nom)
         self.assertIsNotNone(data['lignes_parfums'][0]['boutique_details'])
 
+    def test_versement_campay_boutique_initiation_et_webhook(self):
+        """Test qu'un versement vers une boutique avec un numéro Mobile Money initie Campay,
+        puis est validé via le webhook Campay."""
+        from unittest.mock import patch
+        from rest_framework.test import APIClient
+
+        with patch('utilisateur.campay.payout_to_phone') as mock_payout:
+            mock_payout.return_value = (True, {'processing_number': 'CP-BQ-99999', 'status': 'PENDING'}, None)
+
+            self.boutique.solde_disponible = Decimal('50000.00')
+            self.boutique.telephone_paiement = '677889900'
+            self.boutique.save()
+
+            client = APIClient()
+            client.force_authenticate(user=self.admin_user)
+
+            payload = {
+                'montant': '20000.00',
+                'idempotency_key': 'KEY-CAMPAY-BQ-01',
+                'mode_paiement': 'OM',
+                'telephone_destination': '677889900'
+            }
+
+            resp = client.post(f'/api/v1/auth/admin/boutiques/{self.boutique.id}/effectuer-versement/', payload, format='json')
+            self.assertEqual(resp.status_code, 201)
+            self.boutique.refresh_from_db()
+            self.assertEqual(self.boutique.solde_disponible, Decimal('30000.00'))
+
+            versement = VersementBoutique.objects.get(reference_transaction='KEY-CAMPAY-BQ-01')
+            self.assertEqual(versement.statut, 'en_cours')
+            self.assertEqual(versement.campay_processing_number, 'CP-BQ-99999')
+
+            # Test Webhook Success
+            anon_client = APIClient()
+            webhook_payload = {
+                'processing_number': 'CP-BQ-99999',
+                'external_reference': 'KEY-CAMPAY-BQ-01',
+                'status': 'SUCCESSFUL'
+            }
+            wh_resp = anon_client.post('/api/v1/auth/payout/webhook/', webhook_payload, format='json')
+            self.assertEqual(wh_resp.status_code, 200)
+
+            versement.refresh_from_db()
+            self.assertEqual(versement.statut, 'succes')
+            self.assertIsNotNone(versement.date_finalisation)
+
+            self.boutique.refresh_from_db()
+            self.assertEqual(self.boutique.solde_total_recu, Decimal('20000.00'))
+
+    def test_versement_campay_boutique_echec_et_remboursement(self):
+        """Test qu'un échec notifié par Campay (ou son webhook) rembourse automatiquement le solde disponible de la boutique."""
+        from unittest.mock import patch
+        from rest_framework.test import APIClient
+
+        with patch('utilisateur.campay.payout_to_phone') as mock_payout:
+            mock_payout.return_value = (True, {'processing_number': 'CP-BQ-FAIL-1', 'status': 'PENDING'}, None)
+
+            self.boutique.solde_disponible = Decimal('50000.00')
+            self.boutique.save()
+
+            client = APIClient()
+            client.force_authenticate(user=self.admin_user)
+
+            payload = {
+                'montant': '15000.00',
+                'idempotency_key': 'KEY-CAMPAY-FAIL-01',
+                'mode_paiement': 'MOMO',
+                'telephone_destination': '677112233'
+            }
+
+            resp = client.post(f'/api/v1/auth/admin/boutiques/{self.boutique.id}/effectuer-versement/', payload, format='json')
+            self.assertEqual(resp.status_code, 201)
+            self.boutique.refresh_from_db()
+            self.assertEqual(self.boutique.solde_disponible, Decimal('35000.00'))
+
+            # Webhook notifie FAILED
+            anon_client = APIClient()
+            webhook_payload = {
+                'processing_number': 'CP-BQ-FAIL-1',
+                'external_reference': 'KEY-CAMPAY-FAIL-01',
+                'status': 'FAILED',
+                'message': 'Numéro invalide ou opérateur indisponible'
+            }
+            wh_resp = anon_client.post('/api/v1/auth/payout/webhook/', webhook_payload, format='json')
+            self.assertEqual(wh_resp.status_code, 200)
+
+            versement = VersementBoutique.objects.get(reference_transaction='KEY-CAMPAY-FAIL-01')
+            self.assertEqual(versement.statut, 'echec')
+            self.assertIn('Numéro invalide', versement.motif_echec)
+
+            # Le solde a été remboursé automatiquement !
+            self.boutique.refresh_from_db()
+            self.assertEqual(self.boutique.solde_disponible, Decimal('50000.00'))
+
+

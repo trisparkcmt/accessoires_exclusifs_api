@@ -1647,14 +1647,17 @@ def admin_boutiques_financier(request):
 @permission_classes([IsSuperadmin])
 def admin_boutique_effectuer_versement(request, pk):
     """
-    POST: L'Admin enregistre un versement (Payout) à une boutique et déduit son solde_disponible.
+    POST: L'Admin effectue un versement (Payout) à une boutique et déduit son solde_disponible.
+    - Si mode_paiement est 'OM' ou 'MOMO' (et non manuel), initie un virement Mobile Money automatique via Campay.
+    - Si mode_paiement est 'VIREMENT' ou request.data['manuel']=True (ou en l'absence de numéro de téléphone), enregistre un versement direct manuel.
     La clé d'idempotence ('idempotency_key', 'reference_transaction' ou header 'X-Idempotency-Key') est OBLIGATOIRE.
     """
     boutique = get_object_or_404(Boutique, pk=pk)
     montant = Decimal(str(request.data.get('montant', 0)))
     mode_paiement = request.data.get('mode_paiement', boutique.mode_paiement_prefere or 'OM')
-    telephone = request.data.get('telephone_destination', boutique.telephone_paiement or boutique.telephone)
+    telephone = request.data.get('telephone_destination') or request.data.get('telephone') or boutique.telephone_paiement or boutique.telephone
     note_admin = request.data.get('note_admin', '')
+    is_manuel = request.data.get('manuel') is True or mode_paiement == 'VIREMENT'
 
     idempotency_key = request.data.get('idempotency_key') or request.data.get('reference_transaction') or request.META.get('HTTP_X_IDEMPOTENCY_KEY')
 
@@ -1669,7 +1672,7 @@ def admin_boutique_effectuer_versement(request, pk):
     existing_versement = VersementBoutique.objects.filter(reference_transaction=idempotency_key).first()
     if existing_versement:
         return Response({
-            "detail": f"Ce versement a déjà été enregistré (Traitement idempotent).",
+            "detail": "Ce versement a déjà été enregistré (Traitement idempotent).",
             "idempotent": True,
             "versement": VersementBoutiqueSerializer(existing_versement).data,
             "nouveau_solde_disponible": str(existing_versement.boutique.solde_disponible)
@@ -1678,9 +1681,20 @@ def admin_boutique_effectuer_versement(request, pk):
     if montant <= 0:
         return Response({"detail": "Le montant du versement doit être supérieur à 0."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # transaction.atomic() + select_for_update() pour éviter les race conditions sur le solde_disponible
-    # (deux admins qui versent simultanément ne peuvent pas dépasser le solde réel)
     from django.db import transaction as db_transaction
+
+    # Déterminer si on effectue un virement automatique Campay
+    use_campay = (not is_manuel) and (mode_paiement in ('OM', 'MOMO')) and bool(telephone)
+    cleaned_phone = None
+
+    if use_campay:
+        cleaned_phone = clean_cameroon_phone(telephone)
+        if not cleaned_phone:
+            return Response({
+                "detail": f"Le numéro de téléphone pour le versement ({telephone}) n'est pas valide pour un virement Mobile Money Campay (Cameroun). Précisez un numéro valide ou activez manuel=True pour un enregistrement hors-ligne."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    # 1. Vérification atomique et débit du solde_disponible
     try:
         with db_transaction.atomic():
             boutique_locked = Boutique.objects.select_for_update().get(pk=pk)
@@ -1692,25 +1706,112 @@ def admin_boutique_effectuer_versement(request, pk):
 
             ref = idempotency_key
 
-            versement = VersementBoutique.objects.create(
-                boutique=boutique_locked,
-                montant=montant,
-                reference_transaction=ref,
-                mode_paiement=mode_paiement,
-                telephone_destination=telephone,
-                note_admin=note_admin,
-                effectue_par=request.user
-            )
-
-            boutique_locked.solde_disponible -= montant
-            boutique_locked.solde_total_recu += montant
-            boutique_locked.save(update_fields=['solde_disponible', 'solde_total_recu'])
+            if use_campay:
+                # Créer le versement avec statut 'en_cours'
+                versement = VersementBoutique.objects.create(
+                    boutique=boutique_locked,
+                    montant=montant,
+                    reference_transaction=ref,
+                    mode_paiement=mode_paiement,
+                    telephone_destination=cleaned_phone,
+                    note_admin=note_admin,
+                    effectue_par=request.user,
+                    statut='en_cours'
+                )
+                boutique_locked.solde_disponible -= montant
+                boutique_locked.save(update_fields=['solde_disponible'])
+            else:
+                # Mode manuel / Virement bancaire direct
+                versement = VersementBoutique.objects.create(
+                    boutique=boutique_locked,
+                    montant=montant,
+                    reference_transaction=ref,
+                    mode_paiement=mode_paiement,
+                    telephone_destination=telephone or '',
+                    note_admin=note_admin,
+                    effectue_par=request.user,
+                    statut='succes',
+                    date_finalisation=timezone.now()
+                )
+                boutique_locked.solde_disponible -= montant
+                boutique_locked.solde_total_recu += montant
+                boutique_locked.save(update_fields=['solde_disponible', 'solde_total_recu'])
 
     except Boutique.DoesNotExist:
         return Response({"detail": "Boutique introuvable."}, status=status.HTTP_404_NOT_FOUND)
 
+    # 2. Si virement automatique Campay : appel de l'API
+    if use_campay:
+        amount_xaf = int(montant)
+        success, campay_data, error = campay_adapter.payout_to_phone(
+            cleaned_phone, amount_xaf,
+            description=f"Payout boutique {boutique.nom}",
+            external_reference=ref
+        )
+
+        if success:
+            campay_pn = (campay_data or {}).get('processing_number') or (campay_data or {}).get('reference')
+            if campay_pn:
+                versement.campay_processing_number = campay_pn
+
+            campay_status = (campay_data or {}).get('status', '').upper()
+            if campay_status in ('SUCCESSFUL', 'SUCCESS'):
+                versement.statut = 'succes'
+                versement.date_finalisation = timezone.now()
+                versement.save()
+                with db_transaction.atomic():
+                    bq = Boutique.objects.select_for_update().get(pk=pk)
+                    bq.solde_total_recu += montant
+                    bq.save(update_fields=['solde_total_recu'])
+            elif campay_status in ('FAILED', 'CANCELLED', 'REJECTED'):
+                versement.statut = 'echec'
+                versement.motif_echec = (campay_data or {}).get('message') or 'Rejeté par Campay'
+                versement.date_finalisation = timezone.now()
+                versement.save()
+                with db_transaction.atomic():
+                    bq = Boutique.objects.select_for_update().get(pk=pk)
+                    bq.solde_disponible += montant
+                    bq.save(update_fields=['solde_disponible'])
+                return Response({
+                    "detail": f"Campay a rejeté le versement : {versement.motif_echec}. Le solde de la boutique a été restitué."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                # PENDING : en attente du webhook
+                versement.save()
+
+            Notification.objects.create(
+                recipient=boutique.user,
+                type='versement_boutique',
+                title="Versement initié !",
+                message=f"Un versement de {montant} FCFA a été initié vers {cleaned_phone} ({ref}).",
+                url="/me/boutique/portefeuille/",
+                metadata={'versement_id': versement.id, 'montant': str(montant), 'reference': ref}
+            )
+
+            boutique_locked.refresh_from_db()
+            return Response({
+                "detail": f"Versement Mobile Money de {montant} FCFA initié avec succès vers {cleaned_phone} (Campay).",
+                "versement": VersementBoutiqueSerializer(versement).data,
+                "nouveau_solde_disponible": str(boutique_locked.solde_disponible)
+            }, status=status.HTTP_201_CREATED)
+        else:
+            # Échec de l'appel Campay -> restitution immédiate du solde
+            with db_transaction.atomic():
+                bq = Boutique.objects.select_for_update().get(pk=pk)
+                bq.solde_disponible += montant
+                bq.save(update_fields=['solde_disponible'])
+                versement.statut = 'echec'
+                versement.motif_echec = error or 'Rejet par Campay'
+                versement.date_finalisation = timezone.now()
+                versement.save()
+
+            return Response({
+                "detail": f"Campay a rejeté l'opération : {error}. Le solde disponible a été restitué."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Mode manuel : notification immédiate de succès
     Notification.objects.create(
-        recipient=boutique_locked.user,
+        recipient=boutique.user,
         type='versement_boutique',
         title="Versement reçu !",
         message=f"Un versement de {montant} FCFA a été effectué sur votre compte ({ref}).",
@@ -2357,10 +2458,90 @@ def campay_payout_webhook(request):
     if payout_tx is None and campay_pn:
         # Dernier recours : certaines intégrations stockent le PN comme reference_unique
         payout_tx = PayoutTransaction.objects.filter(reference_unique=campay_pn).first()
+
+    # Si ce n'est pas un payout prestataire, vérifier si c'est un versement boutique
+    versement_bq = None
     if payout_tx is None:
-        logger.warning("[Campay Webhook] Transaction not found for campay_pn=%s or external_ref=%s", campay_pn, external_ref)
+        from orders.models import VersementBoutique
+        if campay_pn:
+            versement_bq = VersementBoutique.objects.filter(campay_processing_number=campay_pn).first()
+        if versement_bq is None and external_ref:
+            versement_bq = VersementBoutique.objects.filter(reference_transaction=external_ref).first()
+        if versement_bq is None and campay_pn:
+            versement_bq = VersementBoutique.objects.filter(reference_transaction=campay_pn).first()
+
+    if payout_tx is None and versement_bq is None:
+        logger.warning("[Campay Webhook] Neither PayoutTransaction nor VersementBoutique found for campay_pn=%s or external_ref=%s", campay_pn, external_ref)
         return Response({"detail": "Transaction non trouvée"}, status=status.HTTP_404_NOT_FOUND)
 
+    # -------------------------------------------------------------
+    # CAS A : Versement Boutique Partenaire
+    # -------------------------------------------------------------
+    if versement_bq is not None:
+        if versement_bq.statut != 'en_cours':
+            logger.info("[Campay Webhook] VersementBoutique already finalized: ID=%s, status=%s", versement_bq.id, versement_bq.statut)
+            return Response({"detail": f"Versement boutique déjà finalisé : {versement_bq.statut}"}, status=status.HTTP_200_OK)
+
+        try:
+            with transaction.atomic():
+                versement_bq = VersementBoutique.objects.select_for_update().get(pk=versement_bq.pk)
+                if versement_bq.statut != 'en_cours':
+                    return Response({"detail": "Versement boutique déjà traité"}, status=status.HTTP_200_OK)
+
+                if campay_pn and not versement_bq.campay_processing_number:
+                    versement_bq.campay_processing_number = campay_pn
+
+                boutique = Boutique.objects.select_for_update().get(pk=versement_bq.boutique_id)
+
+                if status_val in ('SUCCESSFUL', 'SUCCESS'):
+                    versement_bq.statut = 'succes'
+                    versement_bq.date_finalisation = timezone.now()
+                    versement_bq.save()
+
+                    boutique.solde_total_recu += versement_bq.montant
+                    boutique.save(update_fields=['solde_total_recu'])
+
+                    Notification.objects.create(
+                        recipient=boutique.user,
+                        type='versement_boutique',
+                        title="Versement reçu !",
+                        message=f"Le versement Mobile Money de {versement_bq.montant} FCFA a été effectué avec succès vers votre numéro ({versement_bq.telephone_destination}). Ref: {versement_bq.reference_transaction}.",
+                        url="/me/boutique/portefeuille/",
+                        metadata={'versement_id': versement_bq.id, 'montant': str(versement_bq.montant), 'reference': versement_bq.reference_transaction, 'statut': 'succes'}
+                    )
+                    logger.info("[Campay Webhook] VersementBoutique updated to SUCCESS. ID=%s, Amount=%s", versement_bq.id, versement_bq.montant)
+                elif status_val in ('FAILED', 'CANCELLED', 'REJECTED'):
+                    versement_bq.statut = 'echec'
+                    versement_bq.motif_echec = message or f"Échec notifié par Campay (status={status_val})"
+                    versement_bq.date_finalisation = timezone.now()
+                    versement_bq.save()
+
+                    boutique.solde_disponible += versement_bq.montant
+                    boutique.save(update_fields=['solde_disponible'])
+
+                    Notification.objects.create(
+                        recipient=boutique.user,
+                        type='versement_boutique',
+                        title="Échec du versement",
+                        message=f"Le virement de {versement_bq.montant} FCFA a échoué ({versement_bq.motif_echec}). Votre solde disponible a été ré-incrémenté.",
+                        url="/me/boutique/portefeuille/",
+                        metadata={'versement_id': versement_bq.id, 'montant': str(versement_bq.montant), 'reference': versement_bq.reference_transaction, 'statut': 'echec'}
+                    )
+                    logger.info("[Campay Webhook] VersementBoutique updated to FAILED. ID=%s, Balance refunded.", versement_bq.id)
+                else:
+                    if campay_pn and not versement_bq.campay_processing_number:
+                        versement_bq.save()
+                    return Response({"detail": f"Statut intermédiaire ignoré : {status_val}"}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.exception("[Campay Webhook] Exception occurred while processing versement_bq webhook.")
+            return Response({"detail": f"Erreur interne : {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({"detail": "Webhook traité avec succès pour la boutique"}, status=status.HTTP_200_OK)
+
+    # -------------------------------------------------------------
+    # CAS B : Payout Prestataire
+    # -------------------------------------------------------------
     if payout_tx.statut != 'en_cours':
         logger.info("[Campay Webhook] Transaction already finalized: ID=%s, status=%s", payout_tx.id, payout_tx.statut)
         return Response({"detail": f"Transaction déjà finalisée : {payout_tx.statut}"}, status=status.HTTP_200_OK)
@@ -2415,7 +2596,7 @@ def campay_payout_webhook(request):
 @permission_classes([IsSuperadmin])
 def admin_poll_campay_payout(request, pk):
     """
-    Endpoint pour interroger manuellement Campay sur une transaction spécifique.
+    Endpoint pour interroger manuellement Campay sur une transaction spécifique de prestataire.
     """
     payout_tx = get_object_or_404(PayoutTransaction, pk=pk)
     if not payout_tx.campay_processing_number:
@@ -2426,9 +2607,6 @@ def admin_poll_campay_payout(request, pk):
     if not success:
         return Response({"detail": f"Erreur lors de l'interrogation : {error}"}, status=status.HTTP_400_BAD_REQUEST)
         
-    # Appeler la logique de traitement en interne (via le même flow que le webhook)
-    # Pour simplifier, on peut réutiliser une fonction partagée ou dupliquer un peu la logique
-    # Ici, nous mettons simplement à jour le statut en fonction du résultat
     status_val = (campay_data or {}).get('status', '').upper()
     message = (campay_data or {}).get('message') or (campay_data or {}).get('reason')
     
@@ -2455,6 +2633,56 @@ def admin_poll_campay_payout(request, pk):
             prest.save()
             
     return Response({"status": payout_tx.statut, "campay_status": status_val, "detail": message})
+
+
+@api_view(['POST', 'GET'])
+@permission_classes([IsSuperadmin])
+def admin_poll_campay_boutique_versement(request, pk):
+    """
+    Endpoint pour interroger manuellement Campay sur un versement boutique spécifique (polling).
+    """
+    from orders.models import VersementBoutique
+    versement = get_object_or_404(VersementBoutique, pk=pk)
+    if not versement.campay_processing_number:
+        return Response({"detail": "Aucun processing_number Campay associé à ce versement."}, status=status.HTTP_400_BAD_REQUEST)
+
+    success, campay_data, error = campay_adapter.get_transaction_status(versement.campay_processing_number)
+    if not success:
+        return Response({"detail": f"Erreur lors de l'interrogation Campay : {error}"}, status=status.HTTP_400_BAD_REQUEST)
+
+    status_val = (campay_data or {}).get('status', '').upper()
+    message = (campay_data or {}).get('message') or (campay_data or {}).get('reason')
+
+    if status_val in ('SUCCESSFUL', 'SUCCESS') and versement.statut == 'en_cours':
+        with transaction.atomic():
+            versement = VersementBoutique.objects.select_for_update().get(pk=versement.pk)
+            if versement.statut == 'en_cours':
+                versement.statut = 'succes'
+                versement.date_finalisation = timezone.now()
+                versement.save()
+                bq = Boutique.objects.select_for_update().get(pk=versement.boutique_id)
+                bq.solde_total_recu += versement.montant
+                bq.save(update_fields=['solde_total_recu'])
+
+    elif status_val in ('FAILED', 'CANCELLED', 'REJECTED') and versement.statut == 'en_cours':
+        with transaction.atomic():
+            versement = VersementBoutique.objects.select_for_update().get(pk=versement.pk)
+            if versement.statut == 'en_cours':
+                versement.statut = 'echec'
+                versement.motif_echec = message or "Échec notifié par Campay"
+                versement.date_finalisation = timezone.now()
+                versement.save()
+                bq = Boutique.objects.select_for_update().get(pk=versement.boutique_id)
+                bq.solde_disponible += versement.montant
+                bq.save(update_fields=['solde_disponible'])
+
+    versement.refresh_from_db()
+    return Response({
+        "status": versement.statut,
+        "campay_status": status_val,
+        "detail": message,
+        "versement": VersementBoutiqueSerializer(versement).data
+    })
 
 
 @api_view(['GET'])
