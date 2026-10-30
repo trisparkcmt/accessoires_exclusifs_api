@@ -722,6 +722,14 @@ LOGGING = {
             'level': 'WARNING',
             'propagate': False,
         },
+        # Scanners internet / Host headers invalides (DisallowedHost) :
+        # Empêche l'inondation de la boîte mail de l'admin (mail_admins) lors des scans de bots
+        # sur l'IP du serveur ou des noms d'hôtes non autorisés.
+        'django.security.DisallowedHost': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
         # Alerte sur les erreurs de l'app orders (race conditions, paiements, etc.)
         'orders': {
             'handlers': _log_handlers_django,
