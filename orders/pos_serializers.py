@@ -94,7 +94,7 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                     raise serializers.ValidationError({"code_promo": "Ce client n'est pas autorisé à utiliser ce code promo."})
                 
                 # Vérifier l'usage unique
-                if Commande.objects.filter(client=client_found, code_promo_utilise__iexact=code_clean).exclude(statut__in=['annulée', 'remboursée']).exists():
+                if Commande.objects.filter(client=client_found, code_promo_utilise__iexact=code_clean).exclude(statut='annulée').exists():
                     raise serializers.ValidationError({"code_promo": "Ce client a déjà utilisé ce code promo."})
                 
                 data['promo_admin_obj'] = promo_admin

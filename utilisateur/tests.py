@@ -168,24 +168,32 @@ class AuthEndpointsTest(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('detail', response.data)
 
-    def test_apply_prestataire_creates_request(self):
+    def test_apply_prestataire_requires_photo(self):
         access_token = self.authenticate({'email': self.user.email, 'password': self.password})
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
 
-        response = self.client.post(self.apply_prestataire_url, format='json')
+        # Sans photo -> 400
+        response_no_photo = self.client.post(self.apply_prestataire_url, format='json')
+        self.assertEqual(response_no_photo.status_code, 400)
+        self.assertIn('photo', response_no_photo.data)
+
+    def test_apply_prestataire_creates_request_with_photo(self):
+        import io
+        from PIL import Image
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        access_token = self.authenticate({'email': self.user.email, 'password': self.password})
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
+
+        file = io.BytesIO()
+        img = Image.new('RGB', (10, 10), color='red')
+        img.save(file, 'jpeg')
+        file.seek(0)
+
+        photo = SimpleUploadedFile('test_photo.jpg', file.getvalue(), content_type='image/jpeg')
+        response = self.client.post(self.apply_prestataire_url, {'photo': photo}, format='multipart')
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['detail'], 'Demande envoyée avec succès.')
-
-    def test_apply_prestataire_fails_when_already_requested(self):
-        access_token = self.authenticate({'email': self.user.email, 'password': self.password})
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access_token}')
-
-        response_first = self.client.post(self.apply_prestataire_url, format='json')
-        self.assertEqual(response_first.status_code, 201)
-
-        response_second = self.client.post(self.apply_prestataire_url, format='json')
-        self.assertEqual(response_second.status_code, 400)
-        self.assertIn('detail', response_second.data)
 
 
 from unittest.mock import patch
@@ -1043,6 +1051,239 @@ class ServeuseEndpointsTest(APITestCase):
         self.assertTrue(hasattr(user.client, 'serveuse'))
 
 
+from utilisateur.models import Serveuse
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+class PhotoProfilTest(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username='admin_photo_test',
+            email='admin_photo@example.com',
+            password='AdminPassword123!'
+        )
+
+        self.serveuse_user = User.objects.create_user(
+            username='serveuse_photo_user',
+            email='serveuse_photo@example.com',
+            password='UserPassword123!'
+        )
+        self.serveuse = Serveuse.objects.create(
+            client=self.serveuse_user.client,
+            actif=True
+        )
+
+        self.livreur_user = User.objects.create_user(
+            username='livreur_photo_user',
+            email='livreur_photo@example.com',
+            password='UserPassword123!'
+        )
+        self.livreur = Livreur.objects.create(
+            client=self.livreur_user.client,
+            statut='disponible'
+        )
+
+    def test_admin_created_serveuse_and_livreur_have_no_photo_by_default(self):
+        self.assertFalse(bool(self.serveuse.photo))
+        self.assertFalse(bool(self.livreur.photo))
+
+    def test_user_can_upload_profile_photo(self):
+        import io
+        from PIL import Image
+        self.client.force_authenticate(user=self.serveuse_user)
+
+        file = io.BytesIO()
+        img = Image.new('RGB', (10, 10), color='blue')
+        img.save(file, 'jpeg')
+        file.seek(0)
+
+        photo = SimpleUploadedFile('serveuse.jpg', file.getvalue(), content_type='image/jpeg')
+
+        response = self.client.post('/api/v1/auth/me/photo/', {'photo': photo}, format='multipart')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('photo', response.data)
+        self.assertIn('photos_profil/serveuses/serveuse', response.data['photo'])
+
+        self.serveuse.refresh_from_db()
+        self.assertTrue(bool(self.serveuse.photo))
+
+    def test_admin_cannot_update_photo_via_admin_endpoints(self):
+        self.client.force_authenticate(user=self.admin)
+        photo = SimpleUploadedFile('hacked.jpg', b'hacked_content', content_type='image/jpeg')
+
+        # Admin tries to update serveuse photo
+        response_serveuse = self.client.patch(
+            f'/api/v1/auth/admin/serveuses/{self.serveuse.pk}/',
+            {'photo': photo, 'actif': True},
+            format='multipart'
+        )
+        self.assertEqual(response_serveuse.status_code, 200)
+        self.serveuse.refresh_from_db()
+        self.assertFalse(bool(self.serveuse.photo))
+
+        # Admin tries to update livreur photo
+        response_livreur = self.client.patch(
+            f'/api/v1/auth/admin/livreurs/{self.livreur.pk}/',
+            {'photo': photo, 'statut': 'disponible'},
+            format='multipart'
+        )
+        self.assertEqual(response_livreur.status_code, 200)
+        self.livreur.refresh_from_db()
+        self.assertFalse(bool(self.livreur.photo))
+
+
+from utilisateur.models import Boutique
+
+class BoutiqueTest(APITestCase):
+    def setUp(self):
+        import io
+        from PIL import Image
+
+        self.user = User.objects.create_user(
+            username='client_boutique_test',
+            email='client_boutique@example.com',
+            password='Password123!',
+            telephone='+225070000100'
+        )
+        self.admin = User.objects.create_superuser(
+            username='admin_boutique_test',
+            email='admin_boutique@example.com',
+            password='AdminPassword123!'
+        )
+
+        file = io.BytesIO()
+        img = Image.new('RGB', (10, 10), color='green')
+        img.save(file, 'jpeg')
+        file.seek(0)
+        self.test_photo = SimpleUploadedFile('boutique_logo.jpg', file.getvalue(), content_type='image/jpeg')
+
+    def test_apply_boutique_validation(self):
+        self.client.force_authenticate(user=self.user)
+
+        # Missing photo & nom -> 400
+        res = self.client.post('/api/v1/auth/boutique/apply/', {}, format='multipart')
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('photo', res.data)
+        self.assertIn('nom', res.data)
+
+    def test_apply_boutique_success_and_duplicate(self):
+        self.client.force_authenticate(user=self.user)
+
+        import io
+        from PIL import Image
+        file = io.BytesIO()
+        img = Image.new('RGB', (10, 10), color='green')
+        img.save(file, 'jpeg')
+        photo = SimpleUploadedFile('logo.jpg', file.getvalue(), content_type='image/jpeg')
+
+        payload = {
+            'nom': 'Ma Super Boutique',
+            'adresse': '123 Rue du Commerce',
+            'ville': 'Abidjan',
+            'telephone': '+225070000100',
+            'photo': photo
+        }
+        res = self.client.post('/api/v1/auth/boutique/apply/', payload, format='multipart')
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.data['boutique']['nom'], 'Ma Super Boutique')
+        self.assertEqual(res.data['boutique']['statut'], 'en_attente')
+
+        # Role remains 'client' while en_attente
+        self.user.refresh_from_db()
+        self.assertNotIn('boutique', self.user.role)
+
+        # Duplicate application -> 400
+        photo2 = SimpleUploadedFile('logo2.jpg', file.getvalue(), content_type='image/jpeg')
+        res_dup = self.client.post('/api/v1/auth/boutique/apply/', {'nom': 'Deuxieme Boutique', 'photo': photo2}, format='multipart')
+        self.assertEqual(res_dup.status_code, 400)
+
+    def test_me_boutique_get_and_patch(self):
+        boutique = Boutique.objects.create(
+            client=self.user.client,
+            nom='Boutique Initial',
+            photo=self.test_photo,
+            statut='en_attente'
+        )
+        self.client.force_authenticate(user=self.user)
+
+        # GET /api/v1/auth/me/boutique/
+        res_get = self.client.get('/api/v1/auth/me/boutique/')
+        self.assertEqual(res_get.status_code, 200)
+        self.assertEqual(res_get.data['nom'], 'Boutique Initial')
+
+        # PATCH /api/v1/auth/me/boutique/
+        res_patch = self.client.patch('/api/v1/auth/me/boutique/', {'nom': 'Boutique Modifiée', 'ville': 'Yamoussoukro'}, format='json')
+        self.assertEqual(res_patch.status_code, 200)
+        self.assertEqual(res_patch.data['nom'], 'Boutique Modifiée')
+        self.assertEqual(res_patch.data['ville'], 'Yamoussoukro')
+
+    def test_admin_boutique_list_and_activate(self):
+        boutique = Boutique.objects.create(
+            client=self.user.client,
+            nom='Boutique En Attente',
+            photo=self.test_photo,
+            statut='en_attente'
+        )
+        self.client.force_authenticate(user=self.admin)
+
+        # Admin GET list
+        res_list = self.client.get('/api/v1/auth/admin/boutiques/')
+        self.assertEqual(res_list.status_code, 200)
+        self.assertEqual(len(res_list.data), 1)
+
+        # Admin PATCH activate
+        res_patch = self.client.patch(f'/api/v1/auth/admin/boutiques/{boutique.pk}/', {'statut': 'actif'}, format='json')
+        self.assertEqual(res_patch.status_code, 200)
+        self.assertEqual(res_patch.data['statut'], 'actif')
+
+        # Now role includes 'boutique'
+        self.user.refresh_from_db()
+        self.assertIn('boutique', self.user.role)
+
+    def test_cancel_boutique_application(self):
+        boutique = Boutique.objects.create(
+            client=self.user.client,
+            nom='Boutique A Annuler',
+            photo=self.test_photo,
+            statut='en_attente'
+        )
+        self.client.force_authenticate(user=self.user)
+
+        res_cancel = self.client.delete('/api/v1/auth/boutique/cancel/')
+        self.assertEqual(res_cancel.status_code, 200)
+        self.assertFalse(Boutique.objects.filter(pk=boutique.pk).exists())
+
+    def test_admin_validate_boutique_requires_taux_commission(self):
+        boutique = Boutique.objects.create(
+            client=self.user.client,
+            nom='Boutique A Valider',
+            photo=self.test_photo,
+            statut='en_attente'
+        )
+        self.client.force_authenticate(user=self.admin)
+
+        # Validation sans taux_commission -> 400
+        res_no_rate = self.client.patch(f'/api/v1/auth/admin/boutiques/validate/{boutique.pk}/', {}, format='json')
+        self.assertEqual(res_no_rate.status_code, 400)
+        self.assertIn('taux_commission', res_no_rate.data)
+
+        # Validation avec taux_commission -> 200
+        res_val = self.client.patch(
+            f'/api/v1/auth/admin/boutiques/validate/{boutique.pk}/',
+            {'taux_commission': '15.50'},
+            format='json'
+        )
+        self.assertEqual(res_val.status_code, 200)
+        self.assertEqual(res_val.data['boutique']['statut'], 'actif')
+
+        # Verify DB and user role
+        boutique.refresh_from_db()
+        self.assertEqual(boutique.statut, 'actif')
+        self.assertEqual(boutique.taux_commission, Decimal('15.50'))
+
+        self.user.refresh_from_db()
+        self.assertIn('boutique', self.user.role)
+
+
 from utilisateur.models import Prestataire
 
 class PrestataireCancelAndDeleteTest(APITestCase):
@@ -1090,6 +1331,113 @@ class PrestataireCancelAndDeleteTest(APITestCase):
         response = self.client.delete(f'/api/v1/auth/admin/prestataires/{prestataire.pk}/delete/')
         self.assertEqual(response.status_code, 204)
         self.assertFalse(Prestataire.objects.filter(pk=prestataire.pk).exists())
+
+
+from catalogue.models import Parfum, Accessoire, CategorieParfum, TypeAccessoire
+
+class BoutiqueProduitCatalogTest(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='user_boutique_owner',
+            email='boutique_owner@example.com',
+            password='Password123!'
+        )
+        self.boutique = Boutique.objects.create(
+            client=self.user.client,
+            nom='Ma Super Boutique',
+            statut='actif'
+        )
+        self.categorie_parfum = CategorieParfum.objects.create(nom='Boise', slug='boise')
+        self.type_accessoire = TypeAccessoire.objects.create(nom='Sac', slug='sac')
+
+    def test_active_boutique_can_post_parfum_and_accessoire(self):
+        self.client.force_authenticate(user=self.user)
+
+        # Post Parfum
+        res_parfum = self.client.post('/api/v1/shop/parfums/', {
+            'nom': 'Parfum Boutique 1',
+            'contenance_ml': 100,
+            'prix_unitaire': '25000.00',
+            'stock_quantite': 20,
+            'seuil_alerte_stock': 2,
+            'categorie': self.categorie_parfum.pk,
+            'actif': True,
+        }, format='json')
+        self.assertEqual(res_parfum.status_code, 201)
+        parfum_id = res_parfum.data['id']
+        parfum = Parfum.objects.get(pk=parfum_id)
+        self.assertEqual(parfum.boutique, self.boutique)
+
+        # Post Accessoire
+        res_acc = self.client.post('/api/v1/shop/accessoires/', {
+            'nom': 'Accessoire Boutique 1',
+            'prix_unitaire': '15000.00',
+            'stock_quantite': 10,
+            'seuil_alerte_stock': 1,
+            'type_accessoire': self.type_accessoire.pk,
+            'actif': True,
+        }, format='json')
+        self.assertEqual(res_acc.status_code, 201)
+        accessoire_id = res_acc.data['id']
+        accessoire = Accessoire.objects.get(pk=accessoire_id)
+        self.assertEqual(accessoire.boutique, self.boutique)
+
+    def test_public_cannot_see_boutique_info_in_product(self):
+        parfum = Parfum.objects.create(
+            nom='Parfum Discret',
+            contenance_ml=100,
+            prix_unitaire=Decimal('30000.00'),
+            stock_quantite=15,
+            seuil_alerte_stock=2,
+            categorie=self.categorie_parfum,
+            boutique=self.boutique,
+            actif=True
+        )
+        self.client.force_authenticate(user=None)
+        res = self.client.get(f'/api/v1/shop/parfums/{parfum.slug}/')
+        self.assertEqual(res.status_code, 200)
+        self.assertNotIn('boutique', res.data)
+
+    def test_boutique_only_sees_own_products_in_dashboard(self):
+        # Produit de l'admin (sans boutique)
+        parfum_admin = Parfum.objects.create(
+            nom='Parfum Admin',
+            contenance_ml=100,
+            prix_unitaire=Decimal('20000.00'),
+            stock_quantite=10,
+            seuil_alerte_stock=1,
+            categorie=self.categorie_parfum,
+            actif=True
+        )
+        # Produit de notre boutique
+        parfum_boutique = Parfum.objects.create(
+            nom='Parfum Ma Boutique',
+            contenance_ml=100,
+            prix_unitaire=Decimal('25000.00'),
+            stock_quantite=10,
+            seuil_alerte_stock=1,
+            categorie=self.categorie_parfum,
+            boutique=self.boutique,
+            actif=True
+        )
+
+        self.client.force_authenticate(user=self.user)
+
+        # 1. En mode Dashboard (avec header X-Dashboard-Context=true)
+        res_dash = self.client.get('/api/v1/shop/parfums/', HTTP_X_DASHBOARD_CONTEXT='true')
+        self.assertEqual(res_dash.status_code, 200)
+        results_dash = res_dash.data.get('resultats', res_dash.data)
+        slugs_dash = [p['slug'] for p in results_dash]
+        self.assertIn(parfum_boutique.slug, slugs_dash)
+        self.assertNotIn(parfum_admin.slug, slugs_dash)
+
+        # 2. Avec paramètre ?mes_produits=true
+        res_my = self.client.get('/api/v1/shop/parfums/?mes_produits=true')
+        self.assertEqual(res_my.status_code, 200)
+        results_my = res_my.data.get('resultats', res_my.data)
+        slugs_my = [p['slug'] for p in results_my]
+        self.assertIn(parfum_boutique.slug, slugs_my)
+        self.assertNotIn(parfum_admin.slug, slugs_my)
 
 
 from unittest.mock import patch
@@ -1140,6 +1488,7 @@ class NotificationDeletionAndGoogleOneTapTest(APITestCase):
         self.assertFalse(Notification.objects.filter(pk=self.notif_user.pk).exists())
         self.assertTrue(Notification.objects.filter(pk=self.notif_global.pk).exists())
 
+    @override_settings(GOOGLE_CLIENT_ID='test-google-client-id.apps.googleusercontent.com')
     @patch('google.oauth2.id_token.verify_oauth2_token')
     def test_google_one_tap_login(self, mock_verify):
         mock_verify.return_value = {

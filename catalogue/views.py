@@ -22,13 +22,13 @@ from drf_spectacular.utils import (
 from drf_spectacular.types import OpenApiTypes
 from rest_framework.permissions import IsAuthenticated
 from orders.models import CommandeLigneAccessoire, CommandeLigneParfum, CommandeProduitFiniEssence
-from .permissions import IsAdminOrReadOnly, IsAdmin, IsAdminOrServeuse, IsAdminOrServeuseOrReadOnly
+from .permissions import IsAdminOrReadOnly, IsAdmin, IsAdminOrServeuse, IsAdminOrServeuseOrReadOnly, IsAdminOrServeuseOrBoutiqueOrReadOnly
 from utilisateur.permissions import is_active_serveuse
 
 from .models import CategorieParfum, LotEssence, Parfum, Essence, Accessoire, Flacon, Favori, Ingredient, ProduitFiniEssence, Tag, TypeAccessoire, TypeFlacon, NotificationCatalogue, MouvementStock, EntrepriseInfo
 from .serializers import (
     AccessoireAdminDetailSerializer, AccessoireAdminListSerializer, AccessoirePublicDetailSerializer, AccessoirePublicListSerializer, AccessoireSimilaireSerializer, CategorieParfumSerializer, EssenceLaboDetailSerializer, EssenceLaboListSerializer, LotEssenceSerializer, ParfumAdminDetailSerializer, ParfumAdminListSerializer, ParfumPublicDetailSerializer, ParfumPublicListSerializer, ParfumSerializer, EssenceSerializer, EssencePublicSerializer,
-    AccessoireSerializer, FlaconSerializer, FlaconPublicSerializer, ParfumSimilaireSerializer, EssenceCreateFullSerializer,
+    AccessoireSerializer, FlaconSerializer, FlaconPublicSerializer, FlaconAdminSerializer, ParfumSimilaireSerializer, EssenceCreateFullSerializer,
     IngredientSerializer, FavoriSerializer, ProduitFiniEssencePublicSerializer, ProduitFiniEssenceSerializer, PromotionSerializer, TagSelectSerializer, TagSerializer, TypeAccessoireSerializer, TypeFlaconSerializer, NotificationCatalogueSerializer, NotificationCatalogueUpdateSerializer, EntrepriseInfoSerializer,
     get_image_url, UnifiedBestsellerHotsellerSerializer,
 )
@@ -229,25 +229,77 @@ Retourne également :
 class ParfumViewSet(viewsets.ModelViewSet):
     serializer_class   = ParfumSerializer
     pagination_class   = StandardPagination
-    permission_classes = [IsAdminOrServeuseOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrBoutiqueOrReadOnly]
     filter_backends    = [DjangoFilterBackend, OrderedSearchFilter, CustomOrderingFilter]
     parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = ParfumFilter
     search_fields      = ['marque', 'nom', 'description_courte', 'notes_tete', 'notes_coeur', 'notes_fond']
-    ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'contenance_ml']
+    ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'contenance_ml', 'random']
     ordering           = ['-date_creation', '-id']
+    allow_deterministic_random = True
     lookup_field       = 'slug'
 
     def get_queryset(self):
-        from utilisateur.permissions import is_privileged_dashboard_user
-        from django.db.models import F
-        if is_privileged_dashboard_user(self.request):
-            return Parfum.objects.all().select_related('categorie').prefetch_related('tags')
-        return Parfum.objects.filter(
+        from utilisateur.permissions import is_privileged_dashboard_user, is_dashboard_request
+        from django.db.models import F, Q
+        
+        request = getattr(self, 'request', None)
+        user = request.user if request else None
+
+        if is_privileged_dashboard_user(request):
+            # L'admin ne voit QUE les parfums globaux (sans boutique) dans son catalogue.
+            # Les parfums ajoutés par une boutique sont visibles dans les détails de la boutique.
+            return Parfum.objects.filter(boutique__isnull=True).select_related('categorie', 'boutique').prefetch_related('tags')
+        
+        base_qs = Parfum.objects.select_related('categorie', 'boutique').prefetch_related('tags')
+        boutique = None
+        if user and user.is_authenticated:
+            try:
+                client = getattr(user, 'client', None)
+                boutique = getattr(client, 'boutique', None) if client else None
+            except Exception:
+                pass
+
+        is_dash = is_dashboard_request(request)
+        query_mes_produits = request and (
+            request.query_params.get('mes_produits') in ('true', '1', 'yes') or
+            request.query_params.get('my_products') in ('true', '1', 'yes') or
+            request.query_params.get('boutique_only') in ('true', '1', 'yes')
+        )
+
+        if boutique and boutique.statut == 'actif':
+            if is_dash or query_mes_produits:
+                # Dans le dashboard, la boutique ne voit QUE les produits qu'elle a postés
+                return base_qs.filter(boutique=boutique)
+            else:
+                return base_qs.filter(
+                    Q(boutique=boutique) |
+                    (
+                        Q(actif=True, stock_quantite__gt=F('seuil_alerte_stock'), prix_unitaire__gt=0) &
+                        (Q(boutique__isnull=True) | Q(boutique__statut='actif'))
+                    )
+                )
+
+        return base_qs.filter(
             actif=True,
             stock_quantite__gt=F('seuil_alerte_stock'),
             prix_unitaire__gt=0
-        ).select_related('categorie').prefetch_related('tags')
+        ).filter(
+            Q(boutique__isnull=True) | Q(boutique__statut='actif')
+        )
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if not user.is_staff and not is_active_serveuse(user):
+            try:
+                client = getattr(user, 'client', None)
+                boutique = getattr(client, 'boutique', None) if client else None
+                if boutique and boutique.statut == 'actif':
+                    serializer.save(boutique=boutique)
+                    return
+            except Exception:
+                pass
+        serializer.save()
 
     def get_object(self):
         queryset = self.filter_queryset(self.get_queryset())
@@ -261,14 +313,22 @@ class ParfumViewSet(viewsets.ModelViewSet):
         return obj
 
     def get_serializer_class(self):
-        from utilisateur.permissions import is_privileged_dashboard_user
-        is_admin = is_privileged_dashboard_user(self.request)
+        from utilisateur.permissions import is_privileged_dashboard_user, is_dashboard_request
+        request = getattr(self, 'request', None)
+        is_admin = is_privileged_dashboard_user(request)
+        is_dash = is_dashboard_request(request)
+        is_dash_or_my = is_admin or is_dash or (
+            request and (
+                request.query_params.get('mes_produits') in ('true', '1', 'yes') or
+                request.query_params.get('my_products') in ('true', '1', 'yes')
+            )
+        )
         if self.action == 'list':
-            if is_admin:
+            if is_dash_or_my:
                 return ParfumAdminListSerializer
             return ParfumPublicListSerializer
         else:
-            if is_admin:
+            if is_dash_or_my:
                 return ParfumAdminDetailSerializer
             return ParfumPublicDetailSerializer
     
@@ -546,9 +606,12 @@ class LotEssenceViewSet(viewsets.ModelViewSet):
 class ProduitFiniEssenceViewSet(viewsets.ModelViewSet):
     serializer_class = ProduitFiniEssencePublicSerializer
     permission_classes = [IsAdminOrServeuseOrReadOnly]
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filter_backends = [DjangoFilterBackend, SearchFilter, CustomOrderingFilter]
     filterset_fields = ['essence', 'taille_ml']
     search_fields = ['essence__marque', 'essence__nom']
+    ordering_fields = ['prix', 'taille_ml', 'id', 'random']
+    ordering = ['-id']
+    allow_deterministic_random = True
 
     def get_queryset(self):
         from utilisateur.permissions import is_privileged_dashboard_user
@@ -722,6 +785,52 @@ class BeneficesViewSet(viewsets.ViewSet):
                 'type': 'parfum',
                 'id': parfum.id,
                 'nom': parfum.nom,
+                'prix_vente': str(prix_vente.quantize(Decimal('0.01'))),
+                'prix_achat': str(prix_achat.quantize(Decimal('0.01'))),
+                'benefice': str(benefice.quantize(Decimal('0.01'))),
+                'marge_percent': round(float(marge), 2),
+            })
+
+        for acc in Accessoire.objects.filter(actif=True):
+            prix_vente = acc.prix_promotionnel_effectif or acc.prix_unitaire
+            prix_achat = acc.prix_achat or Decimal('0')
+            benefice = prix_vente - prix_achat
+            marge = ((benefice / prix_vente) * 100) if prix_vente else 0
+            produits.append({
+                'type': 'accessoire',
+                'id': acc.id,
+                'nom': acc.nom,
+                'prix_vente': str(prix_vente.quantize(Decimal('0.01'))),
+                'prix_achat': str(prix_achat.quantize(Decimal('0.01'))),
+                'benefice': str(benefice.quantize(Decimal('0.01'))),
+                'marge_percent': round(float(marge), 2),
+            })
+
+        for flacon in Flacon.objects.filter(actif=True):
+            prix_vente = flacon.prix_unitaire
+            prix_achat = flacon.prix_achat or Decimal('0')
+            benefice = prix_vente - prix_achat
+            marge = ((benefice / prix_vente) * 100) if prix_vente else 0
+            produits.append({
+                'type': 'flacon',
+                'id': flacon.id,
+                'nom': flacon.nom,
+                'prix_vente': str(prix_vente.quantize(Decimal('0.01'))),
+                'prix_achat': str(prix_achat.quantize(Decimal('0.01'))),
+                'benefice': str(benefice.quantize(Decimal('0.01'))),
+                'marge_percent': round(float(marge), 2),
+            })
+
+        from catalogue.models import DiffuseurParfum
+        for diff in DiffuseurParfum.objects.filter(actif=True):
+            prix_vente = diff.prix_promotionnel_effectif or diff.prix_unitaire
+            prix_achat = diff.prix_achat or Decimal('0')
+            benefice = prix_vente - prix_achat
+            marge = ((benefice / prix_vente) * 100) if prix_vente else 0
+            produits.append({
+                'type': 'diffuseur',
+                'id': diff.id,
+                'nom': diff.nom,
                 'prix_vente': str(prix_vente.quantize(Decimal('0.01'))),
                 'prix_achat': str(prix_achat.quantize(Decimal('0.01'))),
                 'benefice': str(benefice.quantize(Decimal('0.01'))),
@@ -1387,28 +1496,75 @@ Retourne la liste paginée de tous les accessoires **actifs**.
 class AccessoireViewSet(viewsets.ModelViewSet):
     serializer_class   = AccessoireSerializer
     pagination_class   = StandardPagination
-    permission_classes = [IsAdminOrServeuseOrReadOnly]
+    permission_classes = [IsAdminOrServeuseOrBoutiqueOrReadOnly]
     filter_backends    = [DjangoFilterBackend, OrderedSearchFilter, CustomOrderingFilter]
     parser_classes     = [MultiPartParser, FormParser, JSONParser]
     filterset_class    = AccessoireFilter
     search_fields      = ['marque', 'nom', 'description_courte', 'matiere', 'couleur']
-    ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'poids_grammes']
-    # L'attribut 'ordering' par défaut est maintenant géré dynamiquement dans get_queryset
+    ordering_fields    = ['prix_unitaire', 'date_creation', 'nom', 'poids_grammes', 'random']
     ordering           = ['-date_creation', '-id']
+    allow_deterministic_random = True
     lookup_field       = 'slug'
 
     def get_queryset(self):
-        from utilisateur.permissions import is_privileged_dashboard_user
-        from django.db.models import F
-        if is_privileged_dashboard_user(self.request):
-            # Pour l'admin, afficher tous les accessoires, triés par date de création (du plus récent au plus ancien)
-            return Accessoire.objects.all().select_related('type_accessoire').order_by('-date_creation', '-id')
-        # Pour les utilisateurs non-admin, triés par date de création du plus récent au plus ancien
-        return Accessoire.objects.filter(
+        from utilisateur.permissions import is_privileged_dashboard_user, is_dashboard_request
+        from django.db.models import F, Q
+        
+        request = getattr(self, 'request', None)
+        user = request.user if request else None
+
+        if is_privileged_dashboard_user(request):
+            return Accessoire.objects.all().select_related('type_accessoire', 'boutique').order_by('-date_creation', '-id')
+
+        base_qs = Accessoire.objects.select_related('type_accessoire', 'boutique')
+        boutique = None
+        if user and user.is_authenticated:
+            try:
+                client = getattr(user, 'client', None)
+                boutique = getattr(client, 'boutique', None) if client else None
+            except Exception:
+                pass
+
+        is_dash = is_dashboard_request(request)
+        query_mes_produits = request and (
+            request.query_params.get('mes_produits') in ('true', '1', 'yes') or
+            request.query_params.get('my_products') in ('true', '1', 'yes') or
+            request.query_params.get('boutique_only') in ('true', '1', 'yes')
+        )
+
+        if boutique and boutique.statut == 'actif':
+            if is_dash or query_mes_produits:
+                # Dans le dashboard, la boutique ne voit QUE les produits qu'elle a postés
+                return base_qs.filter(boutique=boutique)
+            else:
+                return base_qs.filter(
+                    Q(boutique=boutique) |
+                    (
+                        Q(actif=True, stock_quantite__gt=F('seuil_alerte_stock'), prix_unitaire__gt=0) &
+                        (Q(boutique__isnull=True) | Q(boutique__statut='actif'))
+                    )
+                )
+
+        return base_qs.filter(
             actif=True,
             stock_quantite__gt=F('seuil_alerte_stock'),
             prix_unitaire__gt=0
-        ).select_related('type_accessoire').order_by('-date_creation', '-id')
+        ).filter(
+            Q(boutique__isnull=True) | Q(boutique__statut='actif')
+        )
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if not user.is_staff and not is_active_serveuse(user):
+            try:
+                client = getattr(user, 'client', None)
+                boutique = getattr(client, 'boutique', None) if client else None
+                if boutique and boutique.statut == 'actif':
+                    serializer.save(boutique=boutique)
+                    return
+            except Exception:
+                pass
+        serializer.save()
 
     def get_object(self):
         queryset = self.filter_queryset(self.get_queryset())
@@ -1422,14 +1578,22 @@ class AccessoireViewSet(viewsets.ModelViewSet):
         return obj
 
     def get_serializer_class(self):
-        from utilisateur.permissions import is_privileged_dashboard_user
-        is_admin = is_privileged_dashboard_user(self.request)
+        from utilisateur.permissions import is_privileged_dashboard_user, is_dashboard_request
+        request = getattr(self, 'request', None)
+        is_admin = is_privileged_dashboard_user(request)
+        is_dash = is_dashboard_request(request)
+        is_dash_or_my = is_admin or is_dash or (
+            request and (
+                request.query_params.get('mes_produits') in ('true', '1', 'yes') or
+                request.query_params.get('my_products') in ('true', '1', 'yes')
+            )
+        )
         if self.action == 'list':
-            if is_admin:
+            if is_dash_or_my:
                 return AccessoireAdminListSerializer
             return AccessoirePublicListSerializer
         else:
-            if is_admin:
+            if is_dash_or_my:
                 return AccessoireAdminDetailSerializer
             return AccessoirePublicDetailSerializer
     #accessoires favoris 
@@ -1604,6 +1768,9 @@ class FlaconViewSet(viewsets.ModelViewSet):
         return obj
 
     def get_serializer_class(self):
+        from utilisateur.permissions import is_privileged_dashboard_user
+        if is_privileged_dashboard_user(self.request):
+            return FlaconAdminSerializer
         if self.action == 'list':
             return FlaconPublicSerializer
         return FlaconSerializer
@@ -1622,6 +1789,35 @@ class FavoriViewSet(viewsets.ReadOnlyModelViewSet):
                     .order_by('-date_ajout'))
         except AttributeError:
             return Favori.objects.none()
+
+    def list(self, request, *args, **kwargs):
+        client = getattr(request.user, 'client', None)
+        if not client:
+            return Response({'favoris': [], 'parfums_personnalises': []})
+
+        favoris_qs = self.get_queryset()
+        favoris_data = self.get_serializer(favoris_qs, many=True).data
+
+        from utilisateur.serializers import MeParfumPersonnaliseSerializer
+        parfums_perso_qs = (
+            client.parfums_personnalises
+            .select_related('flacon')
+            .prefetch_related(
+                'lignes__essence__essence',
+                'lignes__essence_personnalisee'
+            )
+            .order_by('-date_creation')
+        )
+        parfums_perso_data = MeParfumPersonnaliseSerializer(
+            parfums_perso_qs,
+            many=True,
+            context=self.get_serializer_context()
+        ).data
+
+        return Response({
+            'favoris': favoris_data,
+            'parfums_personnalises': parfums_perso_data,
+        })
         
 class TagViewSet(viewsets.ModelViewSet):
     queryset = Tag.objects.all()
@@ -1848,11 +2044,12 @@ class DiffuseurParfumViewSet(viewsets.ModelViewSet):
 
     parser_classes = (MultiPartParser, FormParser, JSONParser)
     pagination_class = StandardPagination
-    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filter_backends = [DjangoFilterBackend, SearchFilter, CustomOrderingFilter]
     filterset_class = DiffuseurParfumFilter
     search_fields = ['nom', 'marque', 'description', 'reference_sku']
-    ordering_fields = ['prix_unitaire', 'date_creation', 'nom']
-    ordering = ['-date_creation']
+    ordering_fields = ['prix_unitaire', 'date_creation', 'nom', 'random']
+    ordering = ['-date_creation', '-id']
+    allow_deterministic_random = True
 
     def get_queryset(self):
         from .models import DiffuseurParfum

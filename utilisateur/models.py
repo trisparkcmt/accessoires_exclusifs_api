@@ -77,6 +77,8 @@ class User(AbstractUser):
             roles.append("prestataire")
         if hasattr(self.client, 'livreur') and self.client.livreur.statut != 'inactif':
             roles.append("livreur")
+        if hasattr(self.client, 'boutique') and self.client.boutique.statut == 'actif':
+            roles.append("boutique")
 
         return roles if roles else "client"
 
@@ -117,8 +119,7 @@ class Prestataire(models.Model):
     ]
     
     client = models.OneToOneField(Client, on_delete=models.CASCADE, related_name='prestataire')
-   
-   
+    photo = models.ImageField(upload_to='photos_profil/prestataires/', null=True, blank=True)
     code_promo = models.CharField(max_length=50, unique=True, null=True, blank=True)
     taux_commission = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     reduction_client_pourcentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
@@ -151,7 +152,7 @@ class Livreur(models.Model):
     STATUT_CHOICES = [('disponible', 'Disponible'), ('en_livraison', 'En livraison'), ('inactif', 'Inactif'), ('suspendu', 'Suspendu')]
     
     client = models.OneToOneField(Client, on_delete=models.CASCADE, related_name='livreur')
-    photo = models.CharField(max_length=255, blank=True)
+    photo = models.ImageField(upload_to='photos_profil/livreurs/', null=True, blank=True)
     statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='disponible')
     note_moyenne = models.DecimalField(max_digits=3, decimal_places=2, default=0)
     nombre_livraisons = models.IntegerField(default=0)
@@ -190,6 +191,7 @@ class Serveuse(models.Model):
     """Serveuse = Client + spécificités"""
 
     client = models.OneToOneField(Client, on_delete=models.CASCADE, related_name='serveuse')
+    photo = models.ImageField(upload_to='photos_profil/serveuses/', null=True, blank=True)
     actif = models.BooleanField(default=False)
     note_moyenne = models.DecimalField(max_digits=3, decimal_places=2, default=0)
     nombre_services = models.IntegerField(default=0)
@@ -222,6 +224,47 @@ class Serveuse(models.Model):
     
     def __str__(self):
         return f"{self.nom} {self.prenom} - {self.telephone}"
+
+
+class Boutique(models.Model):
+    """Boutique = Client + vitrine commerciale en ligne"""
+    STATUT_CHOICES = [
+        ('en_attente', 'En attente'),
+        ('actif', 'Actif'),
+        ('suspendu', 'Suspendu'),
+        ('inactif', 'Inactif'),
+    ]
+
+    client    = models.OneToOneField(Client, on_delete=models.CASCADE, related_name='boutique')
+    photo     = models.ImageField(upload_to='photos_profil/boutiques/', null=True, blank=True)
+    nom       = models.CharField(max_length=200)
+    adresse   = models.CharField(max_length=300, blank=True)
+    ville     = models.CharField(max_length=100, blank=True)
+    telephone = models.CharField(max_length=20, blank=True)
+    taux_commission = models.DecimalField(max_digits=5, decimal_places=2, default=0, help_text="Pourcentage de commission admin prélevé sur chaque vente")
+    solde_disponible = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Montant accumulé à reverser à la boutique")
+    solde_total_recu = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Cumul des versements reçus par la boutique")
+    telephone_paiement = models.CharField(max_length=20, blank=True, help_text="Numéro Mobile Money pour versement")
+    mode_paiement_prefere = models.CharField(max_length=50, default='OM', choices=[('OM', 'Orange Money'), ('MOMO', 'MTN Mobile Money'), ('VIREMENT', 'Virement bancaire')])
+    statut    = models.CharField(max_length=20, choices=STATUT_CHOICES, default='en_attente')
+    date_creation     = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'boutique'
+        verbose_name = 'Boutique'
+        verbose_name_plural = 'Boutiques'
+
+    @property
+    def user(self):
+        return self.client.user
+
+    @property
+    def proprietaire_nom(self):
+        return f"{self.user.first_name} {self.user.last_name}".strip() or self.user.email
+
+    def __str__(self):
+        return f"{self.nom} ({self.statut}) — {self.proprietaire_nom}"
 
 
 class CommissionLog(models.Model):

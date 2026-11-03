@@ -40,6 +40,50 @@ class IsAdminOrServeuseOrReadOnly(permissions.BasePermission):
             return False
 
 
+class IsAdminOrServeuseOrBoutiqueOrReadOnly(permissions.BasePermission):
+    """
+    - Autorise tout le monde à lire (GET, HEAD, OPTIONS).
+    - Autorise la création (POST) aux admins, serveuses actives, et boutiques actives.
+    - Autorise la modification/suppression (PUT, PATCH, DELETE) aux admins, serveuses actives,
+      ou aux boutiques actives si le produit appartient à leur boutique.
+    """
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+
+        if not (request.user and request.user.is_authenticated):
+            return False
+
+        if request.user.is_staff or is_active_serveuse(request.user):
+            return True
+
+        try:
+            client = getattr(request.user, 'client', None)
+            boutique = getattr(client, 'boutique', None) if client else None
+            return boutique is not None and boutique.statut == 'actif'
+        except Exception:
+            return False
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+
+        if not (request.user and request.user.is_authenticated):
+            return False
+
+        if request.user.is_staff or is_active_serveuse(request.user):
+            return True
+
+        try:
+            client = getattr(request.user, 'client', None)
+            boutique = getattr(client, 'boutique', None) if client else None
+            if boutique and boutique.statut == 'actif':
+                return obj.boutique_id == boutique.id
+        except Exception:
+            pass
+        return False
+
+
 class IsAdmin(permissions.BasePermission):
     """
     Permission stricte: Admin seulement.

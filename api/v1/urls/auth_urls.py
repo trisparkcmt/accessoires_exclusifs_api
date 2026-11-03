@@ -1,14 +1,18 @@
 from django.urls import path, include
 from utilisateur.views import (
-    manage_me, change_email, GoogleLogin, apply_prestataire, supprimer_compte, 
+    manage_me, change_email, upload_photo_profil, GoogleLogin, apply_prestataire, supprimer_compte, 
     cancel_prestataire_application, list_prestataire_requests, validate_prestataire,
     prestataire_dashboard, prestataire_finance_history, prestataire_payouts_list,
+    apply_boutique, cancel_boutique_application, me_boutique, me_boutique_produits, admin_boutiques_list, admin_boutique_detail, admin_boutique_produits, validate_boutique,
+    me_boutique_ventes, me_boutique_portefeuille, admin_boutiques_financier, admin_boutique_effectuer_versement,
+    admin_boutique_parfum_toggle_actif,
     # Admin views
     admin_users_list, admin_user_toggle_status,
     admin_prestataires_list, admin_prestataire_update, admin_delete_prestataire,
     admin_global_stats,
     # Payouts
     admin_prestataire_payout, admin_payouts_list, campay_payout_webhook, admin_poll_campay_payout,
+    admin_poll_campay_boutique_versement,
     # Livreur & Admin Delivery views
     livreur_dashboard, livreur_commandes_list, livreur_update_delivery_status,
     admin_livreurs_list, admin_promote_to_livreur, admin_update_livreur,
@@ -49,7 +53,10 @@ urlpatterns = [
     # Profil utilisateur personnalisé
     path('me/', manage_me, name='me'),
     path('me', manage_me),
+    path('me/commandes/', __import__('orders.views', fromlist=['MesCommandesView']).MesCommandesView.as_view(), name='me-commandes'),
     path('me/change-email/', change_email, name='me-change-email'),
+    path('me/photo/', upload_photo_profil, name='me-upload-photo'),
+    path('me/boutique/', me_boutique, name='me-boutique'),
     path('me/supprimer-compte/', supprimer_compte, name='me-supprimer-compte'),
 
     # Workflow Prestataire (Côté Client)
@@ -58,6 +65,14 @@ urlpatterns = [
     path('prestataire/dashboard/', prestataire_dashboard, name='prestataire-dashboard'),
     path('prestataire/historique/', prestataire_finance_history, name='prestataire-historique'),
     path('prestataire/payouts/', prestataire_payouts_list, name='prestataire-payouts'),
+
+    # Workflow Boutique (Côté Client)
+    path('boutique/apply/', apply_boutique, name='boutique-apply'),
+    path('boutique/cancel/', cancel_boutique_application, name='boutique-cancel'),
+    path('boutique/produits/', me_boutique_produits, name='boutique-produits'),
+    path('me/boutique/produits/', me_boutique_produits, name='me-boutique-produits'),
+    path('boutique/ventes/', me_boutique_ventes, name='boutique-ventes'),
+    path('boutique/portefeuille/', me_boutique_portefeuille, name='boutique-portefeuille'),
 
     # Webhook public pour Campay Payouts
     path('payout/webhook/', campay_payout_webhook, name='campay-payout-webhook'),
@@ -79,6 +94,16 @@ urlpatterns = [
     path('admin/payouts/<int:pk>/verifier/', admin_poll_campay_payout, name='admin-payout-check-status'),
     path('admin/stats/global/', admin_global_stats, name='admin-global-stats'),
     
+    # Admin Boutique Endpoints
+    path('admin/boutiques/', admin_boutiques_list, name='admin-boutiques-list'),
+    path('admin/boutiques/financier/', admin_boutiques_financier, name='admin-boutiques-financier'),
+    path('admin/boutiques/validate/<int:pk>/', validate_boutique, name='admin-boutique-validate'),
+    path('admin/boutiques/<int:pk>/', admin_boutique_detail, name='admin-boutique-detail'),
+    path('admin/boutiques/<int:pk>/produits/', admin_boutique_produits, name='admin-boutique-produits'),
+    path('admin/boutiques/<int:pk>/parfums/<int:parfum_pk>/toggle-actif/', admin_boutique_parfum_toggle_actif, name='admin-boutique-parfum-toggle-actif'),
+    path('admin/boutiques/<int:pk>/effectuer-versement/', admin_boutique_effectuer_versement, name='admin-boutique-effectuer-versement'),
+    path('admin/boutiques/versements/<int:pk>/verifier/', admin_poll_campay_boutique_versement, name='admin-boutique-versement-check-status'),
+
     # Admin Delivery Endpoints
     path('admin/livreurs/', admin_livreurs_list, name='admin-livreurs-list'),
     path('admin/livreurs/promote/', admin_promote_to_livreur, name='admin-promote-to-livreur'),

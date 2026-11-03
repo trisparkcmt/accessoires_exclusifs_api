@@ -7,7 +7,8 @@ from django.contrib.auth.forms import SetPasswordForm
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.http import HttpResponse
-from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes, parser_classes
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from .permissions import (
     IsSuperadmin, IsActiveSuperadmin, IsActiveServeuse, IsSuperadminOrActiveServeuse,
@@ -31,9 +32,11 @@ from .serializers import (
     PrestataireValidationSerializer, MeSerializer, MeUpdateSerializer,
     NotificationSerializer, PayoutTransactionSerializer, PayoutRequestSerializer,
     LivreurSerializer, LivreurUpdateSerializer, LivreurCommandeSerializer,
-    ServeusesSerializer, ServeusesUpdateSerializer, DepenseSerializer, ClientSerializer
+    ServeusesSerializer, ServeusesUpdateSerializer, DepenseSerializer, ClientSerializer,
+    BoutiqueSerializer, BoutiqueApplicationSerializer, BoutiqueMeUpdateSerializer, BoutiqueAdminUpdateSerializer, BoutiqueValidationSerializer, BoutiqueAdminDetailSerializer,
+    VenteBoutiqueSerializer, VersementBoutiqueSerializer
 )
-from .models import Prestataire, User, Notification, PayoutTransaction, CommissionLog, Livreur, Serveuse, Client, Depense
+from .models import Prestataire, User, Notification, PayoutTransaction, CommissionLog, Livreur, Serveuse, Client, Depense, Boutique
 from orders.models import Commande
 from .throttles import (
     ChangeEmailThrottle,
@@ -306,7 +309,7 @@ def confirm_email_direct(request, key):
         except EmailConfirmation.DoesNotExist:
             confirmation = None
 
-    frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+    frontend_url = getattr(settings, 'FRONTEND_URL', 'https://dev.accessoiresexclusifs.com')
 
     if confirmation is None or confirmation.confirm(request) is None:
         error_html = """<!doctype html>
@@ -940,12 +943,6 @@ def manage_me(request):
             .prefetch_related(
                 'client__favoris__parfum__tags',
                 'client__favoris__accessoire',
-                'client__parfums_personnalises__flacon',
-                'client__parfums_personnalises__lignes__essence__essence',
-                'client__parfums_personnalises__lignes__essence_personnalisee',
-                'client__commandes__lignes_parfums__parfum',
-                'client__commandes__lignes_parfums_perso__parfum_personnalise',
-                'client__commandes__lignes_accessoires__accessoire',
             )
             .get(pk=user.pk)
         )
@@ -1060,9 +1057,11 @@ def change_email(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
 def apply_prestataire(request):
     """
     Endpoint pour qu'un utilisateur postule en tant que prestataire.
+    La photo est obligatoire.
     """
     user = request.user
     
@@ -1106,6 +1105,727 @@ def cancel_prestataire_application(request):
 
     prestataire.delete()
     return Response({"detail": "Votre demande de prestataire a été annulée avec succès."}, status=status.HTTP_200_OK)
+
+
+@api_view(['POST', 'PATCH'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def upload_photo_profil(request):
+    """
+    Permet à une serveuse, un livreur, un prestataire ou une boutique connecté de mettre à jour sa photo de profil.
+    L'admin ne peut pas modifier la photo via les endpoints d'administration.
+    """
+    user = request.user
+    if not hasattr(user, 'client'):
+        return Response({"detail": "Profil client introuvable."}, status=status.HTTP_400_BAD_REQUEST)
+
+    client = user.client
+    target_profiles = []
+
+    if hasattr(client, 'serveuse'):
+        target_profiles.append(client.serveuse)
+    if hasattr(client, 'livreur'):
+        target_profiles.append(client.livreur)
+    if hasattr(client, 'prestataire'):
+        target_profiles.append(client.prestataire)
+    if hasattr(client, 'boutique'):
+        target_profiles.append(client.boutique)
+
+    if not target_profiles:
+        return Response(
+            {"detail": "Vous n'avez aucun rôle (serveuse, livreur, prestataire, boutique) permettant d'ajouter une photo."},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    photo_file = request.FILES.get('photo') or request.data.get('photo')
+    if not photo_file:
+        return Response({"detail": "Le fichier 'photo' est obligatoire."}, status=status.HTTP_400_BAD_REQUEST)
+
+    for profile in target_profiles:
+        profile.photo = photo_file
+        profile.save()
+
+    updated_photo_url = request.build_absolute_uri(target_profiles[0].photo.url) if target_profiles[0].photo else None
+    return Response({
+        "detail": "Photo de profil mise à jour avec succès.",
+        "photo": updated_photo_url
+    }, status=status.HTTP_200_OK)
+
+
+#============================== Boutique ==========================
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def apply_boutique(request):
+    """
+    Endpoint pour qu'un client postule pour créer sa boutique.
+    La photo et le nom sont obligatoires.
+    """
+    user = request.user
+    client, _ = Client.objects.get_or_create(user=user)
+
+    if hasattr(client, 'boutique'):
+        return Response({"detail": "Vous avez déjà une demande de boutique en cours ou une boutique enregistrée."}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = BoutiqueApplicationSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        boutique = serializer.save(client=client, statut='en_attente')
+
+        # --- Notification in-app pour l'admin ---
+        Notification.objects.create(
+            type='demande_boutique',
+            title="Nouvelle demande de boutique",
+            message=f"{user.first_name or user.username} ({user.email}) a soumis une demande pour ouvrir la boutique '{boutique.nom}'.",
+            is_global_admin=True,
+            url=f"/admin/boutiques/{boutique.id}/",
+            metadata={'boutique_id': boutique.id, 'client_email': user.email},
+        )
+
+        # --- Email HTML à l'admin ---
+        try:
+            admin_emails = list(
+                User.objects.filter(is_superuser=True, is_active=True).values_list('email', flat=True)
+            )
+            if admin_emails:
+                admin_context = {
+                    'nom_boutique': boutique.nom,
+                    'client_nom': f"{user.first_name or ''} {user.last_name or ''}".strip() or user.username,
+                    'client_email': user.email,
+                    'client_telephone': getattr(user, 'telephone', None) or '',
+                    'ville': getattr(boutique, 'ville', '') or '',
+                    'adresse': getattr(boutique, 'adresse', '') or '',
+                }
+                html_body = render_to_string('emails/boutique_request_admin.html', admin_context)
+                from django.utils.html import strip_tags
+                text_body = strip_tags(html_body)
+                email_admin = EmailMultiAlternatives(
+                    subject="[Accessoires Exclusifs] Nouvelle demande de boutique",
+                    body=text_body,
+                    from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@accessoire-exclusif.com'),
+                    to=admin_emails,
+                )
+                email_admin.attach_alternative(html_body, "text/html")
+                email_admin.send(fail_silently=True)
+        except Exception:
+            pass
+
+        return Response({
+            "detail": "Demande de boutique envoyée avec succès.",
+            "boutique": BoutiqueSerializer(boutique, context={'request': request}).data
+        }, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def cancel_boutique_application(request):
+    """
+    Permet à un client d'annuler sa demande de création de boutique en attente.
+    """
+    user = request.user
+    if not hasattr(user, 'client') or not hasattr(user.client, 'boutique'):
+        return Response({"detail": "Aucune boutique trouvée pour ce compte."}, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = user.client.boutique
+    if boutique.statut != 'en_attente':
+        return Response(
+            {"detail": "Impossible d'annuler une boutique qui a déjà été traitée ou activée."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    boutique.delete()
+    return Response({"detail": "Votre demande de boutique a été annulée avec succès."}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def me_boutique(request):
+    """
+    GET: Consulter les informations de sa propre boutique.
+    PATCH: Modifier les informations de sa propre boutique (nom, adresse, ville, telephone).
+    DELETE: Annuler sa demande de boutique.
+    """
+    user = request.user
+    if not hasattr(user, 'client') or not hasattr(user.client, 'boutique'):
+        return Response({"detail": "Vous n'avez pas de boutique."}, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = user.client.boutique
+
+    if request.method == 'GET':
+        serializer = BoutiqueSerializer(boutique, context={'request': request})
+        data = serializer.data
+        data['produits'] = get_boutique_produits_paginated(boutique, request)
+        return Response(data)
+
+    elif request.method == 'PATCH':
+        serializer = BoutiqueMeUpdateSerializer(boutique, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(BoutiqueSerializer(boutique, context={'request': request}).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    elif request.method == 'DELETE':
+        if boutique.statut != 'en_attente':
+            return Response(
+                {"detail": "Impossible d'annuler une boutique qui a déjà été traitée ou activée."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        boutique.delete()
+        return Response({"detail": "Votre demande de boutique a été annulée avec succès."}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def me_boutique_produits(request):
+    """
+    GET: Liste paginée à 100 par page de TOUS les produits (Parfums & Accessoires) postés par la boutique de l'utilisateur connecté.
+    Filtres supportés :
+    - ?type=all|parfum|accessoire (défaut: all)
+    - ?categorie=<id_ou_slug> (id/slug de la CategorieParfum ou du TypeAccessoire)
+    - ?search=<terme> (nom, marque, SKU)
+    - ?actif=true|false
+    - ?ordering=-date_creation|prix_unitaire|stock_quantite|nom
+    - ?page=1
+    - ?page_size=100 (défaut: 100, max: 100)
+    """
+    user = request.user
+    if not hasattr(user, 'client') or not hasattr(user.client, 'boutique'):
+        return Response({"detail": "Vous n'avez pas de boutique."}, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = user.client.boutique
+    return Response(get_boutique_produits_paginated(boutique, request))
+
+
+@api_view(['GET'])
+@permission_classes([IsSuperadminOrServeuseReadOnly])
+def admin_boutiques_list(request):
+    """
+    Liste toutes les boutiques (pour l'administrateur / serveuse).
+    Possibilité de filtrer par statut via ?statut=en_attente|actif|suspendu|refuse.
+    """
+    statut = request.query_params.get('statut')
+    queryset = Boutique.objects.select_related('client__user').all().order_by('-date_creation')
+    if statut:
+        queryset = queryset.filter(statut=statut)
+
+    serializer = BoutiqueSerializer(queryset, many=True, context={'request': request})
+    return Response(serializer.data)
+
+
+def get_boutique_produits_paginated(boutique, request):
+    """
+    Récupère, filtre et pagine les produits (Parfums & Accessoires) d'une boutique.
+    Pagine à 100 éléments par page par défaut.
+    """
+    from catalogue.models import Parfum, Accessoire
+    from catalogue.serializers import ParfumSerializer, AccessoireSerializer
+    from django.db.models import Q
+
+    type_produit = request.query_params.get('type', 'all').lower() if request else 'all'
+    categorie = request.query_params.get('categorie') if request else None
+    search = request.query_params.get('search') if request else None
+    actif = request.query_params.get('actif') if request else None
+    ordering = request.query_params.get('ordering', '-date_creation') if request else '-date_creation'
+
+    try:
+        page = max(1, int(request.query_params.get('page', 1))) if request else 1
+    except (ValueError, TypeError):
+        page = 1
+
+    try:
+        page_size = min(100, max(1, int(request.query_params.get('page_size', 100)))) if request else 100
+    except (ValueError, TypeError):
+        page_size = 100
+
+    items = []
+
+    # 1. Parfums
+    if type_produit in ('all', 'parfum'):
+        qs_parfums = Parfum.objects.filter(boutique=boutique).select_related('categorie', 'boutique').prefetch_related('tags')
+        if search:
+            qs_parfums = qs_parfums.filter(
+                Q(nom__icontains=search) | Q(marque__icontains=search) | Q(reference_sku__icontains=search) | Q(description_courte__icontains=search)
+            )
+        if actif in ('true', '1', 'yes'):
+            qs_parfums = qs_parfums.filter(actif=True)
+        elif actif in ('false', '0', 'no'):
+            qs_parfums = qs_parfums.filter(actif=False)
+        if categorie:
+            if str(categorie).isdigit():
+                qs_parfums = qs_parfums.filter(categorie_id=int(categorie))
+            else:
+                qs_parfums = qs_parfums.filter(Q(categorie__slug=categorie) | Q(categorie__nom__icontains=categorie))
+        
+        for p in qs_parfums:
+            data = ParfumSerializer(p, context={'request': request}).data
+            data['type_produit'] = 'parfum'
+            items.append((p.date_creation, p.id, data))
+
+    # 2. Accessoires
+    if type_produit in ('all', 'accessoire'):
+        qs_accessoires = Accessoire.objects.filter(boutique=boutique).select_related('type_accessoire', 'boutique').prefetch_related('tags')
+        if search:
+            qs_accessoires = qs_accessoires.filter(
+                Q(nom__icontains=search) | Q(marque__icontains=search) | Q(reference_sku__icontains=search) | Q(description_courte__icontains=search)
+            )
+        if actif in ('true', '1', 'yes'):
+            qs_accessoires = qs_accessoires.filter(actif=True)
+        elif actif in ('false', '0', 'no'):
+            qs_accessoires = qs_accessoires.filter(actif=False)
+        if categorie:
+            if str(categorie).isdigit():
+                qs_accessoires = qs_accessoires.filter(type_accessoire_id=int(categorie))
+            else:
+                qs_accessoires = qs_accessoires.filter(Q(type_accessoire__slug=categorie) | Q(type_accessoire__nom__icontains=categorie))
+        
+        for a in qs_accessoires:
+            data = AccessoireSerializer(a, context={'request': request}).data
+            data['type_produit'] = 'accessoire'
+            items.append((a.date_creation, a.id, data))
+
+    # Tri global
+    reverse_sort = ordering.startswith('-')
+    sort_key_name = ordering.lstrip('-')
+
+    if sort_key_name == 'prix_unitaire':
+        items.sort(key=lambda x: Decimal(str(x[2].get('prix_unitaire', 0))), reverse=reverse_sort)
+    elif sort_key_name == 'nom':
+        items.sort(key=lambda x: str(x[2].get('nom', '')).lower(), reverse=reverse_sort)
+    elif sort_key_name in ('stock_quantite', 'stock'):
+        items.sort(key=lambda x: int(x[2].get('stock_quantite', 0)), reverse=reverse_sort)
+    else:
+        items.sort(key=lambda x: x[0], reverse=reverse_sort)
+
+    total_items = len(items)
+    total_pages = (total_items + page_size - 1) // page_size if total_items > 0 else 1
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_items = [item[2] for item in items[start_idx:end_idx]]
+
+    return {
+        "count": total_items,
+        "total_pages": total_pages,
+        "current_page": page,
+        "page_size": page_size,
+        "next": page + 1 if page < total_pages else None,
+        "previous": page - 1 if page > 1 else None,
+        "results": page_items
+    }
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
+@permission_classes([IsSuperadminOrServeuseReadOnly])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def admin_boutique_detail(request, pk):
+    """
+    GET: Détails d'une boutique (Admin) incluant ses produits postés paginés à 100 par page.
+    PATCH: Modifier une boutique (statut, nom, etc.) par un Admin.
+    DELETE: Supprimer une boutique (Admin).
+    """
+    boutique = get_object_or_404(Boutique, pk=pk)
+
+    if request.method == 'GET':
+        serializer = BoutiqueAdminDetailSerializer(boutique, context={'request': request})
+        data = dict(serializer.data)
+        data['produits'] = get_boutique_produits_paginated(boutique, request)
+        return Response(data)
+
+    elif request.method == 'PATCH':
+        serializer = BoutiqueAdminUpdateSerializer(boutique, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(BoutiqueSerializer(boutique, context={'request': request}).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    elif request.method == 'DELETE':
+        boutique.delete()
+        return Response({"detail": "Boutique supprimée avec succès."}, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET'])
+@permission_classes([IsSuperadminOrServeuseReadOnly])
+def admin_boutique_produits(request, pk):
+    """
+    GET: Endpoint dédié pour lister les produits (Parfums & Accessoires) postés par la boutique <pk> avec pagination à 100 par page et filtres.
+    Filtres supportés :
+    - ?type=all|parfum|accessoire
+    - ?categorie=<id_ou_slug>
+    - ?search=<terme>
+    - ?actif=true|false
+    - ?ordering=-date_creation|prix_unitaire|stock_quantite|nom
+    - ?page=1
+    - ?page_size=100
+    """
+    boutique = get_object_or_404(Boutique, pk=pk)
+    return Response(get_boutique_produits_paginated(boutique, request))
+
+
+@api_view(['PATCH'])
+@permission_classes([IsSuperadmin])
+def admin_boutique_parfum_toggle_actif(request, pk, parfum_pk):
+    """
+    PATCH: Activer ou désactiver un parfum appartenant à une boutique (Admin uniquement).
+    L'admin ne peut modifier QUE le champ `actif`. Toute autre modification est ignorée.
+
+    Body: { "actif": true } ou { "actif": false }
+    """
+    from catalogue.models import Parfum
+    boutique = get_object_or_404(Boutique, pk=pk)
+    parfum = get_object_or_404(Parfum, pk=parfum_pk, boutique=boutique)
+
+    actif = request.data.get('actif')
+    if actif is None:
+        return Response(
+            {"detail": "Le champ 'actif' est requis."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    if not isinstance(actif, bool):
+        return Response(
+            {"detail": "Le champ 'actif' doit être un booléen (true ou false)."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    parfum.actif = actif
+    parfum.save(update_fields=['actif'])
+
+    return Response({
+        "detail": f"Parfum {'activé' if actif else 'désactivé'} avec succès.",
+        "parfum_id": parfum.pk,
+        "nom": parfum.nom,
+        "actif": parfum.actif,
+        "boutique_id": boutique.pk,
+        "boutique_nom": boutique.nom,
+    }, status=status.HTTP_200_OK)
+
+@api_view(['POST', 'PATCH'])
+@permission_classes([IsSuperadmin])
+@parser_classes([JSONParser, FormParser])
+def validate_boutique(request, pk):
+    """
+    Endpoint pour valider et activer une boutique (Réservé à l'Admin).
+    L'admin doit renseigner le taux_commission (pourcentage).
+    """
+    boutique = get_object_or_404(Boutique, pk=pk)
+
+    if boutique.statut != 'en_attente':
+        return Response({"detail": "Cette boutique a déjà été traitée ou n'est plus en attente."}, status=status.HTTP_400_BAD_REQUEST)
+
+    serializer = BoutiqueValidationSerializer(boutique, data=request.data)
+    if serializer.is_valid():
+        boutique = serializer.save(statut='actif')
+
+        user = boutique.client.user
+
+        # --- Notification in-app pour le client ---
+        Notification.objects.create(
+            recipient=user,
+            type='boutique_validee',
+            title="Boutique activée !",
+            message=f"Votre boutique '{boutique.nom}' a été validée et est maintenant active sur la plateforme.",
+            url="/me/boutique/",
+            metadata={'boutique_id': boutique.id, 'taux_commission': str(boutique.taux_commission)},
+        )
+
+        # --- Email HTML au client ---
+        try:
+            client_context = {
+                'first_name': user.first_name or user.username,
+                'nom_boutique': boutique.nom,
+                'taux_commission': boutique.taux_commission,
+            }
+            html_body = render_to_string('emails/boutique_validee.html', client_context)
+            from django.utils.html import strip_tags
+            text_body = strip_tags(html_body)
+            email_client = EmailMultiAlternatives(
+                subject="Votre boutique est maintenant active ! 🛍️",
+                body=text_body,
+                from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@accessoire-exclusif.com'),
+                to=[user.email],
+            )
+            email_client.attach_alternative(html_body, "text/html")
+            email_client.send(fail_silently=True)
+        except Exception:
+            pass
+
+        return Response({
+            "detail": "Boutique validée et activée avec succès.",
+            "boutique": BoutiqueSerializer(boutique, context={'request': request}).data
+        }, status=status.HTTP_200_OK)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def me_boutique_ventes(request):
+    """
+    GET: Liste des ventes des produits appartenant à la boutique de l'utilisateur connecté.
+    """
+    user = request.user
+    if not hasattr(user, 'client') or not hasattr(user.client, 'boutique'):
+        return Response({"detail": "Vous n'avez pas de boutique."}, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = user.client.boutique
+    from orders.models import VenteBoutique
+    ventes = VenteBoutique.objects.filter(boutique=boutique).select_related('commande')
+
+    serializer = VenteBoutiqueSerializer(ventes, many=True)
+    return Response(serializer.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def me_boutique_portefeuille(request):
+    """
+    GET: Synthèse du portefeuille et solde de la boutique de l'utilisateur connecté.
+    """
+    user = request.user
+    if not hasattr(user, 'client') or not hasattr(user.client, 'boutique'):
+        return Response({"detail": "Vous n'avez pas de boutique."}, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = user.client.boutique
+    from orders.models import VenteBoutique, VersementBoutique
+    from django.db.models import Sum
+
+    total_brut = VenteBoutique.objects.filter(boutique=boutique, statut='valide').aggregate(s=Sum('montant_brut'))['s'] or Decimal('0.00')
+    total_commission_admin = VenteBoutique.objects.filter(boutique=boutique, statut='valide').aggregate(s=Sum('montant_commission_admin'))['s'] or Decimal('0.00')
+    total_net = VenteBoutique.objects.filter(boutique=boutique, statut='valide').aggregate(s=Sum('montant_net_boutique'))['s'] or Decimal('0.00')
+
+    versements = VersementBoutique.objects.filter(boutique=boutique)
+    versements_data = VersementBoutiqueSerializer(versements[:10], many=True).data
+
+    return Response({
+        "boutique_id": boutique.id,
+        "nom_boutique": boutique.nom,
+        "solde_disponible": str(boutique.solde_disponible),
+        "solde_total_recu": str(boutique.solde_total_recu),
+        "chiffre_affaires_brut": str(total_brut),
+        "total_commissions_admin": str(total_commission_admin),
+        "total_net_gagne": str(total_net),
+        "telephone_paiement": boutique.telephone_paiement,
+        "mode_paiement_prefere": boutique.mode_paiement_prefere,
+        "versements_recents": versements_data
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsSuperadmin])
+def admin_boutiques_financier(request):
+    """
+    GET: Synthèse financière globale de toutes les boutiques partenaires pour l'Admin (Superadmin uniquement).
+    """
+    from orders.models import VenteBoutique, VersementBoutique
+    from django.db.models import Sum
+
+    boutiques = Boutique.objects.filter(statut='actif')
+    res = []
+    for b in boutiques:
+        ca_brut = VenteBoutique.objects.filter(boutique=b, statut='valide').aggregate(s=Sum('montant_brut'))['s'] or Decimal('0.00')
+        comm_admin = VenteBoutique.objects.filter(boutique=b, statut='valide').aggregate(s=Sum('montant_commission_admin'))['s'] or Decimal('0.00')
+        net_b = VenteBoutique.objects.filter(boutique=b, statut='valide').aggregate(s=Sum('montant_net_boutique'))['s'] or Decimal('0.00')
+
+        res.append({
+            "id": b.id,
+            "nom": b.nom,
+            "proprietaire": b.proprietaire_nom,
+            "taux_commission": str(b.taux_commission),
+            "solde_disponible": str(b.solde_disponible),
+            "solde_total_recu": str(b.solde_total_recu),
+            "chiffre_affaires_brut": str(ca_brut),
+            "commissions_admin_perdues": str(comm_admin),
+            "net_boutique_cumule": str(net_b),
+            "telephone_paiement": b.telephone_paiement,
+            "mode_paiement_prefere": b.mode_paiement_prefere,
+        })
+
+    return Response(res)
+
+
+@api_view(['POST'])
+@permission_classes([IsSuperadmin])
+def admin_boutique_effectuer_versement(request, pk):
+    """
+    POST: L'Admin effectue un versement (Payout) à une boutique et déduit son solde_disponible.
+    - Si mode_paiement est 'OM' ou 'MOMO' (et non manuel), initie un virement Mobile Money automatique via Campay.
+    - Si mode_paiement est 'VIREMENT' ou request.data['manuel']=True (ou en l'absence de numéro de téléphone), enregistre un versement direct manuel.
+    La clé d'idempotence ('idempotency_key', 'reference_transaction' ou header 'X-Idempotency-Key') est OBLIGATOIRE.
+    """
+    boutique = get_object_or_404(Boutique, pk=pk)
+    montant = Decimal(str(request.data.get('montant', 0)))
+    mode_paiement = request.data.get('mode_paiement', boutique.mode_paiement_prefere or 'OM')
+    telephone = request.data.get('telephone_destination') or request.data.get('telephone') or boutique.telephone_paiement or boutique.telephone
+    note_admin = request.data.get('note_admin', '')
+    is_manuel = request.data.get('manuel') is True or mode_paiement == 'VIREMENT'
+
+    idempotency_key = request.data.get('idempotency_key') or request.data.get('reference_transaction') or request.META.get('HTTP_X_IDEMPOTENCY_KEY')
+
+    if not idempotency_key or not str(idempotency_key).strip():
+        return Response({
+            "detail": "La clé d'idempotence ('idempotency_key' ou 'reference_transaction') est obligatoire pour effectuer un versement."
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    idempotency_key = str(idempotency_key).strip()
+
+    from orders.models import VersementBoutique
+    existing_versement = VersementBoutique.objects.filter(reference_transaction=idempotency_key).first()
+    if existing_versement:
+        return Response({
+            "detail": "Ce versement a déjà été enregistré (Traitement idempotent).",
+            "idempotent": True,
+            "versement": VersementBoutiqueSerializer(existing_versement).data,
+            "nouveau_solde_disponible": str(existing_versement.boutique.solde_disponible)
+        }, status=status.HTTP_200_OK)
+
+    if montant <= 0:
+        return Response({"detail": "Le montant du versement doit être supérieur à 0."}, status=status.HTTP_400_BAD_REQUEST)
+
+    from django.db import transaction as db_transaction
+
+    # Déterminer si on effectue un virement automatique Campay
+    use_campay = (not is_manuel) and (mode_paiement in ('OM', 'MOMO')) and bool(telephone)
+    cleaned_phone = None
+
+    if use_campay:
+        cleaned_phone = clean_cameroon_phone(telephone)
+        if not cleaned_phone:
+            return Response({
+                "detail": f"Le numéro de téléphone pour le versement ({telephone}) n'est pas valide pour un virement Mobile Money Campay (Cameroun). Précisez un numéro valide ou activez manuel=True pour un enregistrement hors-ligne."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    # 1. Vérification atomique et débit du solde_disponible
+    try:
+        with db_transaction.atomic():
+            boutique_locked = Boutique.objects.select_for_update().get(pk=pk)
+
+            if montant > boutique_locked.solde_disponible:
+                return Response({
+                    "detail": f"Le montant ({montant} FCFA) dépasse le solde disponible de la boutique ({boutique_locked.solde_disponible} FCFA)."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            ref = idempotency_key
+
+            if use_campay:
+                # Créer le versement avec statut 'en_cours'
+                versement = VersementBoutique.objects.create(
+                    boutique=boutique_locked,
+                    montant=montant,
+                    reference_transaction=ref,
+                    mode_paiement=mode_paiement,
+                    telephone_destination=cleaned_phone,
+                    note_admin=note_admin,
+                    effectue_par=request.user,
+                    statut='en_cours'
+                )
+                boutique_locked.solde_disponible -= montant
+                boutique_locked.save(update_fields=['solde_disponible'])
+            else:
+                # Mode manuel / Virement bancaire direct
+                versement = VersementBoutique.objects.create(
+                    boutique=boutique_locked,
+                    montant=montant,
+                    reference_transaction=ref,
+                    mode_paiement=mode_paiement,
+                    telephone_destination=telephone or '',
+                    note_admin=note_admin,
+                    effectue_par=request.user,
+                    statut='succes',
+                    date_finalisation=timezone.now()
+                )
+                boutique_locked.solde_disponible -= montant
+                boutique_locked.solde_total_recu += montant
+                boutique_locked.save(update_fields=['solde_disponible', 'solde_total_recu'])
+
+    except Boutique.DoesNotExist:
+        return Response({"detail": "Boutique introuvable."}, status=status.HTTP_404_NOT_FOUND)
+
+    # 2. Si virement automatique Campay : appel de l'API
+    if use_campay:
+        amount_xaf = int(montant)
+        success, campay_data, error = campay_adapter.payout_to_phone(
+            cleaned_phone, amount_xaf,
+            description=f"Payout boutique {boutique.nom}",
+            external_reference=ref
+        )
+
+        if success:
+            campay_pn = (campay_data or {}).get('processing_number') or (campay_data or {}).get('reference')
+            if campay_pn:
+                versement.campay_processing_number = campay_pn
+
+            campay_status = (campay_data or {}).get('status', '').upper()
+            if campay_status in ('SUCCESSFUL', 'SUCCESS'):
+                versement.statut = 'succes'
+                versement.date_finalisation = timezone.now()
+                versement.save()
+                with db_transaction.atomic():
+                    bq = Boutique.objects.select_for_update().get(pk=pk)
+                    bq.solde_total_recu += montant
+                    bq.save(update_fields=['solde_total_recu'])
+            elif campay_status in ('FAILED', 'CANCELLED', 'REJECTED'):
+                versement.statut = 'echec'
+                versement.motif_echec = (campay_data or {}).get('message') or 'Rejeté par Campay'
+                versement.date_finalisation = timezone.now()
+                versement.save()
+                with db_transaction.atomic():
+                    bq = Boutique.objects.select_for_update().get(pk=pk)
+                    bq.solde_disponible += montant
+                    bq.save(update_fields=['solde_disponible'])
+                return Response({
+                    "detail": f"Campay a rejeté le versement : {versement.motif_echec}. Le solde de la boutique a été restitué."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                # PENDING : en attente du webhook
+                versement.save()
+
+            Notification.objects.create(
+                recipient=boutique.user,
+                type='versement_boutique',
+                title="Versement initié !",
+                message=f"Un versement de {montant} FCFA a été initié vers {cleaned_phone} ({ref}).",
+                url="/me/boutique/portefeuille/",
+                metadata={'versement_id': versement.id, 'montant': str(montant), 'reference': ref}
+            )
+
+            boutique_locked.refresh_from_db()
+            return Response({
+                "detail": f"Versement Mobile Money de {montant} FCFA initié avec succès vers {cleaned_phone} (Campay).",
+                "versement": VersementBoutiqueSerializer(versement).data,
+                "nouveau_solde_disponible": str(boutique_locked.solde_disponible)
+            }, status=status.HTTP_201_CREATED)
+        else:
+            # Échec de l'appel Campay -> restitution immédiate du solde
+            with db_transaction.atomic():
+                bq = Boutique.objects.select_for_update().get(pk=pk)
+                bq.solde_disponible += montant
+                bq.save(update_fields=['solde_disponible'])
+                versement.statut = 'echec'
+                versement.motif_echec = error or 'Rejet par Campay'
+                versement.date_finalisation = timezone.now()
+                versement.save()
+
+            return Response({
+                "detail": f"Campay a rejeté l'opération : {error}. Le solde disponible a été restitué."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Mode manuel : notification immédiate de succès
+    Notification.objects.create(
+        recipient=boutique.user,
+        type='versement_boutique',
+        title="Versement reçu !",
+        message=f"Un versement de {montant} FCFA a été effectué sur votre compte ({ref}).",
+        url="/me/boutique/portefeuille/",
+        metadata={'versement_id': versement.id, 'montant': str(montant), 'reference': ref}
+    )
+
+    return Response({
+        "detail": f"Versement de {montant} FCFA enregistré avec succès pour {boutique_locked.nom}.",
+        "versement": VersementBoutiqueSerializer(versement).data,
+        "nouveau_solde_disponible": str(boutique_locked.solde_disponible)
+    }, status=status.HTTP_201_CREATED)
+
+
 
 @api_view(['GET'])
 @permission_classes([IsSuperadminOrServeuseReadOnly])
@@ -1533,8 +2253,17 @@ import hashlib
 
 
 def _is_valid_campay_webhook_signature(request):
+    """
+    Vérifie la signature HMAC-SHA256 du webhook Campay.
+    FAIL-CLOSED : si le secret n'est pas configuré, toutes les requêtes sont rejetées
+    (sauf en mode DEBUG où l'absence de secret autorise les requêtes — usage dev uniquement).
+    """
     secret = getattr(settings, 'CAMPAY_WEBHOOK_SECRET', '')
     if not secret:
+        # En production, sans secret, on rejette systématiquement (fail-closed)
+        if not getattr(settings, 'DEBUG', False):
+            return False
+        # En dev uniquement, on laisse passer pour faciliter les tests locaux
         return True
 
     if request.method != 'POST':
@@ -1729,10 +2458,90 @@ def campay_payout_webhook(request):
     if payout_tx is None and campay_pn:
         # Dernier recours : certaines intégrations stockent le PN comme reference_unique
         payout_tx = PayoutTransaction.objects.filter(reference_unique=campay_pn).first()
+
+    # Si ce n'est pas un payout prestataire, vérifier si c'est un versement boutique
+    versement_bq = None
     if payout_tx is None:
-        logger.warning("[Campay Webhook] Transaction not found for campay_pn=%s or external_ref=%s", campay_pn, external_ref)
+        from orders.models import VersementBoutique
+        if campay_pn:
+            versement_bq = VersementBoutique.objects.filter(campay_processing_number=campay_pn).first()
+        if versement_bq is None and external_ref:
+            versement_bq = VersementBoutique.objects.filter(reference_transaction=external_ref).first()
+        if versement_bq is None and campay_pn:
+            versement_bq = VersementBoutique.objects.filter(reference_transaction=campay_pn).first()
+
+    if payout_tx is None and versement_bq is None:
+        logger.warning("[Campay Webhook] Neither PayoutTransaction nor VersementBoutique found for campay_pn=%s or external_ref=%s", campay_pn, external_ref)
         return Response({"detail": "Transaction non trouvée"}, status=status.HTTP_404_NOT_FOUND)
 
+    # -------------------------------------------------------------
+    # CAS A : Versement Boutique Partenaire
+    # -------------------------------------------------------------
+    if versement_bq is not None:
+        if versement_bq.statut != 'en_cours':
+            logger.info("[Campay Webhook] VersementBoutique already finalized: ID=%s, status=%s", versement_bq.id, versement_bq.statut)
+            return Response({"detail": f"Versement boutique déjà finalisé : {versement_bq.statut}"}, status=status.HTTP_200_OK)
+
+        try:
+            with transaction.atomic():
+                versement_bq = VersementBoutique.objects.select_for_update().get(pk=versement_bq.pk)
+                if versement_bq.statut != 'en_cours':
+                    return Response({"detail": "Versement boutique déjà traité"}, status=status.HTTP_200_OK)
+
+                if campay_pn and not versement_bq.campay_processing_number:
+                    versement_bq.campay_processing_number = campay_pn
+
+                boutique = Boutique.objects.select_for_update().get(pk=versement_bq.boutique_id)
+
+                if status_val in ('SUCCESSFUL', 'SUCCESS'):
+                    versement_bq.statut = 'succes'
+                    versement_bq.date_finalisation = timezone.now()
+                    versement_bq.save()
+
+                    boutique.solde_total_recu += versement_bq.montant
+                    boutique.save(update_fields=['solde_total_recu'])
+
+                    Notification.objects.create(
+                        recipient=boutique.user,
+                        type='versement_boutique',
+                        title="Versement reçu !",
+                        message=f"Le versement Mobile Money de {versement_bq.montant} FCFA a été effectué avec succès vers votre numéro ({versement_bq.telephone_destination}). Ref: {versement_bq.reference_transaction}.",
+                        url="/me/boutique/portefeuille/",
+                        metadata={'versement_id': versement_bq.id, 'montant': str(versement_bq.montant), 'reference': versement_bq.reference_transaction, 'statut': 'succes'}
+                    )
+                    logger.info("[Campay Webhook] VersementBoutique updated to SUCCESS. ID=%s, Amount=%s", versement_bq.id, versement_bq.montant)
+                elif status_val in ('FAILED', 'CANCELLED', 'REJECTED'):
+                    versement_bq.statut = 'echec'
+                    versement_bq.motif_echec = message or f"Échec notifié par Campay (status={status_val})"
+                    versement_bq.date_finalisation = timezone.now()
+                    versement_bq.save()
+
+                    boutique.solde_disponible += versement_bq.montant
+                    boutique.save(update_fields=['solde_disponible'])
+
+                    Notification.objects.create(
+                        recipient=boutique.user,
+                        type='versement_boutique',
+                        title="Échec du versement",
+                        message=f"Le virement de {versement_bq.montant} FCFA a échoué ({versement_bq.motif_echec}). Votre solde disponible a été ré-incrémenté.",
+                        url="/me/boutique/portefeuille/",
+                        metadata={'versement_id': versement_bq.id, 'montant': str(versement_bq.montant), 'reference': versement_bq.reference_transaction, 'statut': 'echec'}
+                    )
+                    logger.info("[Campay Webhook] VersementBoutique updated to FAILED. ID=%s, Balance refunded.", versement_bq.id)
+                else:
+                    if campay_pn and not versement_bq.campay_processing_number:
+                        versement_bq.save()
+                    return Response({"detail": f"Statut intermédiaire ignoré : {status_val}"}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.exception("[Campay Webhook] Exception occurred while processing versement_bq webhook.")
+            return Response({"detail": f"Erreur interne : {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({"detail": "Webhook traité avec succès pour la boutique"}, status=status.HTTP_200_OK)
+
+    # -------------------------------------------------------------
+    # CAS B : Payout Prestataire
+    # -------------------------------------------------------------
     if payout_tx.statut != 'en_cours':
         logger.info("[Campay Webhook] Transaction already finalized: ID=%s, status=%s", payout_tx.id, payout_tx.statut)
         return Response({"detail": f"Transaction déjà finalisée : {payout_tx.statut}"}, status=status.HTTP_200_OK)
@@ -1787,7 +2596,7 @@ def campay_payout_webhook(request):
 @permission_classes([IsSuperadmin])
 def admin_poll_campay_payout(request, pk):
     """
-    Endpoint pour interroger manuellement Campay sur une transaction spécifique.
+    Endpoint pour interroger manuellement Campay sur une transaction spécifique de prestataire.
     """
     payout_tx = get_object_or_404(PayoutTransaction, pk=pk)
     if not payout_tx.campay_processing_number:
@@ -1798,9 +2607,6 @@ def admin_poll_campay_payout(request, pk):
     if not success:
         return Response({"detail": f"Erreur lors de l'interrogation : {error}"}, status=status.HTTP_400_BAD_REQUEST)
         
-    # Appeler la logique de traitement en interne (via le même flow que le webhook)
-    # Pour simplifier, on peut réutiliser une fonction partagée ou dupliquer un peu la logique
-    # Ici, nous mettons simplement à jour le statut en fonction du résultat
     status_val = (campay_data or {}).get('status', '').upper()
     message = (campay_data or {}).get('message') or (campay_data or {}).get('reason')
     
@@ -1827,6 +2633,56 @@ def admin_poll_campay_payout(request, pk):
             prest.save()
             
     return Response({"status": payout_tx.statut, "campay_status": status_val, "detail": message})
+
+
+@api_view(['POST', 'GET'])
+@permission_classes([IsSuperadmin])
+def admin_poll_campay_boutique_versement(request, pk):
+    """
+    Endpoint pour interroger manuellement Campay sur un versement boutique spécifique (polling).
+    """
+    from orders.models import VersementBoutique
+    versement = get_object_or_404(VersementBoutique, pk=pk)
+    if not versement.campay_processing_number:
+        return Response({"detail": "Aucun processing_number Campay associé à ce versement."}, status=status.HTTP_400_BAD_REQUEST)
+
+    success, campay_data, error = campay_adapter.get_transaction_status(versement.campay_processing_number)
+    if not success:
+        return Response({"detail": f"Erreur lors de l'interrogation Campay : {error}"}, status=status.HTTP_400_BAD_REQUEST)
+
+    status_val = (campay_data or {}).get('status', '').upper()
+    message = (campay_data or {}).get('message') or (campay_data or {}).get('reason')
+
+    if status_val in ('SUCCESSFUL', 'SUCCESS') and versement.statut == 'en_cours':
+        with transaction.atomic():
+            versement = VersementBoutique.objects.select_for_update().get(pk=versement.pk)
+            if versement.statut == 'en_cours':
+                versement.statut = 'succes'
+                versement.date_finalisation = timezone.now()
+                versement.save()
+                bq = Boutique.objects.select_for_update().get(pk=versement.boutique_id)
+                bq.solde_total_recu += versement.montant
+                bq.save(update_fields=['solde_total_recu'])
+
+    elif status_val in ('FAILED', 'CANCELLED', 'REJECTED') and versement.statut == 'en_cours':
+        with transaction.atomic():
+            versement = VersementBoutique.objects.select_for_update().get(pk=versement.pk)
+            if versement.statut == 'en_cours':
+                versement.statut = 'echec'
+                versement.motif_echec = message or "Échec notifié par Campay"
+                versement.date_finalisation = timezone.now()
+                versement.save()
+                bq = Boutique.objects.select_for_update().get(pk=versement.boutique_id)
+                bq.solde_disponible += versement.montant
+                bq.save(update_fields=['solde_disponible'])
+
+    versement.refresh_from_db()
+    return Response({
+        "status": versement.statut,
+        "campay_status": status_val,
+        "detail": message,
+        "versement": VersementBoutiqueSerializer(versement).data
+    })
 
 
 @api_view(['GET'])
@@ -1908,20 +2764,51 @@ class GoogleLogin(SocialLoginView):
         from utilisateur.models import User
         from utilisateur.serializers import UserSerializer
 
-        id_info = None
-        # 1. Vérification via la bibliothèque google-auth
-        try:
-            id_info = google_id_token.verify_oauth2_token(
-                token_str,
-                google_requests.Request(),
-                clock_skew_in_seconds=10
+        # Client ID Google : obligatoire pour valider que le token est bien destiné à notre app
+        google_client_id = getattr(settings, 'GOOGLE_CLIENT_ID', '')
+        if not google_client_id and not getattr(settings, 'DEBUG', False):
+            return Response(
+                {"detail": "Authentification Google One Tap non configurée (GOOGLE_CLIENT_ID manquant)."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
             )
+
+        id_info = None
+        # 1. Vérification via la bibliothèque google-auth avec validation de l'audience
+        try:
+            verify_kwargs = {
+                'clock_skew_in_seconds': 10,
+            }
+            if google_client_id:
+                id_info = google_id_token.verify_oauth2_token(
+                    token_str,
+                    google_requests.Request(),
+                    audience=google_client_id,
+                    **verify_kwargs
+                )
+            else:
+                # Dev uniquement — sans audience, on accepte tout token Google valide
+                id_info = google_id_token.verify_oauth2_token(
+                    token_str,
+                    google_requests.Request(),
+                    **verify_kwargs
+                )
         except Exception:
             # 2. Fallback via l'endpoint API google tokeninfo
             try:
                 resp = http_requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={token_str}", timeout=10)
                 if resp.status_code == 200:
-                    id_info = resp.json()
+                    fallback_info = resp.json()
+                    # Valider l'audience si on dispose du client_id
+                    if google_client_id:
+                        aud = fallback_info.get('aud', '')
+                        azp = fallback_info.get('azp', '')
+                        if aud != google_client_id and azp != google_client_id:
+                            # Token valide mais émis pour une autre application
+                            id_info = None
+                        else:
+                            id_info = fallback_info
+                    else:
+                        id_info = fallback_info
             except Exception:
                 id_info = None
 
@@ -2240,9 +3127,9 @@ def admin_assign_delivery(request, pk):
             {"detail": "Veuillez d'abord mettre la commande au statut 'validé' avant de pouvoir modifier son statut de livraison ou l'assigner à un livreur."},
             status=status.HTTP_400_BAD_REQUEST
         )
-    elif commande.statut in ('annulée', 'remboursée'):
+    elif commande.statut == 'annulée':
         return Response(
-            {"detail": f"Cette commande est '{commande.statut}' et ne peut plus être assignée à un livreur."},
+            {"detail": "Cette commande est annulée et ne peut plus être assignée à un livreur."},
             status=status.HTTP_400_BAD_REQUEST
         )
 

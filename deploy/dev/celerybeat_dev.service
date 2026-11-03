@@ -1,0 +1,19 @@
+[Unit]
+Description=Celery Beat Dev — Planificateur Accessoires Exclusifs (branche main)
+After=network.target redis-server.service celery_dev.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/accessoiresexclusifs_dev
+EnvironmentFile=/var/www/accessoiresexclusifs_dev/.env
+
+ExecStart=/var/www/accessoiresexclusifs_dev/env/bin/celery -A backend beat --loglevel=INFO --scheduler django_celery_beat.schedulers:DatabaseScheduler
+
+Restart=always
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

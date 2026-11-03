@@ -19,7 +19,7 @@ class ParfumSimilaireSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Parfum
-        fields = ['id', 'nom', 'slug', 'prix_actuel', 'image_principale']
+        fields = ['id', 'nom', 'slug', 'inspire_de', 'prix_actuel', 'image_principale']
 
     def get_prix_actuel(self, obj):
         prix = obj.prix_promotionnel or obj.prix_unitaire
@@ -63,6 +63,9 @@ def get_image_url(request, image_field):
     """
     if not image_field:
         return None
+    raw_name = getattr(image_field, 'name', str(image_field))
+    if raw_name and (raw_name.startswith('http://') or raw_name.startswith('https://')):
+        return raw_name
     try:
         url = image_field.url
     except Exception:
@@ -185,14 +188,21 @@ class ParfumSerializer(serializers.ModelSerializer):
     image_supp_2        = serializers.ImageField(required=False, allow_null=True)
     image_supp_3        = serializers.ImageField(required=False, allow_null=True)
     image_supp_4        = serializers.ImageField(required=False, allow_null=True)
+    reference_sku       = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     produits_similaires = serializers.SerializerMethodField()
     is_favori = serializers.SerializerMethodField()
+
+    def validate_reference_sku(self, value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value if value else None
 
     class Meta:
         model  = Parfum
         fields = [
             'id', 'marque','nom', 'slug', 'reference_sku',
-            'description_courte', 'contenance_ml',
+            'description_courte', 'inspire_de', 'contenance_ml',
             'prix_unitaire', 'prix_actuel',
             'prix_promotionnel', 'date_debut', 'date_fin',
             'taux_reduction', 'en_promotion',
@@ -203,7 +213,9 @@ class ParfumSerializer(serializers.ModelSerializer):
             'est_nouveau', 'est_bestseller', 'actif',
             'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',  'stock_quantite', 'seuil_alerte_stock',
             'date_creation','produits_similaires', 'is_favori', 'categorie','description_longue','description_ia',
+            'boutique',
         ]
+        read_only_fields = ['boutique']
 
     def create(self, validated_data):
         tags_data = validated_data.pop('tags', None)
@@ -307,7 +319,7 @@ class ParfumAdminDetailSerializer(ParfumSerializer):
 class ParfumPublicListSerializer(ParfumSerializer):
     """Public : liste (sans produits similaires, champs réduits)"""
     class Meta(ParfumSerializer.Meta):
-        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('produits_similaires', 'reference_sku',  'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'taux_reduction','description_courte',
+        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('boutique', 'produits_similaires', 'reference_sku',  'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4', 'taux_reduction','description_courte',
             'notes_tete', 'notes_coeur', 'notes_fond',
             'tags', 'famille_olfactive', 'humeurs_compatibles',
             'occasions', 'saisons_compatibles',)]
@@ -315,7 +327,7 @@ class ParfumPublicListSerializer(ParfumSerializer):
 class ParfumPublicDetailSerializer(ParfumSerializer):
     """Public : détail (avec produits similaires)"""
     class Meta(ParfumSerializer.Meta):
-        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('reference_sku',  'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')]
+        fields = [f for f in ParfumSerializer.Meta.fields if f not in ('boutique', 'reference_sku',  'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')]
     
 # ============================================================
 # INGREDIENTS
@@ -755,8 +767,15 @@ class AccessoireSerializer(serializers.ModelSerializer):
     image_supp_2     = serializers.ImageField(required=False, allow_null=True)
     image_supp_3     = serializers.ImageField(required=False, allow_null=True)
     image_supp_4     = serializers.ImageField(required=False, allow_null=True)
+    reference_sku    = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     produits_similaires = serializers.SerializerMethodField()
     is_favori = serializers.SerializerMethodField()
+
+    def validate_reference_sku(self, value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value if value else None
 
     class Meta:
         model  = Accessoire
@@ -772,8 +791,9 @@ class AccessoireSerializer(serializers.ModelSerializer):
             'image_principale', 'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4',
             'actif', 'est_bestseller', 'est_hotseller',
             'date_creation', 'date_modification', 'produits_similaires', 'is_favori',
+            'boutique',
         ]
-        read_only_fields = ['date_creation', 'date_modification']
+        read_only_fields = ['date_creation', 'date_modification', 'boutique']
 
     def create(self, validated_data):
         tags_data = validated_data.pop('tags', None)
@@ -862,12 +882,12 @@ class AccessoireAdminDetailSerializer(AccessoireSerializer):
 
 class AccessoirePublicListSerializer(AccessoireSerializer):
     class Meta(AccessoireSerializer.Meta):
-       fields = [f for f in AccessoireSerializer.Meta.fields if f not in ('description_courte',
+       fields = [f for f in AccessoireSerializer.Meta.fields if f not in ('boutique', 'description_courte',
             'matiere', 'couleur', 'taille','poids_grammes','produits_similaires', 'reference_sku',  'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4','taux_reduction')] 
 
 class AccessoirePublicDetailSerializer(AccessoireSerializer):
     class Meta(AccessoireSerializer.Meta):
-        fields = [f for f in AccessoireSerializer.Meta.fields if f not in ('reference_sku',  'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')]
+        fields = [f for f in AccessoireSerializer.Meta.fields if f not in ('boutique', 'reference_sku',  'image_supp_1', 'image_supp_2', 'image_supp_3', 'image_supp_4')]
 
 # ============================================================
 # FLACONS
@@ -896,6 +916,13 @@ class FlaconSerializer(serializers.ModelSerializer):
     image_supp_2     = serializers.ImageField(required=False, allow_null=True)
     image_supp_3     = serializers.ImageField(required=False, allow_null=True)
     image_supp_4     = serializers.ImageField(required=False, allow_null=True)
+    reference_sku    = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def validate_reference_sku(self, value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value if value else None
 
     class Meta:
         model  = Flacon
@@ -929,6 +956,7 @@ class FlaconSerializer(serializers.ModelSerializer):
 
 class FlaconAdminSerializer(FlaconSerializer):
     """Flacon avec prix d'achat et bénéfice (admin uniquement)"""
+    prix_achat = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True, required=False)
     benefice_unitaire = serializers.SerializerMethodField()
 
     class Meta(FlaconSerializer.Meta):
@@ -972,10 +1000,23 @@ class FavoriSerializer(serializers.ModelSerializer):
     type_produit = serializers.SerializerMethodField()
     slug_produit = serializers.SerializerMethodField()
     id_produit = serializers.SerializerMethodField()
+    produit_id = serializers.SerializerMethodField()
+    detail_url = serializers.SerializerMethodField()
+
+    inspire_de = serializers.SerializerMethodField()
 
     class Meta:
         model = Favori
-        fields = ['id', 'date_ajout', 'nom_produit', 'prix_produit', 'image_produit', 'type_produit', 'slug_produit', 'id_produit']
+        fields = [
+            'id', 'date_ajout', 'nom_produit', 'prix_produit', 'image_produit',
+            'type_produit', 'slug_produit', 'id_produit', 'produit_id', 'detail_url',
+            'inspire_de'
+        ]
+
+    def get_inspire_de(self, obj):
+        if obj.parfum:
+            return obj.parfum.inspire_de
+        return None
 
     def get_nom_produit(self, obj):
         if obj.parfum:
@@ -1032,6 +1073,18 @@ class FavoriSerializer(serializers.ModelSerializer):
             return obj.accessoire.id
         if obj.produit_fini_essence:
             return obj.produit_fini_essence.id
+        return None
+
+    def get_produit_id(self, obj):
+        return self.get_id_produit(obj)
+
+    def get_detail_url(self, obj):
+        if obj.parfum:
+            return f"/api/v1/shop/parfums/{obj.parfum.id}/"
+        if obj.accessoire:
+            return f"/api/v1/shop/accessoires/{obj.accessoire.id}/"
+        if obj.produit_fini_essence:
+            return f"/api/v1/shop/produits-essence/{obj.produit_fini_essence.id}/"
         return None
 
 
@@ -1141,7 +1194,14 @@ class DiffuseurParfumSerializer(serializers.ModelSerializer):
     image_supp_2 = serializers.ImageField(required=False, allow_null=True)
     image_supp_3 = serializers.ImageField(required=False, allow_null=True)
     image_supp_4 = serializers.ImageField(required=False, allow_null=True)
+    reference_sku = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     produits_similaires = serializers.SerializerMethodField()
+
+    def validate_reference_sku(self, value):
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value if value else None
 
     class Meta:
         model = DiffuseurParfum

@@ -13,7 +13,7 @@ import tempfile, os
 from .utils import get_similar_products
 
 from .models import (
-    Tag, Parfum, Essence, Accessoire, Flacon, LotEssence, ProduitFiniEssence, Favori,
+    Tag, TagParfum, Parfum, Essence, Accessoire, Flacon, LotEssence, ProduitFiniEssence, Favori,
     CategorieParfum, TypeAccessoire, TypeFlacon, Ingredient, EntrepriseInfo
 )
 from utilisateur.models import Serveuse
@@ -324,6 +324,7 @@ class EssenceModifierEndpointTest(APITestCase):
             url,
             {'nom': 'Rose Éclatante Update', 'prix_par_ml': '180.00', 'actif': False},
             format='json',
+            HTTP_X_DASHBOARD_CONTEXT='true',
         )
 
         self.assertEqual(response.status_code, 200)
@@ -1052,7 +1053,8 @@ class SimilarProductsUtilsTest(TestCase):
             contenance_ml=50, prix_unitaire=10000,
             stock_quantite=10, categorie=self.cat, actif=True
         )
-        self.p1.tags.add(self.tag_floral, self.tag_boise)
+        TagParfum.objects.create(parfum=self.p1, tag=self.tag_floral, valeur="Fleuri")
+        TagParfum.objects.create(parfum=self.p1, tag=self.tag_boise, valeur="Boisé")
 
         # Parfum B : floral + boisé (identique)
         self.p2 = Parfum.objects.create(
@@ -1060,7 +1062,8 @@ class SimilarProductsUtilsTest(TestCase):
             contenance_ml=50, prix_unitaire=12000,
             stock_quantite=10, categorie=self.cat, actif=True
         )
-        self.p2.tags.add(self.tag_floral, self.tag_boise)
+        TagParfum.objects.create(parfum=self.p2, tag=self.tag_floral, valeur="Fleuri")
+        TagParfum.objects.create(parfum=self.p2, tag=self.tag_boise, valeur="Boisé")
 
         # Parfum C : boisé seulement
         self.p3 = Parfum.objects.create(
@@ -1068,7 +1071,7 @@ class SimilarProductsUtilsTest(TestCase):
             contenance_ml=50, prix_unitaire=9000,
             stock_quantite=10, categorie=self.cat, actif=True
         )
-        self.p3.tags.add(self.tag_boise)
+        TagParfum.objects.create(parfum=self.p3, tag=self.tag_boise, valeur="Boisé")
 
         # Parfum D : aucun tag commun
         self.p4 = Parfum.objects.create(
@@ -1076,7 +1079,7 @@ class SimilarProductsUtilsTest(TestCase):
             contenance_ml=50, prix_unitaire=11000,
             stock_quantite=10, categorie=self.cat, actif=True
         )
-        self.p4.tags.add(self.tag_oriental)
+        TagParfum.objects.create(parfum=self.p4, tag=self.tag_oriental, valeur="Oriental")
 
         # Parfum inactif (ne doit pas remonter)
         self.p5 = Parfum.objects.create(
@@ -1084,7 +1087,7 @@ class SimilarProductsUtilsTest(TestCase):
             contenance_ml=50, prix_unitaire=5000,
             stock_quantite=10, categorie=self.cat, actif=False
         )
-        self.p5.tags.add(self.tag_floral)
+        TagParfum.objects.create(parfum=self.p5, tag=self.tag_floral, valeur="Fleuri")
 
     def test_similarites_par_tags(self):
         # Pour p1, on doit trouver p2 (2 tags communs) et p3 (1 tag commun)
@@ -1118,7 +1121,7 @@ class SimilarProductsUtilsTest(TestCase):
                 contenance_ml=50, prix_unitaire=10000,
                 stock_quantite=10, categorie=self.cat, actif=True
             )
-            p.tags.add(self.tag_floral)
+            TagParfum.objects.create(parfum=p, tag=self.tag_floral, valeur="Fleuri")
         similaires = get_similar_products(self.p1, Parfum, limit=4)
         self.assertEqual(len(similaires), 4)
 
@@ -1506,8 +1509,16 @@ class ImportParfumsLogicTest(TestCase):
         )
 
         mock_csv_content = (
-            "Nom du produit\tMarque / maison\tPrix (FCFA)\tStatut\n"
-            "Bleu de Chanel\tChanel\t155000\tMARQUE\n"
+            "nom\tmarque\tconcentration\tcontenance\tprix\tstock\t"
+            "description longue\tdescription courte\tdescription ia\tintensite\t"
+            "saison\tfamille olfative\tnote de tete\tnote de coeur\t"
+            "note de fond\toccasion\thumeur\tclimat conseille\t"
+            "signe astrologique\tcategorie\n"
+            "Bleu de Chanel\tChanel\tEDP\t150ml\t155000\t10\t"
+            "Longue desc\tDesc courte\tDesc ia\tMoyenne\t"
+            "Toutes saisons\tBoisé\tCèdre\tSantal\t"
+            "Musc\tCasuel\tFraîche\tTempéré\t"
+            "Bélier\tMARQUE\n"
         )
 
         with mock.patch("builtins.open", mock.mock_open(read_data=mock_csv_content)):
@@ -1515,8 +1526,8 @@ class ImportParfumsLogicTest(TestCase):
 
         parfum_apres = Parfum.objects.get(pk=parfum_existant.pk)
 
-        # Le parfum d'origine ne doit PAS être modifié (prix, description et SKU d'origine sont préservés)
-        self.assertEqual(parfum_apres.prix_unitaire, Decimal("99999.00"))
+        # Le prix est mis à jour depuis le CSV, mais description et SKU d'origine sont préservés
+        self.assertEqual(parfum_apres.prix_unitaire, Decimal("155000.00"))
         self.assertEqual(parfum_apres.description_courte, "Description originale personnalisee")
         self.assertEqual(parfum_apres.reference_sku, "SKU-EXISTANT-CUSTOM-123")
         self.assertTrue(parfum_apres.actif)

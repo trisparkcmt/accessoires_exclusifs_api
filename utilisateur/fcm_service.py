@@ -64,7 +64,7 @@ def send_fcm_notification(
     invalid_tokens = []
 
     from django.conf import settings
-    frontend_base = getattr(settings, 'FRONTEND_URL', 'https://accessoiresexclusifs.com').rstrip('/')
+    frontend_base = getattr(settings, 'FRONTEND_URL', 'https://dev.accessoiresexclusifs.com').rstrip('/')
 
     raw_link = str_data.get('url', '')
     if raw_link and raw_link.startswith('https://'):
@@ -80,7 +80,7 @@ def send_fcm_notification(
 
     icon_url = str_data.get('icon')
     if not icon_url:
-        backend_base = getattr(settings, 'BACKEND_URL', 'https://api.accessoiresexclusifs.com').rstrip('/')
+        backend_base = getattr(settings, 'BACKEND_URL', 'https://dev-api.accessoiresexclusifs.com').rstrip('/')
         icon_url = f"{backend_base}/static/img/logo.jpg"
     elif not icon_url.startswith('http'):
         if not icon_url.startswith('/'):

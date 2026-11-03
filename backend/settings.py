@@ -95,6 +95,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'storages',
+    'django_celery_beat',
    
     
     'allauth',
@@ -302,6 +303,10 @@ SOCIALACCOUNT_LOGIN_ON_GET = _get_bool_env('SOCIALACCOUNT_LOGIN_ON_GET', True)
 SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = _get_bool_env('SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT', True)
 SOCIALACCOUNT_EMAIL_AUTHENTICATION = _get_bool_env('SOCIALACCOUNT_EMAIL_AUTHENTICATION', True)
 
+# Client ID Google OAuth2 — utilisé pour valider l'audience du token One Tap
+# OBLIGATOIRE pour la sécurité : un token émis pour une autre app ne doit pas être accepté
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
+
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
         'SCOPE': [
@@ -311,12 +316,15 @@ SOCIALACCOUNT_PROVIDERS = {
         'AUTH_PARAMS': {
             'access_type': 'online',
         },
-        'OAUTH_PKCE_ENABLED': True, # Recommandé pour la sécurité
+        'OAUTH_PKCE_ENABLED': True,  # Recommandé pour la sécurité
+        'APP': {
+            'client_id': GOOGLE_CLIENT_ID,
+        },
     }
 }
 
-# URL du Frontend (Variable d'environnement ou localhost par défaut)
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+# URL du Frontend (Variable d'environnement ou https://accessoiresexclusifs.com par défaut)
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://accessoiresexclusifs.com')
 
 # URL du Backend/API (utilisé pour les liens dans les emails — reset password, etc.)
 BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000' if DEBUG else 'https://api.accessoiresexclusifs.com')
@@ -394,12 +402,20 @@ EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 'yes')
 EMAIL_SEND = os.getenv('EMAIL_SEND', 'accessoiresexclusifs@gmail.com')
 EMAIL_HOST_USER = EMAIL_SEND
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', 'qvfs vdfn uyny xjqw')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+if not EMAIL_HOST_PASSWORD and not DEBUG:
+    import warnings
+    warnings.warn(
+        "[SÉCURITÉ] EMAIL_HOST_PASSWORD n'est pas définie. "
+        "Les emails ne pourront pas être envoyés en production.",
+        RuntimeWarning
+    )
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', f'ACCESSOIRES EXCLUSIFS <{EMAIL_SEND}>')
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 # ============================================================
 # ADMINS — Reçoivent les emails d'erreur 500 Django automatiques
+# Format : liste de tuples (nom, email)
 # L'email d'alerte se définit via la variable d'env ALERT_ADMIN_EMAIL
 # ============================================================
 _alert_email = os.getenv('ALERT_ADMIN_EMAIL', EMAIL_SEND)
@@ -416,19 +432,14 @@ CSRF_COOKIE_SECURE = os.getenv('CSRF_COOKIE_SECURE', str(not DEBUG)).lower() in 
 SESSION_COOKIE_DOMAIN = os.getenv('SESSION_COOKIE_DOMAIN', None if DEBUG else '.accessoiresexclusifs.com')
 CSRF_COOKIE_DOMAIN = os.getenv('CSRF_COOKIE_DOMAIN', None if DEBUG else '.accessoiresexclusifs.com')
 
-
-
-
-
 # ============================================================
 # CACHE — Redis (partagé entre workers Gunicorn)
-# En production  : Redis obligatoire (rate limiting + sessions partagés)
-# En dev local   : Redis si dispo, sinon LocMemCache (fallback automatique)
-# Variable d'env : REDIS_URL=redis://127.0.0.1:6379/1
 # ============================================================
+import sys
+_is_testing = 'test' in sys.argv
 _redis_url = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/1')
 
-if not DEBUG:
+if not DEBUG and not _is_testing:
     # Production — Redis requis
     CACHES = {
         'default': {
@@ -438,15 +449,15 @@ if not DEBUG:
                 'CLIENT_CLASS': 'django_redis.client.DefaultClient',
                 'SOCKET_CONNECT_TIMEOUT': 5,
                 'SOCKET_TIMEOUT': 5,
-                'IGNORE_EXCEPTIONS': False,  # Planter si Redis down en prod
+                'IGNORE_EXCEPTIONS': False,
                 'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
             },
             'KEY_PREFIX': 'ae_prod',
-            'TIMEOUT': 300,  # 5 minutes par défaut
+            'TIMEOUT': 300,
         }
     }
 else:
-    # Dev — Redis si disponible, LocMemCache sinon (pas de blocage)
+    # Dev ou Tests — Redis si disponible, LocMemCache sinon
     try:
         import redis as _redis_test
         _r = _redis_test.StrictRedis.from_url(_redis_url, socket_connect_timeout=1)
@@ -459,14 +470,13 @@ else:
                     'CLIENT_CLASS': 'django_redis.client.DefaultClient',
                     'SOCKET_CONNECT_TIMEOUT': 2,
                     'SOCKET_TIMEOUT': 2,
-                    'IGNORE_EXCEPTIONS': True,  # Silencieux en dev
+                    'IGNORE_EXCEPTIONS': True,
                 },
                 'KEY_PREFIX': 'ae_dev',
                 'TIMEOUT': 300,
             }
         }
     except Exception:
-        # Redis absent en dev → cache mémoire local (pas de rate limiting partagé)
         CACHES = {
             'default': {
                 'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
@@ -476,6 +486,31 @@ else:
 
 
 # ============================================================
+# CELERY — Tâches asynchrones (Redis Broker & Result Backend)
+# ============================================================
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0'))
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0'))
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes max par tâche
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60
+
+# En mode test unitaire : exécution immédiate sans broker externe
+if _is_testing:
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True
+
+# Celery Beat — Planification des tâches périodiques (ex: paniers abandonnés)
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_BEAT_SCHEDULE = {
+    'relancer-paniers-abandonnes-toutes-les-heures': {
+        'task': 'orders.tasks.relancer_paniers_abandonnes_task',
+        'schedule': 3600.0,  # Chaque heure
+    },
+}
 # DRF SPECTACULAR (Swagger / OpenAPI)
 # ============================================================
 SPECTACULAR_SETTINGS = {
@@ -488,7 +523,7 @@ SPECTACULAR_SETTINGS = {
 
 
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', 'AQ.Ab8RN6Iq8YW3z9UjZr6hqbk0Y_kqub1urxxHsMwueAYngM8RRA')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
 GROQ_MODEL = os.getenv('GROQ_MODEL', 'qwen/qwen3.8-27b')
 HUGGINGFACE_API_KEY = os.getenv('HUGGINGFACE_API_KEY', os.getenv('HF_API_KEY', ''))
@@ -507,6 +542,15 @@ CAMPAY_API_TOKEN = os.getenv('CAMPAY_API_TOKEN', '')
 CAMPAY_USERNAME = os.getenv('CAMPAY_USERNAME', '')
 CAMPAY_PASSWORD = os.getenv('CAMPAY_PASSWORD', '')
 CAMPAY_WEBHOOK_SECRET = os.getenv('CAMPAY_WEBHOOK_SECRET', '')
+# Avertissement en production si le secret Campay n'est pas configuré
+if not CAMPAY_WEBHOOK_SECRET and not DEBUG:
+    import warnings
+    warnings.warn(
+        "[SÉCURITÉ] CAMPAY_WEBHOOK_SECRET n'est pas définie. "
+        "Les webhooks Campay ne seront pas vérifiés — risque d'injection de faux événements de paiement. "
+        "Définissez CAMPAY_WEBHOOK_SECRET dans votre .env de production.",
+        RuntimeWarning
+    )
 CAMPAY_WEBHOOK_SIGNATURE_HEADER = os.getenv('CAMPAY_WEBHOOK_SIGNATURE_HEADER', 'X-Campay-Signature')
 # URL appelée par Campay quand une transaction est finalisée (envoyée DANS chaque requête /withdraw/)
 # Définir cette variable sur votre VPS / serveur : CAMPAY_WEBHOOK_URL=https://votre-domaine.com/api/v1/auth/payout/webhook/
@@ -670,6 +714,14 @@ LOGGING = {
         'django.security': {
             'handlers': _log_handlers_security,
             'level': 'WARNING',
+            'propagate': False,
+        },
+        # Scanners internet / Host headers invalides (DisallowedHost) :
+        # Empêche l'inondation de la boîte mail de l'admin (mail_admins) lors des scans de bots
+        # sur l'IP du serveur ou des noms d'hôtes non autorisés.
+        'django.security.DisallowedHost': {
+            'handlers': ['console'],
+            'level': 'ERROR',
             'propagate': False,
         },
         # Alerte sur les erreurs de l'app orders (race conditions, paiements, etc.)

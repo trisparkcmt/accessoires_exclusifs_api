@@ -31,16 +31,20 @@ class LigneParfumReadSerializer(serializers.ModelSerializer):
     nom = serializers.CharField(source='parfum.nom', read_only=True)
     contenance_ml = serializers.IntegerField(source='parfum.contenance_ml', read_only=True)
     image = serializers.SerializerMethodField()
+    inspire_de = serializers.SerializerMethodField()
     
     class Meta:
         model = PanierLigneParfum
-        fields = ['id', 'parfum', 'nom', 'image', 'contenance_ml', 'quantite', 'prix_unitaire_snapshot', 'sous_total']
+        fields = ['id', 'parfum', 'nom', 'inspire_de', 'image', 'contenance_ml', 'quantite', 'prix_unitaire_snapshot', 'sous_total']
 
     def get_image(self, obj):
         request = self.context.get('request')
         if obj.parfum.image_principale:
             return request.build_absolute_uri(obj.parfum.image_principale.url) if request else obj.parfum.image_principale.url
         return None
+
+    def get_inspire_de(self, obj):
+        return obj.parfum.inspire_de if obj.parfum else ""
 
 
 class LigneAccessoireReadSerializer(serializers.ModelSerializer):
@@ -371,13 +375,19 @@ class AppliquerCodePromoSerializer(serializers.Serializer):
         # Vérifier si le client est dans la liste autorisée
         if not promo_admin.clients_autorises.filter(pk=client.pk).exists():
             raise serializers.ValidationError({"code_promo": "Vous n'êtes pas autorisé à utiliser ce code promo."})
-            
-        # Vérifier l'usage unique
-        if Commande.objects.filter(client=client, code_promo_utilise__iexact=code).exclude(statut__in=['annulée', 'remboursée']).exists():
-            raise serializers.ValidationError({"code_promo": "Vous avez déjà utilisé ce code promo."})
-            
+
+        # Vérifier l'usage unique avec select_for_update pour éviter la race condition
+        # entre la vérification et la création de la commande (double soumission simultanée)
+        from django.db import transaction
+        with transaction.atomic():
+            from utilisateur.models import Client as ClientModel
+            ClientModel.objects.select_for_update().get(pk=client.pk)
+            if Commande.objects.filter(client=client, code_promo_utilise__iexact=code).exclude(statut='annulée').exists():
+                raise serializers.ValidationError({"code_promo": "Vous avez déjà utilisé ce code promo."})
+
         data['promo_admin_obj'] = promo_admin
         return data
+
 
   
 class UserToClientRelatedField(serializers.PrimaryKeyRelatedField):
@@ -414,17 +424,90 @@ class CodePromoAdminSerializer(serializers.ModelSerializer):
                 clients.append(client)
         return clients
 
+    def validate(self, attrs):
+        reduction = attrs.get('reduction_pourcentage', getattr(self.instance, 'reduction_pourcentage', Decimal('0')))
+        from utilisateur.models import Boutique
+        from django.db.models import Min
+        
+        boutiques_actives = Boutique.objects.filter(statut='actif')
+        if boutiques_actives.exists():
+            min_taux = boutiques_actives.aggregate(m=Min('taux_commission'))['m'] or Decimal('0')
+            if reduction > min_taux:
+                raise serializers.ValidationError({
+                    "reduction_pourcentage": (
+                        f"🚨 SÉCURITÉ FINANCIÈRE : Ce taux de réduction ({reduction}%) "
+                        f"est supérieur au taux de commission boutique le plus bas ({min_taux}%). "
+                        f"Vous risquez de perdre de l'argent sur les ventes multi-boutiques !"
+                    )
+                })
+        return attrs
+
+
 
 class CommandeLigneParfumSerializer(serializers.ModelSerializer):
+    inspire_de = serializers.SerializerMethodField()
+    boutique_id = serializers.SerializerMethodField()
+    boutique_nom = serializers.SerializerMethodField()
+    boutique_details = serializers.SerializerMethodField()
+
     class Meta:
         model = CommandeLigneParfum
-        fields = ['id', 'parfum', 'nom_snapshot', 'quantite', 'prix_unitaire_snapshot', 'remise_ligne', 'sous_total']
+        fields = [
+            'id', 'parfum', 'nom_snapshot', 'inspire_de', 'quantite', 'prix_unitaire_snapshot',
+            'remise_ligne', 'sous_total', 'boutique_id', 'boutique_nom', 'boutique_details'
+        ]
+
+    def get_inspire_de(self, obj):
+        return obj.parfum.inspire_de if obj.parfum else ""
+
+    def get_boutique_id(self, obj):
+        return obj.parfum.boutique_id if obj.parfum and obj.parfum.boutique_id else None
+
+    def get_boutique_nom(self, obj):
+        return obj.parfum.boutique.nom if obj.parfum and obj.parfum.boutique else None
+
+    def get_boutique_details(self, obj):
+        if obj.parfum and obj.parfum.boutique:
+            b = obj.parfum.boutique
+            return {
+                'id': b.id,
+                'nom': b.nom,
+                'telephone': b.telephone,
+                'ville': b.ville,
+                'statut': b.statut
+            }
+        return None
 
 
 class CommandeLigneAccessoireSerializer(serializers.ModelSerializer):
+    boutique_id = serializers.SerializerMethodField()
+    boutique_nom = serializers.SerializerMethodField()
+    boutique_details = serializers.SerializerMethodField()
+
     class Meta:
         model = CommandeLigneAccessoire
-        fields = ['id', 'accessoire', 'nom_snapshot', 'quantite', 'prix_unitaire_snapshot', 'remise_ligne', 'sous_total']
+        fields = [
+            'id', 'accessoire', 'nom_snapshot', 'quantite', 'prix_unitaire_snapshot',
+            'remise_ligne', 'sous_total', 'boutique_id', 'boutique_nom', 'boutique_details'
+        ]
+
+    def get_boutique_id(self, obj):
+        return obj.accessoire.boutique_id if obj.accessoire and obj.accessoire.boutique_id else None
+
+    def get_boutique_nom(self, obj):
+        return obj.accessoire.boutique.nom if obj.accessoire and obj.accessoire.boutique else None
+
+    def get_boutique_details(self, obj):
+        if obj.accessoire and obj.accessoire.boutique:
+            b = obj.accessoire.boutique
+            return {
+                'id': b.id,
+                'nom': b.nom,
+                'telephone': b.telephone,
+                'ville': b.ville,
+                'statut': b.statut
+            }
+        return None
 
 
 class CommandeProduitFiniEssenceSerializer(serializers.ModelSerializer):
@@ -594,6 +677,7 @@ class CommandeSerializer(serializers.ModelSerializer):
     client_email = serializers.CharField(source='client.user.email', read_only=True)
     livreur_nom = serializers.SerializerMethodField()
     prestataire_code = serializers.CharField(source='prestataire.code_promo', read_only=True)
+    boutiques_fournisseurs = serializers.SerializerMethodField()
     
     class Meta:
         model = Commande
@@ -605,6 +689,7 @@ class CommandeSerializer(serializers.ModelSerializer):
             'livraison_nom_complet', 'livraison_quartier', 'livraison_ville', 'livraison_telephone',
             'date_livraison_estimee', 'date_livraison_reelle', 'note_client', 'note_interne',
             'motif_echec_livraison', 'date_creation', 'date_modification',
+            'boutiques_fournisseurs',
             'lignes_parfums', 'lignes_accessoires', 'lignes_produit_fini_essence',
             'lignes_parfums_perso', 'lignes_essence_personnalisee',
             'lignes_diffuseurs', 'facture'
@@ -614,6 +699,46 @@ class CommandeSerializer(serializers.ModelSerializer):
         if obj.livreur:
             return f"{obj.livreur.nom} {obj.livreur.prenom}"
         return None
+
+    def get_boutiques_fournisseurs(self, obj):
+        """
+        Retourne la liste des boutiques ayant fourni au moins un produit dans cette commande,
+        avec les montants des ventes associés si déjà calculés.
+        """
+        boutiques_dict = {}
+
+        # 1. Indexer les enregistrements VenteBoutique rattachés s'ils existent
+        ventes_by_boutique = {}
+        if hasattr(obj, 'ventes_boutiques'):
+            for v in obj.ventes_boutiques.all():
+                ventes_by_boutique[v.boutique_id] = v
+
+        def add_boutique(b):
+            if not b or b.id in boutiques_dict:
+                return
+            v = ventes_by_boutique.get(b.id)
+            boutiques_dict[b.id] = {
+                'id': b.id,
+                'nom': b.nom,
+                'telephone': b.telephone,
+                'ville': b.ville,
+                'statut': b.statut,
+                'montant_brut': str(v.montant_brut) if v else None,
+                'montant_commission_admin': str(v.montant_commission_admin) if v else None,
+                'montant_net_boutique': str(v.montant_net_boutique) if v else None,
+            }
+
+        # 2. Inspecter les Parfums
+        for ligne in obj.lignes_parfums.all():
+            if ligne.parfum and ligne.parfum.boutique:
+                add_boutique(ligne.parfum.boutique)
+
+        # 3. Inspecter les Accessoires
+        for ligne in obj.lignes_accessoires.all():
+            if ligne.accessoire and ligne.accessoire.boutique:
+                add_boutique(ligne.accessoire.boutique)
+
+        return list(boutiques_dict.values())
 
 
 class CompositionDirecteLigneSerializer(serializers.Serializer):
@@ -810,10 +935,10 @@ class PasserCommandeSerializer(serializers.Serializer):
             except AttributeError:
                 raise serializers.ValidationError({"detail": "Profil client introuvable."})
         else:
-            client_telephone = validated_data.get('client_telephone', '').strip()
-            if client_telephone:
-                from utilisateur.models import Client
-                client = Client.objects.filter(user__telephone=client_telephone).first()
+            # Commande invité : pas d'association à un compte client sans authentification.
+            # Ne pas chercher un client par numéro de téléphone — cela permettrait
+            # à n'importe qui de rattacher une commande à un compte existant (usurpation).
+            client = None
             
         with transaction.atomic():
             # Créer la commande
@@ -1064,10 +1189,10 @@ class PasserCommandeCompositionDirecteSerializer(serializers.Serializer):
             except AttributeError:
                 pass
         else:
-            client_telephone = validated_data.get('client_telephone', '').strip()
-            if client_telephone:
-                from utilisateur.models import Client
-                client = Client.objects.filter(user__telephone=client_telephone).first()
+            # Commande invité : pas d'association à un compte client sans authentification.
+            # Ne pas chercher un client par numéro de téléphone — cela permettrait
+            # à n'importe qui de rattacher une commande à un compte existant (usurpation).
+            client = None
 
         flacon = validated_data['flacon_obj']
         nom = validated_data.get('nom', '').strip() or "Création Sur Mesure Express"

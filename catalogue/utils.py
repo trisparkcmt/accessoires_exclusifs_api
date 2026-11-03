@@ -130,8 +130,10 @@ def compress_image_to_webp(image_field, max_dimension=1600, quality=80):
         return None
 
     # Vérification si c'est un nouveau fichier uploadé
-    is_uploaded = isinstance(file_obj, UploadedFile)
     filename = getattr(image_field, 'name', '') or ''
+    if filename.startswith(('http://', 'https://')):
+        return None
+    is_uploaded = isinstance(file_obj, UploadedFile)
     is_webp = filename.lower().endswith('.webp')
 
     # Si le fichier n'est pas nouvellement uploadé et est déjà en .webp, ne pas recompresser

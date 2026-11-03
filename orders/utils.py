@@ -57,14 +57,17 @@ def get_or_create_panier(request, panier_id=None, force_anonymous=False):
 
     # Utilisateur anonyme
     if panier_id:
-        panier = Panier.objects.filter(id=panier_id, statut='actif').first()
+        # Sécurité IDOR : on ne renvoie un panier par son ID qu'if il n'a pas de client
+        # (panier vraiment anonyme). Un panier rattaché à un compte ne peut être accédé
+        # que par le client authentifié correspondant (chemin ci-dessus).
+        panier = Panier.objects.filter(id=panier_id, statut='actif', client__isnull=True).first()
         if panier:
             return panier
             
     if hasattr(request, 'session'):
         session_panier_id = request.session.get('panier_id')
         if session_panier_id:
-            panier = Panier.objects.filter(id=session_panier_id, statut='actif').first()
+            panier = Panier.objects.filter(id=session_panier_id, statut='actif', client__isnull=True).first()
             if panier:
                 return panier
                 

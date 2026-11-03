@@ -1,0 +1,19 @@
+[Unit]
+Description=Celery Worker Dev — Accessoires Exclusifs (branche main)
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/accessoiresexclusifs_dev
+EnvironmentFile=/var/www/accessoiresexclusifs_dev/.env
+
+ExecStart=/var/www/accessoiresexclusifs_dev/env/bin/celery -A backend worker --loglevel=INFO --concurrency=2
+
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

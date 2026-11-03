@@ -6,7 +6,7 @@ from django.urls import reverse
 from dj_rest_auth.serializers import LoginSerializer, PasswordChangeSerializer
 from dj_rest_auth.registration.serializers import RegisterSerializer
 from drf_spectacular.utils import extend_schema_serializer
-from .models import User, Client, Prestataire, CommissionLog, Notification, PayoutTransaction, Livreur, Serveuse, Depense
+from .models import User, Client, Prestataire, CommissionLog, Notification, PayoutTransaction, Livreur, Serveuse, Boutique, Depense
 from catalogue.models import Favori
 from laboratoire.models import ParfumPersonnalise, ParfumPersonnaliseLigne
 from orders.models import (
@@ -14,6 +14,8 @@ from orders.models import (
     CommandeLigneAccessoire,
     CommandeLigneParfum,
     CommandeLigneParfumPerso,
+    CommandeProduitFiniEssence,
+    CommandeLigneEssencePersonnalisee,
     CommandeLigneDiffuseurParfum,
 )
 from orders.serializers import ParfumPersoDetailSerializer
@@ -238,7 +240,7 @@ class PrestataireDashboardSerializer(serializers.ModelSerializer):
     class Meta:
         model = Prestataire
         fields = [
-            'id', 'solde_commission', 'taux_commission', 'reduction_client_pourcentage', 
+            'id', 'photo', 'solde_commission', 'taux_commission', 'reduction_client_pourcentage', 
             'code_promo', 'statut', 'total_gains', 'total_retraits', 'solde_bloque', 
             'payouts_recents', 'historique_recent'
         ]
@@ -272,10 +274,12 @@ class PrestataireDashboardSerializer(serializers.ModelSerializer):
 
 
 class PrestataireApplicationSerializer(serializers.ModelSerializer):
-    """Serializer pour la demande initiale de l'utilisateur"""
+    """Serializer pour la demande initiale de l'utilisateur (photo obligatoire)"""
+    photo = serializers.ImageField(required=True)
+
     class Meta:
         model = Prestataire
-        fields = [] # L'utilisateur ne remplit rien, on crée juste l'objet en attente
+        fields = ['photo']
 
 class PrestataireValidationSerializer(serializers.ModelSerializer):
     """Serializer pour la validation par l'administrateur"""
@@ -290,11 +294,12 @@ class PrestataireValidationSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     """Serializer pour les données de base de l'utilisateur"""
     roles = serializers.SerializerMethodField()
+    photo = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'roles']
-        read_only_fields = ['roles']
+        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'roles', 'photo']
+        read_only_fields = ['roles', 'photo']
         extra_kwargs = {
             'email': {'read_only': True},
         }
@@ -318,7 +323,22 @@ class UserSerializer(serializers.ModelSerializer):
                 roles.append('livreur')
             if hasattr(client, 'serveuse'):
                 roles.append('serveuse')
+            if hasattr(client, 'boutique'):
+                roles.append('boutique')
         return roles
+
+    def get_photo(self, obj):
+        if hasattr(obj, 'client'):
+            client = obj.client
+            for role_attr in ['serveuse', 'livreur', 'prestataire', 'boutique']:
+                if hasattr(client, role_attr):
+                    profile = getattr(client, role_attr)
+                    if profile and profile.photo:
+                        request = self.context.get('request')
+                        if request:
+                            return request.build_absolute_uri(profile.photo.url)
+                        return profile.photo.url
+        return None
 
 
 class MeUpdateSerializer(serializers.ModelSerializer):
@@ -398,55 +418,107 @@ class MeClientSerializer(serializers.ModelSerializer):
 class MeFavoriSerializer(serializers.ModelSerializer):
     type_produit = serializers.SerializerMethodField()
     produit_id = serializers.SerializerMethodField()
+    id_produit = serializers.SerializerMethodField()
     nom_produit = serializers.SerializerMethodField()
     prix_produit = serializers.SerializerMethodField()
     image_produit = serializers.SerializerMethodField()
+    slug_produit = serializers.SerializerMethodField()
     detail_url = serializers.SerializerMethodField()
+    inspire_de = serializers.SerializerMethodField()
 
     class Meta:
         model = Favori
         fields = [
-            'id', 'type_produit', 'produit_id', 'nom_produit',
-            'prix_produit', 'image_produit', 'detail_url', 'date_ajout'
+            'id', 'type_produit', 'produit_id', 'id_produit', 'nom_produit',
+            'prix_produit', 'image_produit', 'slug_produit', 'detail_url',
+            'inspire_de', 'date_ajout'
         ]
 
     def get_type_produit(self, obj):
-        return 'parfum' if obj.parfum_id else 'accessoire'
+        if obj.parfum_id:
+            return 'parfum'
+        elif obj.accessoire_id:
+            return 'accessoire'
+        elif obj.produit_fini_essence_id:
+            return 'produit_fini_essence'
+        return 'inconnu'
 
     def get_produit_id(self, obj):
-        if obj.parfum_id:
-            return obj.parfum_id
-        return obj.accessoire_id
+        return obj.parfum_id or obj.accessoire_id or obj.produit_fini_essence_id
+
+    def get_id_produit(self, obj):
+        return self.get_produit_id(obj)
+
+    def get_inspire_de(self, obj):
+        if obj.parfum:
+            return obj.parfum.inspire_de
+        return None
 
     def get_nom_produit(self, obj):
-        produit = obj.parfum or obj.accessoire
-        return produit.nom if produit else None
+        if obj.parfum:
+            return obj.parfum.nom
+        if obj.accessoire:
+            return obj.accessoire.nom
+        if obj.produit_fini_essence:
+            essence = obj.produit_fini_essence.essence
+            nom_essence = essence.nom if essence else "Huile de parfum"
+            return f"{nom_essence} - {obj.produit_fini_essence.taille_ml}ml"
+        return None
 
     def get_prix_produit(self, obj):
-        produit = obj.parfum or obj.accessoire
-        return str(produit.prix_actuel) if produit else None
+        if obj.parfum:
+            return str(obj.parfum.prix_actuel)
+        if obj.accessoire:
+            return str(obj.accessoire.prix_actuel)
+        if obj.produit_fini_essence:
+            return str(obj.produit_fini_essence.prix_actuel)
+        return None
 
     def get_image_produit(self, obj):
-        produit = obj.parfum or obj.accessoire
-        image = getattr(produit, 'image_principale', None)
+        image = None
+        if obj.parfum and obj.parfum.image_principale:
+            image = obj.parfum.image_principale
+        elif obj.accessoire and obj.accessoire.image_principale:
+            image = obj.accessoire.image_principale
+        elif obj.produit_fini_essence:
+            if getattr(obj.produit_fini_essence, 'image_principale', None):
+                image = obj.produit_fini_essence.image_principale
+            elif obj.produit_fini_essence.essence and getattr(obj.produit_fini_essence.essence, 'image_principale', None):
+                image = obj.produit_fini_essence.essence.image_principale
+
         if not image:
             return None
+
         request = self.context.get('request')
         if request:
             return request.build_absolute_uri(image.url)
         return image.url
 
+    def get_slug_produit(self, obj):
+        if obj.parfum:
+            return obj.parfum.slug
+        if obj.accessoire:
+            return obj.accessoire.slug
+        if obj.produit_fini_essence and obj.produit_fini_essence.essence:
+            return obj.produit_fini_essence.essence.slug
+        return None
+
     def get_detail_url(self, obj):
-        produit = obj.parfum or obj.accessoire
-        if not produit:
+        request = self.context.get('request')
+        url = None
+        try:
+            if obj.parfum:
+                url = reverse('parfum-detail', kwargs={'slug': obj.parfum.slug})
+            elif obj.accessoire:
+                url = reverse('accessoire-detail', kwargs={'slug': obj.accessoire.slug})
+            elif obj.produit_fini_essence:
+                url = reverse('produitessence-detail', kwargs={'pk': obj.produit_fini_essence.pk})
+        except Exception:
             return None
 
-        if obj.parfum_id:
-            url = reverse('parfum-detail', kwargs={'slug': produit.slug})
-        else:
-            url = reverse('accessoire-detail', kwargs={'slug': produit.slug})
+        if not url:
+            return None
 
-        request = self.context.get('request')
         if request:
             return request.build_absolute_uri(url)
         return url
@@ -504,14 +576,18 @@ class MeParfumPersonnaliseSerializer(serializers.ModelSerializer):
 
 class MeCommandeLigneParfumSerializer(serializers.ModelSerializer):
     parfum_id = serializers.IntegerField(source='parfum.id', read_only=True)
+    inspire_de = serializers.SerializerMethodField()
 
     class Meta:
         model = CommandeLigneParfum
         fields = [
-            'id', 'parfum_id', 'nom_snapshot', 'quantite',
+            'id', 'parfum_id', 'nom_snapshot', 'inspire_de', 'quantite',
             'prix_unitaire_snapshot', 'remise_ligne', 'sous_total',
             'mouvement_stock_genere'
         ]
+
+    def get_inspire_de(self, obj):
+        return obj.parfum.inspire_de if obj.parfum else ""
 
 
 class MeCommandeLigneParfumPersoSerializer(serializers.ModelSerializer):
@@ -541,6 +617,30 @@ class MeCommandeLigneAccessoireSerializer(serializers.ModelSerializer):
         ]
 
 
+class MeCommandeLigneProduitFiniEssenceSerializer(serializers.ModelSerializer):
+    produit_fini_essence_id = serializers.IntegerField(source='produit_fini_essence.id', read_only=True)
+
+    class Meta:
+        model = CommandeProduitFiniEssence
+        fields = [
+            'id', 'produit_fini_essence_id', 'nom_snapshot', 'quantite',
+            'prix_unitaire_snapshot', 'remise_ligne', 'sous_total',
+            'mouvement_stock_genere'
+        ]
+
+
+class MeCommandeLigneEssencePersoSerializer(serializers.ModelSerializer):
+    essence_personnalise_id = serializers.IntegerField(source='essence_personnalise.id', read_only=True)
+    nom = serializers.CharField(source='essence_personnalise.nom', read_only=True)
+
+    class Meta:
+        model = CommandeLigneEssencePersonnalisee
+        fields = [
+            'id', 'essence_personnalise_id', 'nom', 'quantite',
+            'prix_snapshot', 'sous_total', 'statut_laboratoire', 'note_laboratoire'
+        ]
+
+
 class MeCommandeLigneDiffuseurSerializer(serializers.ModelSerializer):
     diffuseur_id = serializers.IntegerField(source='diffuseur.id', read_only=True)
 
@@ -558,6 +658,8 @@ class MeCommandeSerializer(serializers.ModelSerializer):
     lignes_parfums = MeCommandeLigneParfumSerializer(many=True, read_only=True)
     lignes_parfums_perso = MeCommandeLigneParfumPersoSerializer(many=True, read_only=True)
     lignes_accessoires = MeCommandeLigneAccessoireSerializer(many=True, read_only=True)
+    lignes_produit_fini_essence = MeCommandeLigneProduitFiniEssenceSerializer(many=True, read_only=True)
+    lignes_essence_personnalisee = MeCommandeLigneEssencePersoSerializer(many=True, read_only=True)
     lignes_diffuseurs = MeCommandeLigneDiffuseurSerializer(many=True, read_only=True)
 
     class Meta:
@@ -570,7 +672,8 @@ class MeCommandeSerializer(serializers.ModelSerializer):
             'livraison_ville', 'livraison_telephone',
             'date_livraison_estimee', 'date_livraison_reelle',
             'note_client', 'lignes_parfums', 'lignes_parfums_perso',
-            'lignes_accessoires', 'lignes_diffuseurs',
+            'lignes_accessoires', 'lignes_produit_fini_essence',
+            'lignes_essence_personnalisee', 'lignes_diffuseurs',
             'date_creation', 'date_modification'
         ]
 
@@ -582,15 +685,13 @@ class MeSerializer(serializers.ModelSerializer):
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
     roles = serializers.SerializerMethodField()
+    photo = serializers.SerializerMethodField()
     client = serializers.SerializerMethodField()
     preferences = serializers.SerializerMethodField()
-    favoris = serializers.SerializerMethodField()
-    parfums_personnalises = serializers.SerializerMethodField()
-    commandes = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'roles', 'client', 'preferences', 'favoris', 'parfums_personnalises', 'commandes']
+        fields = ['id', 'email', 'telephone', 'first_name', 'last_name', 'roles', 'photo', 'client', 'preferences']
 
     def get_roles(self, obj):
         """
@@ -608,7 +709,22 @@ class MeSerializer(serializers.ModelSerializer):
                 roles.append('livreur')
             if hasattr(client, 'serveuse'):
                 roles.append('serveuse')
+            if hasattr(client, 'boutique'):
+                roles.append('boutique')
         return roles
+
+    def get_photo(self, obj):
+        if hasattr(obj, 'client'):
+            client = obj.client
+            for role_attr in ['serveuse', 'livreur', 'prestataire', 'boutique']:
+                if hasattr(client, role_attr):
+                    profile = getattr(client, role_attr)
+                    if profile and profile.photo:
+                        request = self.context.get('request')
+                        if request:
+                            return request.build_absolute_uri(profile.photo.url)
+                        return profile.photo.url
+        return None
 
     def _get_client(self, obj):
         return getattr(obj, 'client', None)
@@ -618,16 +734,6 @@ class MeSerializer(serializers.ModelSerializer):
         if not client:
             return None
         return MeClientSerializer(client).data
-
-    def get_favoris(self, obj):
-        client = self._get_client(obj)
-        if not client:
-            return []
-        return MeFavoriSerializer(
-            client.favoris.all(),
-            many=True,
-            context=self.context
-        ).data
 
     def get_preferences(self, obj):
         client = self._get_client(obj)
@@ -644,61 +750,68 @@ class MeSerializer(serializers.ModelSerializer):
             return preferences
 
         tag_mapping = {
+            'famille olfactive': 'familles_olfactives',
             'famille_olfactive': 'familles_olfactives',
             'humeur': 'humeurs',
             'saison': 'saisons',
             'occasion': 'occasions',
+            'signe astrologique': 'signes_astrologiques',
             'signe_astrologique': 'signes_astrologiques',
+            'moment de la journée': 'moments_journee',
+            'moment de la journee': 'moments_journee',
             'moment_journee': 'moments_journee',
         }
         values = {key: set() for key in preferences}
 
-        for favori in client.favoris.all():
+        for favori in client.favoris.select_related('parfum', 'produit_fini_essence__essence').all():
             parfum = favori.parfum
-            if not parfum:
-                continue
-            if parfum.genre_cible:
-                values['genres'].add(parfum.genre_cible)
-            for tag in parfum.tags.all():
-                target = tag_mapping.get(tag.type)
-                if target:
-                    values[target].add(tag.nom)
+            if parfum:
+                if getattr(parfum, 'genre_cible', None):
+                    values['genres'].add(parfum.genre_cible)
+                if hasattr(parfum, 'tags_associes'):
+                    for tp in parfum.tags_associes.select_related('tag').all():
+                        tag_nom = getattr(tp.tag, 'nom', '').lower().strip() if tp.tag else ''
+                        target = tag_mapping.get(tag_nom)
+                        if target and tp.valeur:
+                            values[target].add(tp.valeur)
+
+            pfe = favori.produit_fini_essence
+            if pfe and pfe.essence:
+                essence = pfe.essence
+                if getattr(essence, 'genre_cible', None):
+                    values['genres'].add(essence.genre_cible)
+                if hasattr(essence, 'tags_associes'):
+                    for te in essence.tags_associes.select_related('tag').all():
+                        tag_nom = getattr(te.tag, 'nom', '').lower().strip() if te.tag else ''
+                        target = tag_mapping.get(tag_nom)
+                        if target and te.valeur:
+                            values[target].add(te.valeur)
 
         return {key: sorted(value) for key, value in values.items()}
-
-    def get_parfums_personnalises(self, obj):
-        client = self._get_client(obj)
-        if not client:
-            return []
-        return MeParfumPersonnaliseSerializer(
-            client.parfums_personnalises.all(),
-            many=True
-        ).data
-
-    def get_commandes(self, obj):
-        client = self._get_client(obj)
-        if not client:
-            return []
-        return MeCommandeSerializer(
-            client.commandes.all(),
-            many=True
-        ).data
 
 
 class PrestataireSerializer(serializers.ModelSerializer):
     """Serializer complet pour l'affichage (Admin)"""
     user_details = UserSerializer(source='client.user', read_only=True)
+    photo = serializers.SerializerMethodField()
     total_gains = serializers.SerializerMethodField()
     total_paid_orders = serializers.SerializerMethodField()
 
     class Meta:
         model = Prestataire
         fields = [
-            'id', 'client', 'user_details', 'code_promo',
+            'id', 'client', 'user_details', 'photo', 'code_promo',
             'taux_commission', 'reduction_client_pourcentage',
             'solde_commission', 'statut', 'date_creation', 'date_modification',
             'total_gains', 'total_paid_orders'
         ]
+        read_only_fields = ['photo']
+
+    def get_photo(self, obj):
+        if obj.photo:
+            request = self.context.get('request')
+            return request.build_absolute_uri(obj.photo.url) if request else obj.photo.url
+        return None
 
     def get_total_gains(self, obj):
         val = getattr(obj, 'total_gains', None)
@@ -763,6 +876,7 @@ class PayoutRequestSerializer(serializers.Serializer):
 class LivreurSerializer(serializers.ModelSerializer):
     """Serializer complet pour le profil Livreur"""
     user_details = UserSerializer(source='client.user', read_only=True)
+    photo = serializers.SerializerMethodField()
     
     class Meta:
         model = Livreur
@@ -770,7 +884,13 @@ class LivreurSerializer(serializers.ModelSerializer):
             'id', 'user_details', 'photo', 'statut', 
             'nombre_livraisons', 'date_embauche', 'date_creation'
         ]
-        read_only_fields = ['nombre_livraisons', 'date_creation']
+        read_only_fields = ['photo', 'nombre_livraisons', 'date_creation']
+
+    def get_photo(self, obj):
+        if obj.photo:
+            request = self.context.get('request')
+            return request.build_absolute_uri(obj.photo.url) if request else obj.photo.url
+        return None
 
 class LivreurUpdateSerializer(serializers.ModelSerializer):
     """Serializer pour modifier le statut du livreur depuis l'admin"""
@@ -805,14 +925,21 @@ class LivreurCommandeSerializer(serializers.ModelSerializer):
 class ServeusesSerializer(serializers.ModelSerializer):
     """Serializer complet pour le profil Serveuse"""
     user_details = UserSerializer(source='client.user', read_only=True)
+    photo = serializers.SerializerMethodField()
 
     class Meta:
         model = Serveuse
         fields = [
-            'id', 'user_details', 'actif',
+            'id', 'user_details', 'photo', 'actif',
             'nombre_services', 'note_moyenne', 'date_embauche', 'date_creation'
         ]
-        read_only_fields = ['nombre_services', 'date_creation']
+        read_only_fields = ['photo', 'nombre_services', 'date_creation']
+
+    def get_photo(self, obj):
+        if obj.photo:
+            request = self.context.get('request')
+            return request.build_absolute_uri(obj.photo.url) if request else obj.photo.url
+        return None
 
 
 class ServeusesUpdateSerializer(serializers.ModelSerializer):
@@ -820,6 +947,159 @@ class ServeusesUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Serveuse
         fields = ['actif']
+
+
+# ============================================================
+# SERIALIZERS BOUTIQUE
+# ============================================================
+
+class BoutiqueSerializer(serializers.ModelSerializer):
+    """Serializer complet pour le profil Boutique"""
+    user_details = UserSerializer(source='client.user', read_only=True)
+    photo = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Boutique
+        fields = [
+            'id', 'user_details', 'photo', 'nom', 'adresse', 'ville',
+            'telephone', 'taux_commission', 'statut', 'date_creation', 'date_modification'
+        ]
+        read_only_fields = ['photo', 'statut', 'date_creation', 'date_modification']
+
+    def get_photo(self, obj):
+        if obj.photo:
+            request = self.context.get('request')
+            return request.build_absolute_uri(obj.photo.url) if request else obj.photo.url
+        return None
+
+
+class BoutiqueAdminDetailSerializer(serializers.ModelSerializer):
+    """
+    Serializer enrichi pour l'Admin : fiche complète d'une boutique partenaire.
+    Inclut toutes les infos financières, le propriétaire et les statistiques.
+    """
+    user_details = UserSerializer(source='client.user', read_only=True)
+    photo = serializers.SerializerMethodField()
+    proprietaire_nom = serializers.SerializerMethodField()
+    proprietaire_email = serializers.SerializerMethodField()
+    proprietaire_telephone = serializers.SerializerMethodField()
+    nb_produits_parfums = serializers.SerializerMethodField()
+    nb_produits_accessoires = serializers.SerializerMethodField()
+    nb_produits_total = serializers.SerializerMethodField()
+    nb_ventes_total = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Boutique
+        fields = [
+            # Identité
+            'id', 'nom', 'photo', 'adresse', 'ville', 'telephone',
+            # Propriétaire
+            'user_details', 'proprietaire_nom', 'proprietaire_email', 'proprietaire_telephone',
+            # Commission & Statut
+            'taux_commission', 'statut',
+            # Finances
+            'solde_disponible', 'solde_total_recu',
+            # Paiement
+            'telephone_paiement', 'mode_paiement_prefere',
+            # Statistiques
+            'nb_produits_parfums', 'nb_produits_accessoires', 'nb_produits_total', 'nb_ventes_total',
+            # Dates
+            'date_creation', 'date_modification',
+        ]
+        read_only_fields = [
+            'photo', 'statut', 'date_creation', 'date_modification',
+            'solde_disponible', 'solde_total_recu',
+        ]
+
+    def get_photo(self, obj):
+        if obj.photo:
+            request = self.context.get('request')
+            return request.build_absolute_uri(obj.photo.url) if request else obj.photo.url
+        return None
+
+    def get_proprietaire_nom(self, obj):
+        return obj.proprietaire_nom
+
+    def get_proprietaire_email(self, obj):
+        return obj.client.user.email
+
+    def get_proprietaire_telephone(self, obj):
+        return obj.client.user.phone_number if hasattr(obj.client.user, 'phone_number') else obj.telephone
+
+    def get_nb_produits_parfums(self, obj):
+        return obj.parfums.count()
+
+    def get_nb_produits_accessoires(self, obj):
+        return obj.accessoires.count()
+
+    def get_nb_produits_total(self, obj):
+        return obj.parfums.count() + obj.accessoires.count()
+
+    def get_nb_ventes_total(self, obj):
+        from orders.models import VenteBoutique
+        return VenteBoutique.objects.filter(boutique=obj, statut='valide').count()
+
+
+class BoutiqueApplicationSerializer(serializers.ModelSerializer):
+    """Serializer pour la demande initiale d'ouverture de boutique (photo obligatoire)"""
+    photo = serializers.ImageField(required=True)
+
+    class Meta:
+        model = Boutique
+        fields = ['nom', 'photo', 'adresse', 'ville', 'telephone']
+        extra_kwargs = {
+            'nom': {'required': True},
+        }
+
+
+class BoutiqueMeUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour que le propriétaire modifie les infos de sa boutique"""
+    class Meta:
+        model = Boutique
+        fields = ['nom', 'adresse', 'ville', 'telephone']
+
+
+class BoutiqueAdminUpdateSerializer(serializers.ModelSerializer):
+    """Serializer pour que l'admin modifie le statut, le taux de commission et les infos d'une boutique"""
+    class Meta:
+        model = Boutique
+        fields = ['nom', 'adresse', 'ville', 'telephone', 'taux_commission', 'statut']
+
+    def validate_taux_commission(self, value):
+        from orders.models import CodePromoAdmin
+        from django.db.models import Max
+        
+        cost_max = CodePromoAdmin.objects.filter(est_actif=True).aggregate(m=Max('reduction_pourcentage'))['m'] or Decimal('0')
+        if value < cost_max:
+            raise serializers.ValidationError(
+                f"🚨 SÉCURITÉ FINANCIÈRE : Ce taux de commission ({value}%) est inférieur au "
+                f"coût du code promo actif le plus élevé ({cost_max}%). "
+                f"Ajustez d'abord vos codes promo pour éviter toute perte financière."
+            )
+        return value
+
+
+class BoutiqueValidationSerializer(serializers.ModelSerializer):
+    """Serializer pour la validation d'une boutique par l'admin (taux_commission obligatoire)"""
+    taux_commission = serializers.DecimalField(max_digits=5, decimal_places=2, required=True, min_value=0, max_value=100)
+
+    class Meta:
+        model = Boutique
+        fields = ['taux_commission']
+
+    def validate_taux_commission(self, value):
+        from orders.models import CodePromoAdmin
+        from django.db.models import Max
+        
+        cost_max = CodePromoAdmin.objects.filter(est_actif=True).aggregate(m=Max('reduction_pourcentage'))['m'] or Decimal('0')
+        if value < cost_max:
+            raise serializers.ValidationError(
+                f"🚨 SÉCURITÉ FINANCIÈRE : Ce taux de commission ({value}%) est inférieur au "
+                f"coût du code promo actif le plus élevé ({cost_max}%). "
+                f"Ajustez d'abord vos codes promo pour éviter toute perte financière."
+            )
+        return value
+
 
 
 class DepenseSerializer(serializers.ModelSerializer):
@@ -870,3 +1150,38 @@ class FCMDeviceSerializer(serializers.Serializer):
             }
         )
         return device
+
+
+class VenteBoutiqueSerializer(serializers.ModelSerializer):
+    commande_numero = serializers.CharField(source='commande.numero_commande', read_only=True)
+    boutique_nom = serializers.CharField(source='boutique.nom', read_only=True)
+
+    class Meta:
+        from orders.models import VenteBoutique
+        model = VenteBoutique
+        fields = [
+            'id', 'commande', 'commande_numero', 'boutique', 'boutique_nom',
+            'montant_brut', 'taux_commission_applique', 'montant_commission_admin',
+            'montant_net_boutique', 'statut', 'date_creation', 'date_reglement'
+        ]
+
+
+class VersementBoutiqueSerializer(serializers.ModelSerializer):
+    boutique_nom = serializers.CharField(source='boutique.nom', read_only=True)
+    effectue_par_nom = serializers.SerializerMethodField()
+
+    class Meta:
+        from orders.models import VersementBoutique
+        model = VersementBoutique
+        fields = [
+            'id', 'boutique', 'boutique_nom', 'montant', 'reference_transaction',
+            'campay_processing_number', 'statut', 'motif_echec',
+            'mode_paiement', 'telephone_destination', 'note_admin',
+            'effectue_par', 'effectue_par_nom', 'date_versement', 'date_finalisation'
+        ]
+
+    def get_effectue_par_nom(self, obj):
+        if obj.effectue_par:
+            return obj.effectue_par.get_full_name() or obj.effectue_par.email
+        return None
+

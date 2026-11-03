@@ -485,6 +485,12 @@ class CommandePagination(PageNumberPagination):
     max_page_size = 1000
 
 
+class MesCommandesPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 200
+
+
 class CommandeListView(APIView):
     permission_classes = [IsAuthenticated, CommandePermission]
 
@@ -555,6 +561,81 @@ class CommandeListView(APIView):
         return Response(serializer.data)
 
 
+class MesCommandesView(APIView):
+    """
+    Retourne la liste paginée (50 par page) de toutes les commandes du client connecté
+    avec filtres (statut, statut_paiement, statut_livraison, search, date_debut, date_fin)
+    et le détail complet des lignes (parfums, accessoires, essences finies, créations, diffuseurs).
+    """
+    permission_classes = [IsAuthenticated]
+    pagination_class = MesCommandesPagination
+
+    def get(self, request, *args, **kwargs):
+        client = getattr(request.user, 'client', None)
+        paginator = self.pagination_class()
+
+        if not client:
+            page = paginator.paginate_queryset(Commande.objects.none(), request, view=self)
+            return paginator.get_paginated_response(page)
+
+        from utilisateur.serializers import MeCommandeSerializer
+        commandes = (
+            Commande.objects
+            .filter(client=client)
+            .select_related('livreur', 'prestataire')
+            .prefetch_related(
+                'lignes_parfums__parfum',
+                'lignes_parfums_perso__parfum_personnalise__flacon',
+                'lignes_parfums_perso__parfum_personnalise__lignes__essence__essence',
+                'lignes_parfums_perso__parfum_personnalise__lignes__essence_personnalisee',
+                'lignes_accessoires__accessoire',
+                'lignes_produit_fini_essence__produit_fini_essence',
+                'lignes_essence_personnalisee__essence_personnalise',
+                'lignes_diffuseurs__diffuseur',
+            )
+            .order_by('-date_creation')
+        )
+
+        # Filtres
+        statut = request.query_params.get('statut')
+        if statut:
+            commandes = commandes.filter(statut=statut)
+
+        statut_paiement = request.query_params.get('statut_paiement')
+        if statut_paiement:
+            commandes = commandes.filter(statut_paiement=statut_paiement)
+
+        statut_livraison = request.query_params.get('statut_livraison')
+        if statut_livraison:
+            commandes = commandes.filter(statut_livraison=statut_livraison)
+
+        search = request.query_params.get('search')
+        if search:
+            from django.db.models import Q
+            commandes = commandes.filter(
+                Q(numero_commande__icontains=search) |
+                Q(livraison_telephone__icontains=search) |
+                Q(livraison_ville__icontains=search) |
+                Q(livraison_quartier__icontains=search) |
+                Q(code_promo_utilise__icontains=search)
+            )
+
+        date_debut = request.query_params.get('date_debut')
+        if date_debut:
+            commandes = commandes.filter(date_creation__date__gte=date_debut)
+
+        date_fin = request.query_params.get('date_fin')
+        if date_fin:
+            commandes = commandes.filter(date_creation__date__lte=date_fin)
+
+        page = paginator.paginate_queryset(commandes, request, view=self)
+        if page is not None:
+            serializer = MeCommandeSerializer(page, many=True, context={'request': request})
+            return paginator.get_paginated_response(serializer.data)
+
+        serializer = MeCommandeSerializer(commandes, many=True, context={'request': request})
+        return Response(serializer.data)
+
 
 class CommandeDetailView(APIView):
     permission_classes = [IsAuthenticated, CommandePermission]
@@ -577,16 +658,10 @@ class CommandeDetailView(APIView):
         is_client_owner = hasattr(user, 'client') and commande.client == user.client
 
         if is_admin_or_serv:
-            # 1. Commande annulée ou remboursée -> Figée
+            # 1. Commande annulée -> Figée
             if commande.statut == 'annulée':
                 return Response(
                     {"detail": "Cette commande est annulée. Aucune modification de statut n'est possible sur une commande annulée."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            if commande.statut == 'remboursée':
-                return Response(
-                    {"detail": "Cette commande est remboursée. Elle est définitivement figée et ne peut plus être modifiée."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -603,7 +678,9 @@ class CommandeDetailView(APIView):
             champs_proteges_demandes = CHAMPS_PROTEGES.intersection(data.keys())
 
             target_statut = nouveau_statut or commande.statut
-            if champs_proteges_demandes and target_statut != 'validé':
+            # Les champs secondaires sont modifiables si la commande est 'validée' ou 'livrée'
+            statuts_autorises_secondaires = {'validé', 'livrée'}
+            if champs_proteges_demandes and target_statut not in statuts_autorises_secondaires:
                 if commande.statut == 'en_attente':
                     return Response(
                         {"detail": "Veuillez d'abord mettre la commande au statut 'validé' avant tout autre opération."},
@@ -611,18 +688,16 @@ class CommandeDetailView(APIView):
                     )
                 else:
                     return Response(
-                        {"detail": "Les statuts de livraison, paiement et commission ne peuvent être modifiés que lorsque la commande est au statut 'validé'."},
+                        {"detail": "Les statuts de livraison, paiement et commission ne peuvent être modifiés que lorsque la commande est au statut 'validé' ou 'livrée'."},
                         status=status.HTTP_400_BAD_REQUEST
                     )
 
-            # 4. Passage au statut 'remboursée' : uniquement si statut_paiement == 'payé'
-            if nouveau_statut == 'remboursée':
-                statut_paiement_apres = data.get('statut_paiement', commande.statut_paiement)
-                if statut_paiement_apres != 'payé':
-                    return Response(
-                        {"detail": "Une commande ne peut être mise au statut 'remboursée' que si son statut de paiement est 'payé'."},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+            # 4. Annulation d'une commande payée interdite
+            if commande.statut_paiement == 'payé' and nouveau_statut == 'annulée':
+                return Response(
+                    {"detail": "Une commande déjà payée ne peut pas être annulée."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
             # Application des modifications autorisées
             allowed_fields = {
@@ -645,6 +720,16 @@ class CommandeDetailView(APIView):
 
             for k, v in update_data.items():
                 setattr(commande, k, v)
+
+            # Logique automatique : si statut_livraison passe à 'livrée' → paiement = 'payé'
+            if update_data.get('statut_livraison') == 'livrée' and 'statut_paiement' not in update_data:
+                commande.statut_paiement = 'payé'
+                if not commande.date_livraison_reelle:
+                    commande.date_livraison_reelle = timezone.now()
+
+            # Logique automatique : si statut_livraison passe à 'échouée' → paiement = 'échoué'
+            if update_data.get('statut_livraison') == 'échouée' and 'statut_paiement' not in update_data:
+                commande.statut_paiement = 'échoué'
 
             commande.save()
             return Response(CommandeSerializer(commande, context={'request': request}).data, status=status.HTTP_200_OK)
@@ -719,7 +804,7 @@ class CommandeDetailView(APIView):
             if nouveau_statut == 'annulée' or action == 'annuler':
                 if commande.statut != 'en_attente':
                     return Response(
-                        {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée, annulée ou remboursée, vous ne pouvez plus l'annuler."},
+                        {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée ou annulée, vous ne pouvez plus l'annuler."},
                         status=status.HTTP_400_BAD_REQUEST
                     )
                 commande.statut = 'annulée'
@@ -737,7 +822,7 @@ class CommandeDetailView(APIView):
         """
         Permet d'annuler une commande (met son statut à 'annulée' au lieu de supprimer le record).
         Client : autorisé uniquement si la commande est au statut 'en_attente'.
-        Admin/Serveuse : autorisé si la commande n'est pas déjà 'annulée' ou 'remboursée'.
+        Admin/Serveuse : autorisé si la commande n'est pas déjà 'annulée'.
         """
         commande = get_object_or_404(Commande, numero_commande=numero)
         self.check_object_permissions(request, commande)
@@ -747,9 +832,14 @@ class CommandeDetailView(APIView):
         is_admin_or_serv = user.is_superuser or is_active_serveuse(user)
 
         if is_admin_or_serv:
-            if commande.statut in ('annulée', 'remboursée'):
+            if commande.statut_paiement == 'payé':
                 return Response(
-                    {"detail": f"Cette commande est déjà au statut '{commande.statut}' et ne peut plus être annulée."},
+                    {"detail": "Une commande déjà payée ne peut pas être annulée."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if commande.statut == 'annulée':
+                return Response(
+                    {"detail": "Cette commande est déjà au statut 'annulée' et ne peut plus être annulée."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             commande.statut = 'annulée'
@@ -768,7 +858,7 @@ class CommandeDetailView(APIView):
 
         if commande.statut != 'en_attente':
             return Response(
-                {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée, annulée ou remboursée, vous ne pouvez plus l'annuler."},
+                {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée ou annulée, vous ne pouvez plus l'annuler."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -797,9 +887,14 @@ class CommandeAnnulerView(APIView):
         is_admin_or_serv = user.is_superuser or is_active_serveuse(user)
 
         if is_admin_or_serv:
-            if commande.statut in ('annulée', 'remboursée'):
+            if commande.statut_paiement == 'payé':
                 return Response(
-                    {"detail": f"Cette commande est déjà au statut '{commande.statut}' et ne peut plus être annulée."},
+                    {"detail": "Une commande déjà payée ne peut pas être annulée."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if commande.statut == 'annulée':
+                return Response(
+                    {"detail": "Cette commande est déjà au statut 'annulée' et ne peut plus être annulée."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             commande.statut = 'annulée'
@@ -818,7 +913,7 @@ class CommandeAnnulerView(APIView):
 
         if commande.statut != 'en_attente':
             return Response(
-                {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée, annulée ou remboursée, vous ne pouvez plus l'annuler."},
+                {"detail": "Vous ne pouvez annuler la commande que lorsqu'elle est au statut 'en attente'. Dès qu'elle est validée ou annulée, vous ne pouvez plus l'annuler."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -1099,175 +1194,263 @@ class AdminStatistiquesBeneficesView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request, *args, **kwargs):
-        from django.db.models import Sum, Count, Q
-        from catalogue.models import Essence, LotEssence, LotEssenceConsommation
+        from django.db.models import Sum, Count, Q, F, ExpressionWrapper, DecimalField
         from decimal import Decimal
+        from orders.models import (
+            Commande,
+            CommandeLigneParfum,
+            CommandeLigneAccessoire,
+            CommandeLigneParfumPerso,
+            CommandeProduitFiniEssence,
+            CommandeLigneEssencePersonnalisee,
+            CommandeLigneDiffuseurParfum,
+            VenteBoutique,
+        )
+        from catalogue.models import (
+            Parfum,
+            Accessoire,
+            DiffuseurParfum,
+            Flacon,
+            LotEssence,
+        )
 
         # ---- Filtres de date / statut ----------------------------------------
         date_debut = request.query_params.get('date_debut')
         date_fin   = request.query_params.get('date_fin')
-        statut_cmd = request.query_params.get('statut', 'validé')  # par défaut : commandes validées
+        statut_cmd = request.query_params.get('statut')
+        statut_paiement = request.query_params.get('statut_paiement', 'payé')
 
-        # Filtre de base sur les commandes
-        filtre_commande = Q(statut=statut_cmd) if statut_cmd else Q()
+        # Filtre sur les commandes :
+        # Par défaut : toutes les commandes non annulées et PAYÉES (argent encaissé).
+        # L'admin peut filtrer par ?statut_paiement=tous pour inclure aussi les commandes non encore payées,
+        # ou cibler un statut spécifique (ex: ?statut=en_attente, ?statut=validé, ?statut=livrée, ?statut=tous).
+        filtre_commande = ~Q(statut='annulée')
+        if statut_paiement and statut_paiement not in ('tous', 'all'):
+            filtre_commande &= Q(statut_paiement=statut_paiement)
+        if statut_cmd and statut_cmd not in ('tous', 'all'):
+            filtre_commande &= Q(statut=statut_cmd)
         if date_debut:
             filtre_commande &= Q(date_creation__date__gte=date_debut)
         if date_fin:
             filtre_commande &= Q(date_creation__date__lte=date_fin)
 
-        # ---- Commandes sélectionnées -----------------------------------------
         commandes_ids = list(Commande.objects.filter(filtre_commande).values_list('id', flat=True))
+        nb_commandes = len(commandes_ids)
 
         # ===================================================================
-        # 1. ESSENCES — bénéfice par lot puis regroupement par essence
+        # 1. PARFUMS (Maison vs Boutiques partenaires)
         # ===================================================================
-        lots_qs = LotEssence.objects.select_related('essence').prefetch_related('consommations')
-
-        rapport_essences = {}
-
-        for lot in lots_qs:
-            # CA généré sur ce lot pour les commandes filtrées
-            # LotEssenceConsommation n'a pas de FK directe vers Commande :
-            # il faut filtrer via les lignes de parfum perso ou produit fini essence
-            filtre_conso = (
-                Q(ligne_parfum_perso__commande__in=commandes_ids) |
-                Q(ligne_produit_fini_essence__commande__in=commandes_ids)
-            )
-            consommations = lot.consommations.filter(
-                filtre_conso
-            ).aggregate(
-                ca=Sum('prix_vente_attribue'),
-                ml_consommes=Sum('quantite_ml')  # champ réel sur le modèle
-            )
-            ca_lot = Decimal(str(consommations['ca'] or 0))
-            ml_lot = Decimal(str(consommations['ml_consommes'] or 0))
-
-            # Coût d'achat proratisé aux ml consommés dans ce lot
-            if lot.prix_achat_par_ml and ml_lot > 0:
-                cout_lot = ml_lot * lot.prix_achat_par_ml
-                benefice_lot = ca_lot - cout_lot
-            else:
-                cout_lot = Decimal('0')
-                benefice_lot = None  # pas de prix d'achat → bénéfice inconnu
-
-            essence_id = lot.essence_id
-            if essence_id not in rapport_essences:
-                rapport_essences[essence_id] = {
-                    'essence_id':       essence_id,
-                    'essence_nom':      f"{lot.essence.marque} – {lot.essence.nom}",
-                    'essence_categorie': lot.essence.categorie,
-                    'ca_total':         Decimal('0'),
-                    'cout_total':       Decimal('0'),
-                    'benefice_total':   Decimal('0'),
-                    'benefice_connu':   True,  # passe à False si un lot n'a pas de prix
-                    'lots': [],
-                }
-
-            rapport_essences[essence_id]['ca_total']    += ca_lot
-            rapport_essences[essence_id]['cout_total']  += cout_lot
-            if benefice_lot is not None:
-                rapport_essences[essence_id]['benefice_total'] += benefice_lot
-            else:
-                rapport_essences[essence_id]['benefice_connu'] = False
-
-            rapport_essences[essence_id]['lots'].append({
-                'lot_id':            lot.id,
-                'reference':         lot.reference_fournisseur or f'Lot #{lot.id}',
-                'date_reception':    lot.date_reception.strftime('%Y-%m-%d') if lot.date_reception else None,
-                'quantite_initiale': str(lot.quantite_initiale_ml or 0),
-                'stock_restant':     str(lot.stock_ml),
-                'est_termine':       lot.stock_ml <= Decimal('0'),
-                'prix_achat_par_ml': str(lot.prix_achat_par_ml) if lot.prix_achat_par_ml else None,
-                'ca_lot':            str(ca_lot.quantize(Decimal('0.01'))),
-                'cout_lot':          str(cout_lot.quantize(Decimal('0.01'))),
-                'benefice_lot':      str(benefice_lot.quantize(Decimal('0.01'))) if benefice_lot is not None else None,
-            })
-
-        # Formater pour la réponse
-        essences_list = []
-        for data in rapport_essences.values():
-            essences_list.append({
-                'essence_id':       data['essence_id'],
-                'essence_nom':      data['essence_nom'],
-                'essence_categorie': data['essence_categorie'],
-                'benefice_connu':   data['benefice_connu'],
-                'ca_total':         str(data['ca_total'].quantize(Decimal('0.01'))),
-                'cout_total':       str(data['cout_total'].quantize(Decimal('0.01'))),
-                'benefice_total':   str(data['benefice_total'].quantize(Decimal('0.01'))) if data['benefice_connu'] else None,
-                'lots':             data['lots'],
-            })
-
-        # ===================================================================
-        # 2. PARFUMS — ventes + bénéfice (snapshot)
-        # ===================================================================
-        from orders.models import CommandeLigneParfum
-        parfums_agg = CommandeLigneParfum.objects.filter(
-            commande__in=commandes_ids
+        parfums_maison_agg = CommandeLigneParfum.objects.filter(
+            commande__in=commandes_ids,
+            parfum__boutique__isnull=True
         ).aggregate(
-            nb_ventes=Count('id'),
+            nb=Count('id'),
             ca=Sum('sous_total'),
             cout=Sum('prix_achat_total_snapshot'),
         )
-        ca_parfums   = Decimal(str(parfums_agg['ca']   or 0))
-        cout_parfums = Decimal(str(parfums_agg['cout'] or 0))
-
-        # ===================================================================
-        # 3. ACCESSOIRES — ventes + bénéfice (snapshot)
-        # ===================================================================
-        from orders.models import CommandeLigneAccessoire
-        access_agg = CommandeLigneAccessoire.objects.filter(
-            commande__in=commandes_ids
+        parfums_boutiques_agg = CommandeLigneParfum.objects.filter(
+            commande__in=commandes_ids,
+            parfum__boutique__isnull=False
         ).aggregate(
-            nb_ventes=Count('id'),
+            nb=Count('id'),
             ca=Sum('sous_total'),
             cout=Sum('prix_achat_total_snapshot'),
         )
-        ca_access   = Decimal(str(access_agg['ca']   or 0))
-        cout_access = Decimal(str(access_agg['cout'] or 0))
+        ca_parfums_maison   = Decimal(str(parfums_maison_agg['ca'] or 0))
+        cout_parfums_maison = Decimal(str(parfums_maison_agg['cout'] or 0))
+        ca_parfums_boutiques   = Decimal(str(parfums_boutiques_agg['ca'] or 0))
+        cout_parfums_boutiques = Decimal(str(parfums_boutiques_agg['cout'] or 0))
+        ca_parfums   = ca_parfums_maison + ca_parfums_boutiques
+        cout_parfums = cout_parfums_maison + cout_parfums_boutiques
 
         # ===================================================================
-        # 4. PARFUMS PERSONNALISÉS (Labo) — ventes + bénéfice (snapshot)
+        # 2. ACCESSOIRES (Maison vs Boutiques partenaires)
         # ===================================================================
-        from orders.models import CommandeLigneParfumPerso
+        access_maison_agg = CommandeLigneAccessoire.objects.filter(
+            commande__in=commandes_ids,
+            accessoire__boutique__isnull=True
+        ).aggregate(
+            nb=Count('id'),
+            ca=Sum('sous_total'),
+            cout=Sum('prix_achat_total_snapshot'),
+        )
+        access_boutiques_agg = CommandeLigneAccessoire.objects.filter(
+            commande__in=commandes_ids,
+            accessoire__boutique__isnull=False
+        ).aggregate(
+            nb=Count('id'),
+            ca=Sum('sous_total'),
+            cout=Sum('prix_achat_total_snapshot'),
+        )
+        ca_access_maison   = Decimal(str(access_maison_agg['ca'] or 0))
+        cout_access_maison = Decimal(str(access_maison_agg['cout'] or 0))
+        ca_access_boutiques   = Decimal(str(access_boutiques_agg['ca'] or 0))
+        cout_access_boutiques = Decimal(str(access_boutiques_agg['cout'] or 0))
+        ca_access   = ca_access_maison + ca_access_boutiques
+        cout_access = cout_access_maison + cout_access_boutiques
+
+        # ===================================================================
+        # 3. PRODUITS DU LABORATOIRE (Maison uniquement - sans doublon)
+        # ===================================================================
         perso_agg = CommandeLigneParfumPerso.objects.filter(
             commande__in=commandes_ids
         ).aggregate(
-            nb_ventes=Count('id'),
+            nb=Count('id'),
             ca=Sum('sous_total'),
             cout=Sum('prix_achat_total_snapshot'),
         )
         ca_perso   = Decimal(str(perso_agg['ca']   or 0))
         cout_perso = Decimal(str(perso_agg['cout'] or 0))
 
-        # ===================================================================
-        # 5. ESSENCES PERSONNALISÉES (Labo direct) — ventes + bénéfice
-        # ===================================================================
-        from orders.models import CommandeLigneEssencePersonnalisee
+        pfe_agg = CommandeProduitFiniEssence.objects.filter(
+            commande__in=commandes_ids
+        ).aggregate(
+            nb=Count('id'),
+            ca=Sum('sous_total'),
+            cout=Sum('prix_achat_total_snapshot'),
+        )
+        ca_pfe   = Decimal(str(pfe_agg['ca']   or 0))
+        cout_pfe = Decimal(str(pfe_agg['cout'] or 0))
+
         ep_agg = CommandeLigneEssencePersonnalisee.objects.filter(
             commande__in=commandes_ids
         ).aggregate(
-            nb_ventes=Count('id'),
+            nb=Count('id'),
             ca=Sum('sous_total'),
             cout=Sum('prix_achat_total_snapshot'),
         )
         ca_ep   = Decimal(str(ep_agg['ca']   or 0))
         cout_ep = Decimal(str(ep_agg['cout'] or 0))
 
-        # ===================================================================
-        # 6. TOTAUX GLOBAUX
-        # ===================================================================
-        ca_essences_total   = sum((Decimal(e['ca_total'])   for e in essences_list), Decimal('0'))
-        cout_essences_total = sum((Decimal(e['cout_total']) for e in essences_list), Decimal('0'))
+        ca_labo_total = ca_perso + ca_pfe + ca_ep
+        cout_labo_total = cout_perso + cout_pfe + cout_ep
+        benefice_labo_total = ca_labo_total - cout_labo_total
 
-        ca_global      = ca_essences_total + ca_parfums + ca_access + ca_perso + ca_ep
-        cout_global    = cout_essences_total + cout_parfums + cout_access + cout_perso + cout_ep
-        benefice_global = ca_global - cout_global
+        # ===================================================================
+        # 4. DIFFUSEURS DE PARFUM (Maison uniquement)
+        # ===================================================================
+        diff_agg = CommandeLigneDiffuseurParfum.objects.filter(
+            commande__in=commandes_ids
+        ).aggregate(
+            nb=Count('id'),
+            ca=Sum('sous_total'),
+            cout=Sum('prix_achat_total_snapshot'),
+        )
+        ca_diff   = Decimal(str(diff_agg['ca']   or 0))
+        cout_diff = Decimal(str(diff_agg['cout'] or 0))
 
-        nb_commandes = len(commandes_ids)
+        # ===================================================================
+        # 5. VENTES BOUTIQUES PARTENAIRES (Commissions Admin & Net Boutiques)
+        # ===================================================================
+        vb_global_agg = VenteBoutique.objects.filter(
+            commande__in=commandes_ids
+        ).aggregate(
+            ca_brut=Sum('montant_brut'),
+            commissions=Sum('montant_commission_admin'),
+            net_boutiques=Sum('montant_net_boutique'),
+        )
+        ca_boutiques_brut = Decimal(str(vb_global_agg['ca_brut'] or 0))
+        commissions_admin_boutiques = Decimal(str(vb_global_agg['commissions'] or 0))
+        net_a_reverser_boutiques = Decimal(str(vb_global_agg['net_boutiques'] or 0))
+
+        # ===================================================================
+        # 6. TOTAUX FINANCIERS (Maison, Boutiques, Global Plateforme)
+        # ===================================================================
+        ca_maison = ca_parfums_maison + ca_access_maison + ca_labo_total + ca_diff
+        cout_maison = cout_parfums_maison + cout_access_maison + cout_labo_total + cout_diff
+        benefice_maison = ca_maison - cout_maison
+
+        ca_global = ca_maison + ca_boutiques_brut
+        cout_global = cout_maison + cout_parfums_boutiques + cout_access_boutiques
+        benefice_global = benefice_maison + commissions_admin_boutiques
+
+        # ===================================================================
+        # 7. VALEUR EN STOCK DU MARCHAND (basée uniquement sur les prix de vente)
+        # ===================================================================
+        def _calc_stock_valeur(qs, price_field='prix_unitaire', qty_field='stock_quantite'):
+            agg = qs.annotate(
+                val=ExpressionWrapper(
+                    F(qty_field) * F(price_field),
+                    output_field=DecimalField(max_digits=14, decimal_places=2)
+                )
+            ).aggregate(
+                total_valeur=Sum('val'),
+                total_quantite=Sum(qty_field)
+            )
+            v = Decimal(str(agg['total_valeur'] or 0))
+            q = agg['total_quantite'] or 0
+            return v, q
+
+        # Stock Parfums
+        v_parfums_global, q_parfums_global = _calc_stock_valeur(
+            Parfum.objects.filter(actif=True, stock_quantite__gt=0)
+        )
+        v_parfums_maison, q_parfums_maison = _calc_stock_valeur(
+            Parfum.objects.filter(boutique__isnull=True, actif=True, stock_quantite__gt=0)
+        )
+        v_parfums_boutiques, q_parfums_boutiques = _calc_stock_valeur(
+            Parfum.objects.filter(boutique__isnull=False, actif=True, stock_quantite__gt=0)
+        )
+
+        # Stock Accessoires
+        v_access_global, q_access_global = _calc_stock_valeur(
+            Accessoire.objects.filter(actif=True, stock_quantite__gt=0)
+        )
+        v_access_maison, q_access_maison = _calc_stock_valeur(
+            Accessoire.objects.filter(boutique__isnull=True, actif=True, stock_quantite__gt=0)
+        )
+        v_access_boutiques, q_access_boutiques = _calc_stock_valeur(
+            Accessoire.objects.filter(boutique__isnull=False, actif=True, stock_quantite__gt=0)
+        )
+
+        # Stock Articles Maison (Diffuseurs, Flacons, Essences Labo)
+        v_diffuseurs, q_diffuseurs = _calc_stock_valeur(
+            DiffuseurParfum.objects.filter(actif=True, stock_quantite__gt=0)
+        )
+        v_flacons, q_flacons = _calc_stock_valeur(
+            Flacon.objects.filter(actif=True, stock_quantite__gt=0)
+        )
+        v_essences, q_essences_ml = _calc_stock_valeur(
+            LotEssence.objects.filter(actif=True, stock_ml__gt=0, essence__actif=True),
+            price_field='essence__prix_par_ml',
+            qty_field='stock_ml'
+        )
+
+        # Totaux de valeur marchande (sans doublon de structure)
+        v_maison_totale = v_parfums_maison + v_access_maison + v_diffuseurs + v_flacons + v_essences
+        v_boutiques_totale = v_parfums_boutiques + v_access_boutiques
+        v_total_global = v_maison_totale + v_boutiques_totale
+
+        # Détail par boutique partenaire
+        from utilisateur.models import Boutique as BoutiqueModel
+        detail_par_boutique = []
+        for bq in BoutiqueModel.objects.filter(statut='actif').order_by('nom'):
+            v_p_bq, q_p_bq = _calc_stock_valeur(
+                Parfum.objects.filter(boutique=bq, actif=True, stock_quantite__gt=0)
+            )
+            v_a_bq, q_a_bq = _calc_stock_valeur(
+                Accessoire.objects.filter(boutique=bq, actif=True, stock_quantite__gt=0)
+            )
+            v_tot_bq = v_p_bq + v_a_bq
+            detail_par_boutique.append({
+                'boutique_id':  bq.id,
+                'boutique_nom': bq.nom,
+                'ville':        bq.ville,
+                'valeur_totale': str(v_tot_bq.quantize(Decimal('0.01'))),
+                'parfums': {
+                    'valeur_totale':   str(v_p_bq.quantize(Decimal('0.01'))),
+                    'quantite_totale': q_p_bq,
+                },
+                'accessoires': {
+                    'valeur_totale':   str(v_a_bq.quantize(Decimal('0.01'))),
+                    'quantite_totale': q_a_bq,
+                },
+            })
 
         return Response({
             'filtres_appliques': {
                 'statut_commande': statut_cmd or 'tous',
+                'statut_paiement': statut_paiement or 'tous',
                 'date_debut': date_debut,
                 'date_fin':   date_fin,
             },
@@ -1276,37 +1459,147 @@ class AdminStatistiquesBeneficesView(APIView):
                 'chiffre_affaires': str(ca_global.quantize(Decimal('0.01'))),
                 'cout_total':       str(cout_global.quantize(Decimal('0.01'))),
                 'benefice_net':     str(benefice_global.quantize(Decimal('0.01'))),
+                'boutique_globale_maison': {
+                    'description': "Chiffre d'affaires et bénéfices générés exclusivement par les produits propres de la maison.",
+                    'chiffre_affaires': str(ca_maison.quantize(Decimal('0.01'))),
+                    'cout_total':       str(cout_maison.quantize(Decimal('0.01'))),
+                    'benefice_net':     str(benefice_maison.quantize(Decimal('0.01'))),
+                },
+                'boutiques_partenaires': {
+                    'description': "Ventes réalisées par les boutiques partenaires, commissions gagnées par l'admin et montants reversés.",
+                    'chiffre_affaires_brut':   str(ca_boutiques_brut.quantize(Decimal('0.01'))),
+                    'commission_admin_gagne': str(commissions_admin_boutiques.quantize(Decimal('0.01'))),
+                    'net_a_reverser':         str(net_a_reverser_boutiques.quantize(Decimal('0.01'))),
+                },
             },
             'par_categorie': {
-                'essences': {
-                    'chiffre_affaires':    str(ca_essences_total.quantize(Decimal('0.01'))),
-                    'cout_total':          str(cout_essences_total.quantize(Decimal('0.01'))),
-                    'benefice':            str((ca_essences_total - cout_essences_total).quantize(Decimal('0.01'))),
-                    'detail_par_essence':  essences_list,
-                },
                 'parfums': {
-                    'nb_ventes':        parfums_agg['nb_ventes'] or 0,
+                    'nb_ventes':        (parfums_maison_agg['nb'] or 0) + (parfums_boutiques_agg['nb'] or 0),
                     'chiffre_affaires': str(ca_parfums.quantize(Decimal('0.01'))),
                     'cout_total':       str(cout_parfums.quantize(Decimal('0.01'))),
                     'benefice':         str((ca_parfums - cout_parfums).quantize(Decimal('0.01'))),
+                    'maison': {
+                        'nb_ventes':        parfums_maison_agg['nb'] or 0,
+                        'chiffre_affaires': str(ca_parfums_maison.quantize(Decimal('0.01'))),
+                        'cout_total':       str(cout_parfums_maison.quantize(Decimal('0.01'))),
+                        'benefice':         str((ca_parfums_maison - cout_parfums_maison).quantize(Decimal('0.01'))),
+                    },
+                    'boutiques': {
+                        'nb_ventes':        parfums_boutiques_agg['nb'] or 0,
+                        'chiffre_affaires': str(ca_parfums_boutiques.quantize(Decimal('0.01'))),
+                        'cout_total':       str(cout_parfums_boutiques.quantize(Decimal('0.01'))),
+                        'benefice':         str((ca_parfums_boutiques - cout_parfums_boutiques).quantize(Decimal('0.01'))),
+                    },
                 },
                 'accessoires': {
-                    'nb_ventes':        access_agg['nb_ventes'] or 0,
+                    'nb_ventes':        (access_maison_agg['nb'] or 0) + (access_boutiques_agg['nb'] or 0),
                     'chiffre_affaires': str(ca_access.quantize(Decimal('0.01'))),
                     'cout_total':       str(cout_access.quantize(Decimal('0.01'))),
                     'benefice':         str((ca_access - cout_access).quantize(Decimal('0.01'))),
+                    'maison': {
+                        'nb_ventes':        access_maison_agg['nb'] or 0,
+                        'chiffre_affaires': str(ca_access_maison.quantize(Decimal('0.01'))),
+                        'cout_total':       str(cout_access_maison.quantize(Decimal('0.01'))),
+                        'benefice':         str((ca_access_maison - cout_access_maison).quantize(Decimal('0.01'))),
+                    },
+                    'boutiques': {
+                        'nb_ventes':        access_boutiques_agg['nb'] or 0,
+                        'chiffre_affaires': str(ca_access_boutiques.quantize(Decimal('0.01'))),
+                        'cout_total':       str(cout_access_boutiques.quantize(Decimal('0.01'))),
+                        'benefice':         str((ca_access_boutiques - cout_access_boutiques).quantize(Decimal('0.01'))),
+                    },
                 },
-                'parfums_personnalises': {
-                    'nb_ventes':        perso_agg['nb_ventes'] or 0,
-                    'chiffre_affaires': str(ca_perso.quantize(Decimal('0.01'))),
-                    'cout_total':       str(cout_perso.quantize(Decimal('0.01'))),
-                    'benefice':         str((ca_perso - cout_perso).quantize(Decimal('0.01'))),
+                'laboratoire': {
+                    'nb_ventes':        (perso_agg['nb'] or 0) + (pfe_agg['nb'] or 0) + (ep_agg['nb'] or 0),
+                    'chiffre_affaires': str(ca_labo_total.quantize(Decimal('0.01'))),
+                    'cout_total':       str(cout_labo_total.quantize(Decimal('0.01'))),
+                    'benefice':         str(benefice_labo_total.quantize(Decimal('0.01'))),
+                    'parfums_personnalises': {
+                        'nb_ventes':        perso_agg['nb'] or 0,
+                        'chiffre_affaires': str(ca_perso.quantize(Decimal('0.01'))),
+                        'cout_total':       str(cout_perso.quantize(Decimal('0.01'))),
+                        'benefice':         str((ca_perso - cout_perso).quantize(Decimal('0.01'))),
+                    },
+                    'produits_finis_essence': {
+                        'nb_ventes':        pfe_agg['nb'] or 0,
+                        'chiffre_affaires': str(ca_pfe.quantize(Decimal('0.01'))),
+                        'cout_total':       str(cout_pfe.quantize(Decimal('0.01'))),
+                        'benefice':         str((ca_pfe - cout_pfe).quantize(Decimal('0.01'))),
+                    },
+                    'essences_personnalisees': {
+                        'nb_ventes':        ep_agg['nb'] or 0,
+                        'chiffre_affaires': str(ca_ep.quantize(Decimal('0.01'))),
+                        'cout_total':       str(cout_ep.quantize(Decimal('0.01'))),
+                        'benefice':         str((ca_ep - cout_ep).quantize(Decimal('0.01'))),
+                    },
                 },
-                'essences_personnalisees': {
-                    'nb_ventes':        ep_agg['nb_ventes'] or 0,
-                    'chiffre_affaires': str(ca_ep.quantize(Decimal('0.01'))),
-                    'cout_total':       str(cout_ep.quantize(Decimal('0.01'))),
-                    'benefice':         str((ca_ep - cout_ep).quantize(Decimal('0.01'))),
+                'diffuseurs': {
+                    'nb_ventes':        diff_agg['nb'] or 0,
+                    'chiffre_affaires': str(ca_diff.quantize(Decimal('0.01'))),
+                    'cout_total':       str(cout_diff.quantize(Decimal('0.01'))),
+                    'benefice':         str((ca_diff - cout_diff).quantize(Decimal('0.01'))),
+                },
+            },
+            'valeur_stock_marchand': {
+                'description': "Valeur marchande actuelle du stock calculée uniquement sur la base des prix de vente.",
+                'valeur_totale_globale': str(v_total_global.quantize(Decimal('0.01'))),
+                'par_categorie_global': {
+                    'parfums': {
+                        'valeur_totale': str(v_parfums_global.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_parfums_global,
+                    },
+                    'accessoires': {
+                        'valeur_totale': str(v_access_global.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_access_global,
+                    },
+                    'diffuseurs': {
+                        'valeur_totale': str(v_diffuseurs.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_diffuseurs,
+                    },
+                    'flacons': {
+                        'valeur_totale': str(v_flacons.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_flacons,
+                    },
+                    'essences_labo': {
+                        'valeur_totale': str(v_essences.quantize(Decimal('0.01'))),
+                        'stock_ml_total': str(Decimal(str(q_essences_ml)).quantize(Decimal('0.01'))),
+                    },
+                },
+                'produits_maison': {
+                    'valeur_totale': str(v_maison_totale.quantize(Decimal('0.01'))),
+                    'parfums': {
+                        'valeur_totale': str(v_parfums_maison.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_parfums_maison,
+                    },
+                    'accessoires': {
+                        'valeur_totale': str(v_access_maison.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_access_maison,
+                    },
+                    'diffuseurs': {
+                        'valeur_totale': str(v_diffuseurs.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_diffuseurs,
+                    },
+                    'flacons': {
+                        'valeur_totale': str(v_flacons.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_flacons,
+                    },
+                    'essences_labo': {
+                        'valeur_totale': str(v_essences.quantize(Decimal('0.01'))),
+                        'stock_ml_total': str(Decimal(str(q_essences_ml)).quantize(Decimal('0.01'))),
+                    },
+                },
+                'produits_boutiques': {
+                    'valeur_totale': str(v_boutiques_totale.quantize(Decimal('0.01'))),
+                    'quantite_totale': q_parfums_boutiques + q_access_boutiques,
+                    'parfums': {
+                        'valeur_totale': str(v_parfums_boutiques.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_parfums_boutiques,
+                    },
+                    'accessoires': {
+                        'valeur_totale': str(v_access_boutiques.quantize(Decimal('0.01'))),
+                        'quantite_totale': q_access_boutiques,
+                    },
+                    'detail_par_boutique': detail_par_boutique,
                 },
             },
         }, status=status.HTTP_200_OK)

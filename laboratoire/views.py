@@ -48,8 +48,7 @@ class ParfumPersonnaliseViewSet(viewsets.ModelViewSet):
     ordering = ['-date_creation']
 
     def get_permissions(self):
-        if self.action == 'retrieve':
-            return [AllowAny()]
+        """Toutes les actions nécessitent une authentification."""
         return [IsAuthenticated(), IsCreatorOrReadOnly()]
 
     def get_queryset(self):
@@ -61,10 +60,6 @@ class ParfumPersonnaliseViewSet(viewsets.ModelViewSet):
             'lignes__essence_personnalisee__lignes',
             'lignes__essence_personnalisee__lignes__ingredient',
         ).distinct()
-
-        # Consultation publique des détails d'un parfum personnalisé (partage de lien sans authentification)
-        if self.action == 'retrieve':
-            return queryset
 
         from utilisateur.permissions import is_privileged_dashboard_user
 
@@ -102,17 +97,13 @@ class EssencePersonnaliseeViewSet(viewsets.ModelViewSet):
     ordering = ['-date_creation']
 
     def get_permissions(self):
-        if self.action == 'retrieve':
-            return [AllowAny()]
+        """Toutes les actions nécessitent une authentification."""
         return [IsAuthenticated(), IsCreatorOrReadOnly()]
 
     def get_queryset(self):
         queryset = EssencePersonnalisee.objects.all().select_related(
             'client', 'client__user'
         ).prefetch_related('lignes__ingredient').distinct()
-
-        if self.action == 'retrieve':
-            return queryset
 
         from utilisateur.permissions import is_privileged_dashboard_user
 

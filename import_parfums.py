@@ -140,7 +140,7 @@ def _importer_catalogue_tsv_sans_modification():
                 raise ValueError(f"Ligne {line_number}: stock négatif interdit.")
             intensity = normalize(item.get("intensite", ""))
             intensity = {
-                "legere": "légère", "moderee": "moyenne", "legere a moderee": "moyenne",
+                "legere": "légère", "moderee": "moyenne", "moyenne": "moyenne", "legere a moderee": "moyenne",
                 "forte": "forte", "tres forte": "très forte", "": "",
             }.get(intensity)
             if intensity is None:

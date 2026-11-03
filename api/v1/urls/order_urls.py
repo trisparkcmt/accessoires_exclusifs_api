@@ -22,6 +22,7 @@ from orders.views import (
     CommanderCompositionDirecteView,
     AdminStatistiquesBeneficesView,
     AjouterDiffuseurParfumView,
+    MesCommandesView,
 )
 
 router = DefaultRouter()
@@ -43,6 +44,8 @@ urlpatterns = [
 
     # Commandes
     path('commandes/', CommandeListView.as_view(), name='commandes-list'),
+    path('mes-commandes/', MesCommandesView.as_view(), name='mes-commandes'),
+    path('commandes/mes-commandes/', MesCommandesView.as_view(), name='commandes-mes-commandes'),
     path('commandes/passer/', PasserCommandeView.as_view(), name='commande-passer'),
     path('commandes/passer-composition-directe/', PasserCommandeCompositionDirecteView.as_view(), name='commande-passer-composition-directe'),
     path('commandes/statistiques-benefices/', AdminStatistiquesBeneficesView.as_view(), name='admin-statistiques-benefices'),
