@@ -98,3 +98,30 @@ class CustomAccountAdapter(DefaultAccountAdapter):
         except Exception:
             # Fallback immédiat si Celery / Redis est temporairement indisponible
             msg.send()
+
+
+from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
+from django.core.exceptions import MultipleObjectsReturned
+
+
+class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
+    """
+    Adaptateur social personnalisé évitant les erreurs MultipleObjectsReturned
+    lorsque plusieurs applications (ex: base de données et settings) sont détectées.
+    """
+    def get_app(self, request, provider, client_id=None):
+        try:
+            return super().get_app(request, provider=provider, client_id=client_id)
+        except MultipleObjectsReturned:
+            apps = self.list_apps(request, provider=provider, client_id=client_id)
+            # Prioriser l'application enregistrée en base de données qui a un ID et un secret
+            db_apps_with_secret = [a for a in apps if getattr(a, 'id', None) and getattr(a, 'secret', None)]
+            if db_apps_with_secret:
+                return db_apps_with_secret[0]
+            db_apps = [a for a in apps if getattr(a, 'id', None)]
+            if db_apps:
+                return db_apps[0]
+            valid_apps = [a for a in apps if getattr(a, 'client_id', None)]
+            if valid_apps:
+                return valid_apps[0]
+            return apps[0]

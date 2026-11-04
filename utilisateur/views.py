@@ -2766,6 +2766,15 @@ class GoogleLogin(SocialLoginView):
 
         # Client ID Google : obligatoire pour valider que le token est bien destiné à notre app
         google_client_id = getattr(settings, 'GOOGLE_CLIENT_ID', '')
+        if not google_client_id:
+            try:
+                from allauth.socialaccount.models import SocialApp
+                app_db = SocialApp.objects.filter(provider='google').first()
+                if app_db and app_db.client_id:
+                    google_client_id = app_db.client_id
+            except Exception:
+                pass
+
         if not google_client_id and not getattr(settings, 'DEBUG', False):
             return Response(
                 {"detail": "Authentification Google One Tap non configurée (GOOGLE_CLIENT_ID manquant)."},

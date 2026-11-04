@@ -317,11 +317,16 @@ SOCIALACCOUNT_PROVIDERS = {
             'access_type': 'online',
         },
         'OAUTH_PKCE_ENABLED': True,  # Recommandé pour la sécurité
-        'APP': {
-            'client_id': GOOGLE_CLIENT_ID,
-        },
     }
 }
+
+# N'ajouter la config APP que si GOOGLE_CLIENT_ID est explicitement fourni
+# (évite d'injecter une SocialApp vide qui entre en conflit avec la base de données)
+if GOOGLE_CLIENT_ID:
+    SOCIALACCOUNT_PROVIDERS['google']['APP'] = {
+        'client_id': GOOGLE_CLIENT_ID,
+        'secret': os.getenv('GOOGLE_CLIENT_SECRET', ''),
+    }
 
 # URL du Frontend (Variable d'environnement ou https://accessoiresexclusifs.com par défaut)
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://accessoiresexclusifs.com')
@@ -331,6 +336,7 @@ BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000' if DEBUG else 'ht
 
 # Adaptateur personnalisé pour gérer la redirection des emails vers le Frontend
 ACCOUNT_ADAPTER = 'utilisateur.adapters.CustomAccountAdapter'
+SOCIALACCOUNT_ADAPTER = 'utilisateur.adapters.CustomSocialAccountAdapter'
 
 # Force Allauth to use HTTPS only in production, allow HTTP in development
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = 'http' if DEBUG else 'https'

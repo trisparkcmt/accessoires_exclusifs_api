@@ -1545,6 +1545,40 @@ class SupprimerCompteTest(APITestCase):
         self.assertEqual(response.status_code, 401)
 
 
+class CustomSocialAccountAdapterTest(TestCase):
+    """Vérifie que CustomSocialAccountAdapter gère la présence de plusieurs applications sans lever d'exception."""
+
+    def test_get_app_handles_multiple_objects(self):
+        from allauth.socialaccount.models import SocialApp
+        from django.contrib.sites.models import Site
+        from utilisateur.adapters import CustomSocialAccountAdapter
+
+        site = Site.objects.get_current()
+        app1 = SocialApp.objects.create(
+            provider='google',
+            name='Google DB 1',
+            client_id='google-client-id-1',
+            secret='google-secret-1'
+        )
+        app1.sites.add(site)
+
+        app2 = SocialApp.objects.create(
+            provider='google',
+            name='Google DB 2',
+            client_id='google-client-id-2',
+            secret=''
+        )
+        app2.sites.add(site)
+
+        adapter = CustomSocialAccountAdapter()
+        # Ne doit pas lever django.core.exceptions.MultipleObjectsReturned
+        chosen_app = adapter.get_app(request=None, provider='google')
+        self.assertIsNotNone(chosen_app)
+        # L'application avec un secret doit être priorisée
+        self.assertEqual(chosen_app.id, app1.id)
+
+
+
 
 
 

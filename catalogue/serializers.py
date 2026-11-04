@@ -1039,12 +1039,16 @@ class FavoriSerializer(serializers.ModelSerializer):
     def get_image_produit(self, obj):
         request = self.context.get('request')
         image = None
-        if obj.parfum and obj.parfum.image_principale:
+        if obj.parfum and getattr(obj.parfum, 'image_principale', None):
             image = obj.parfum.image_principale
-        elif obj.accessoire and obj.accessoire.image_principale:
+        elif obj.accessoire and getattr(obj.accessoire, 'image_principale', None):
             image = obj.accessoire.image_principale
-        elif obj.produit_fini_essence and obj.produit_fini_essence.essence and obj.produit_fini_essence.essence.image_principale:
-            image = obj.produit_fini_essence.essence.image_principale
+        elif obj.produit_fini_essence:
+            prod = obj.produit_fini_essence
+            if getattr(prod, 'image_principale', None):
+                image = prod.image_principale
+            elif prod.essence and getattr(prod.essence, 'image_principale', None):
+                image = prod.essence.image_principale
 
         if image:
             if request:

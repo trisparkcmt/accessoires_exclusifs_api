@@ -229,6 +229,22 @@ class ProduitFiniEssenceFavoriTest(APITestCase):
         self.assertEqual(response.data['status'], 'retiré')
         self.assertFalse(Favori.objects.filter(client=self.user.client, produit_fini_essence=self.produit).exists())
 
+    def test_list_favoris_produit_fini_essence(self):
+        self.client.force_authenticate(self.user)
+        Favori.objects.create(client=self.user.client, produit_fini_essence=self.produit)
+
+        response = self.client.get('/api/v1/shop/favoris/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('favoris', response.data)
+        self.assertEqual(len(response.data['favoris']), 1)
+        item = response.data['favoris'][0]
+        self.assertEqual(item['type_produit'], 'produit_fini_essence')
+        self.assertEqual(item['nom_produit'], f"{self.essence.nom} - {self.produit.taille_ml}ml")
+        self.assertEqual(item['prix_produit'], str(self.produit.prix_actuel))
+        self.assertIsNone(item['image_produit'])
+
+
+
 
 class ProduitFiniEssenceVirtualStockTest(TestCase):
     """Teste le nouveau modèle 'vente à la demande' où ProduitFiniEssence
