@@ -93,6 +93,26 @@ class EntrepriseInfoApiTest(APITestCase):
         self.assertEqual(self.entreprise.jours_ouverture[0]['jour'], 'Vendredi')
         self.assertFalse(self.entreprise.jours_ouverture[1]['ouvert'])
 
+    def test_admin_can_set_and_normalize_facebook_url(self):
+        # 1. Mise à jour avec un domaine sans protocole
+        response = self.client.patch(f'/api/v1/shop/infos-entreprise/{self.entreprise.id}/', {
+            'facebook_url': 'facebook.com/accessoiresexclusifs'
+        }, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['facebook_url'], 'https://facebook.com/accessoiresexclusifs')
+        self.entreprise.refresh_from_db()
+        self.assertEqual(self.entreprise.facebook_url, 'https://facebook.com/accessoiresexclusifs')
+
+        # 2. Mise à jour avec un identifiant simple de page
+        response = self.client.patch(f'/api/v1/shop/infos-entreprise/{self.entreprise.id}/', {
+            'facebook_url': 'accessoires_officiel'
+        }, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['facebook_url'], 'https://facebook.com/accessoires_officiel')
+        self.entreprise.refresh_from_db()
+        self.assertEqual(self.entreprise.facebook_url, 'https://facebook.com/accessoires_officiel')
+
+
 
 # ============================================================
 # TESTS IMAGES
