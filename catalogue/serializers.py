@@ -161,14 +161,51 @@ class EntrepriseInfoSerializer(serializers.ModelSerializer):
         allow_empty=True,
         default=list,
     )
+    facebook_url = serializers.CharField(required=False, allow_blank=True, default='')
+    instagram_url = serializers.CharField(required=False, allow_blank=True, default='')
+    tiktok_url = serializers.CharField(required=False, allow_blank=True, default='')
 
     class Meta:
         model = EntrepriseInfo
         fields = [
             'id', 'nom', 'jours_ouverture', 'telephone_principal',
             'telephone_secondaire', 'whatsapp', 'facebook_url',
-            'instagram_url', 'localisation', 'date_creation', 'date_modification'
+            'instagram_url', 'tiktok_url', 'localisation', 'date_creation', 'date_modification'
         ]
+
+    def validate_facebook_url(self, value):
+        if not value:
+            return ""
+        val = value.strip()
+        if not val.startswith(('http://', 'https://')):
+            if 'facebook.com' in val.lower():
+                val = f"https://{val.lstrip('/')}"
+            else:
+                val = f"https://facebook.com/{val.lstrip('/')}"
+        return val
+
+    def validate_instagram_url(self, value):
+        if not value:
+            return ""
+        val = value.strip()
+        if not val.startswith(('http://', 'https://')):
+            if 'instagram.com' in val.lower():
+                val = f"https://{val.lstrip('/')}"
+            else:
+                val = f"https://instagram.com/{val.lstrip('/')}"
+        return val
+
+    def validate_tiktok_url(self, value):
+        if not value:
+            return ""
+        val = value.strip()
+        if not val.startswith(('http://', 'https://')):
+            if 'tiktok.com' in val.lower():
+                val = f"https://{val.lstrip('/')}"
+            else:
+                val = f"https://www.tiktok.com/@{val.lstrip('@').lstrip('/')}"
+        return val
+
 
 
 

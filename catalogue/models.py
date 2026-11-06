@@ -57,6 +57,7 @@ class EntrepriseInfo(models.Model):
     whatsapp = models.CharField(max_length=30, blank=True)
     facebook_url = models.URLField(blank=True)
     instagram_url = models.URLField(blank=True)
+    tiktok_url = models.URLField(blank=True)
     localisation = models.CharField(max_length=500, blank=True)
     date_creation = models.DateTimeField(auto_now_add=True)
     date_modification = models.DateTimeField(auto_now=True)
@@ -66,8 +67,37 @@ class EntrepriseInfo(models.Model):
         verbose_name = 'Informations entreprise'
         verbose_name_plural = 'Informations entreprise'
 
+    def clean(self):
+        super().clean()
+        if self.facebook_url:
+            val = self.facebook_url.strip()
+            if not val.startswith(('http://', 'https://')):
+                if 'facebook.com' in val.lower():
+                    self.facebook_url = f"https://{val.lstrip('/')}"
+                else:
+                    self.facebook_url = f"https://facebook.com/{val.lstrip('/')}"
+        if self.instagram_url:
+            val = self.instagram_url.strip()
+            if not val.startswith(('http://', 'https://')):
+                if 'instagram.com' in val.lower():
+                    self.instagram_url = f"https://{val.lstrip('/')}"
+                else:
+                    self.instagram_url = f"https://instagram.com/{val.lstrip('/')}"
+        if self.tiktok_url:
+            val = self.tiktok_url.strip()
+            if not val.startswith(('http://', 'https://')):
+                if 'tiktok.com' in val.lower():
+                    self.tiktok_url = f"https://{val.lstrip('/')}"
+                else:
+                    self.tiktok_url = f"https://www.tiktok.com/@{val.lstrip('@').lstrip('/')}"
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.nom or 'Informations entreprise'
+
 
 
 #Favoris 

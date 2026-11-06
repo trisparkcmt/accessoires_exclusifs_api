@@ -144,8 +144,24 @@ class TagAccessoireAdmin(admin.ModelAdmin):
 
 @admin.register(EntrepriseInfo)
 class EntrepriseInfoAdmin(admin.ModelAdmin):
-    list_display = ('id', 'nom', 'telephone_principal', 'whatsapp', 'localisation')
-    search_fields = ('nom', 'localisation')
+    list_display = ('id', 'nom', 'telephone_principal', 'whatsapp', 'facebook_url', 'instagram_url', 'tiktok_url', 'localisation')
+    search_fields = ('nom', 'localisation', 'telephone_principal', 'facebook_url', 'instagram_url', 'tiktok_url')
+    fieldsets = (
+        ('Identité de l\'entreprise', {
+            'fields': ('nom', 'localisation')
+        }),
+        ('Contacts directs', {
+            'fields': ('telephone_principal', 'telephone_secondaire', 'whatsapp')
+        }),
+        ('Réseaux sociaux', {
+            'fields': ('facebook_url', 'instagram_url', 'tiktok_url'),
+            'description': 'Entrez le lien complet, le domaine ou le pseudo (ex: facebook.com/ma-page, @moncompte, https://www.tiktok.com/@moncompte).'
+        }),
+        ('Horaires d\'ouverture', {
+            'fields': ('jours_ouverture',)
+        }),
+    )
+
 
 
 @admin.register(Favori)
