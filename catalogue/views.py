@@ -272,17 +272,17 @@ class ParfumViewSet(viewsets.ModelViewSet):
                 # Dans le dashboard, la boutique ne voit QUE les produits qu'elle a postés
                 return base_qs.filter(boutique=boutique)
             else:
+                # Catalogue public pour boutique : tous les produits actifs (boutique ou globaux), sans filtre stock
                 return base_qs.filter(
-                    Q(boutique=boutique) |
-                    (
-                        Q(actif=True, stock_quantite__gt=F('seuil_alerte_stock'), prix_unitaire__gt=0) &
-                        (Q(boutique__isnull=True) | Q(boutique__statut='actif'))
-                    )
+                    actif=True,
+                    prix_unitaire__gt=0
+                ).filter(
+                    Q(boutique__isnull=True) | Q(boutique__statut='actif')
                 )
 
+        # Visiteurs / clients sans boutique : tous les produits actifs (globaux et boutiques actives), sans filtre stock
         return base_qs.filter(
             actif=True,
-            stock_quantite__gt=F('seuil_alerte_stock'),
             prix_unitaire__gt=0
         ).filter(
             Q(boutique__isnull=True) | Q(boutique__statut='actif')
@@ -1157,14 +1157,12 @@ def get_unified_sales_items(request, debut_mois=None, limit=20):
         parfums = Parfum.objects.filter(
             id__in=parfum_ids,
             actif=True,
-            stock_quantite__gt=F('seuil_alerte_stock'),
             prix_unitaire__gt=0
         ).select_related('categorie')
 
         accessoires = Accessoire.objects.filter(
             id__in=accessoire_ids,
             actif=True,
-            stock_quantite__gt=F('seuil_alerte_stock'),
             prix_unitaire__gt=0
         ).select_related('type_accessoire')
 
@@ -1537,17 +1535,17 @@ class AccessoireViewSet(viewsets.ModelViewSet):
                 # Dans le dashboard, la boutique ne voit QUE les produits qu'elle a postés
                 return base_qs.filter(boutique=boutique)
             else:
+                # Catalogue public pour boutique : tous les produits actifs (boutique ou globaux), sans filtre stock
                 return base_qs.filter(
-                    Q(boutique=boutique) |
-                    (
-                        Q(actif=True, stock_quantite__gt=F('seuil_alerte_stock'), prix_unitaire__gt=0) &
-                        (Q(boutique__isnull=True) | Q(boutique__statut='actif'))
-                    )
+                    actif=True,
+                    prix_unitaire__gt=0
+                ).filter(
+                    Q(boutique__isnull=True) | Q(boutique__statut='actif')
                 )
 
+        # Visiteurs / clients sans boutique : tous les produits actifs (globaux et boutiques actives), sans filtre stock
         return base_qs.filter(
             actif=True,
-            stock_quantite__gt=F('seuil_alerte_stock'),
             prix_unitaire__gt=0
         ).filter(
             Q(boutique__isnull=True) | Q(boutique__statut='actif')
@@ -2060,8 +2058,7 @@ class DiffuseurParfumViewSet(viewsets.ModelViewSet):
             return queryset
         return queryset.filter(
             actif=True,
-            prix_unitaire__gt=0,
-            stock_quantite__gt=F('seuil_alerte_stock')
+            prix_unitaire__gt=0
         )
 
     def get_serializer_class(self):
