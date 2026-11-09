@@ -272,20 +272,23 @@ class ParfumViewSet(viewsets.ModelViewSet):
                 # Dans le dashboard, la boutique ne voit QUE les produits qu'elle a postés
                 return base_qs.filter(boutique=boutique)
             else:
-                # Catalogue public : tous les produits actifs avec prix > 0, sans filtre stock (boutique ou global)
+                # Côté catalogue public : produits de la boutique (pas de filtre stock),
+                # + produits globaux en stock (filtre stock conservé pour les non-boutique)
                 return base_qs.filter(
-                    actif=True,
-                    prix_unitaire__gt=0
-                ).filter(
-                    Q(boutique__isnull=True) | Q(boutique__statut='actif')
+                    Q(boutique=boutique, actif=True, prix_unitaire__gt=0) |
+                    (
+                        Q(actif=True, stock_quantite__gt=F('seuil_alerte_stock'), prix_unitaire__gt=0) &
+                        (Q(boutique__isnull=True) | Q(boutique__statut='actif'))
+                    )
                 )
 
-        # Visiteurs / clients sans boutique : tous les produits actifs avec prix > 0, sans filtre stock
+        # Visiteurs / clients sans boutique : produits globaux en stock + produits de boutiques actives sans filtre stock
         return base_qs.filter(
             actif=True,
             prix_unitaire__gt=0
         ).filter(
-            Q(boutique__isnull=True) | Q(boutique__statut='actif')
+            Q(boutique__isnull=True, stock_quantite__gt=F('seuil_alerte_stock')) |
+            Q(boutique__statut='actif')
         )
 
     def perform_create(self, serializer):
@@ -1537,20 +1540,23 @@ class AccessoireViewSet(viewsets.ModelViewSet):
                 # Dans le dashboard, la boutique ne voit QUE les produits qu'elle a postés
                 return base_qs.filter(boutique=boutique)
             else:
-                # Catalogue public : tous les produits actifs avec prix > 0, sans filtre stock (boutique ou global)
+                # Côté catalogue public : produits de la boutique (pas de filtre stock),
+                # + produits globaux en stock (filtre stock conservé pour les non-boutique)
                 return base_qs.filter(
-                    actif=True,
-                    prix_unitaire__gt=0
-                ).filter(
-                    Q(boutique__isnull=True) | Q(boutique__statut='actif')
+                    Q(boutique=boutique, actif=True, prix_unitaire__gt=0) |
+                    (
+                        Q(actif=True, stock_quantite__gt=F('seuil_alerte_stock'), prix_unitaire__gt=0) &
+                        (Q(boutique__isnull=True) | Q(boutique__statut='actif'))
+                    )
                 )
 
-        # Visiteurs / clients sans boutique : tous les produits actifs avec prix > 0, sans filtre stock
+        # Visiteurs / clients sans boutique : produits globaux en stock + produits de boutiques actives sans filtre stock
         return base_qs.filter(
             actif=True,
             prix_unitaire__gt=0
         ).filter(
-            Q(boutique__isnull=True) | Q(boutique__statut='actif')
+            Q(boutique__isnull=True, stock_quantite__gt=F('seuil_alerte_stock')) |
+            Q(boutique__statut='actif')
         )
 
     def perform_create(self, serializer):
