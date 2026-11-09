@@ -822,8 +822,29 @@ class Commande(models.Model):
                 # select_for_update pour éviter les race conditions lors du débit du solde
                 with transaction.atomic():
                     boutique = Boutique.objects.select_for_update().get(pk=vente.boutique_id)
+                    montant_debite = min(vente.montant_net_boutique, boutique.solde_disponible)
                     boutique.solde_disponible = max(Decimal('0'), boutique.solde_disponible - vente.montant_net_boutique)
                     boutique.save(update_fields=['solde_disponible'])
+
+                    from utilisateur.models import Notification
+                    Notification.objects.create(
+                        recipient=boutique.user,
+                        type='commande_annulee_boutique',
+                        title="Commande annulée — gain débité 🛑",
+                        message=(
+                            f"La commande **{self.numero_commande}** a été annulée. "
+                            f"Le gain de **{vente.montant_net_boutique} FCFA** précédemment crédité "
+                            f"a été retiré de votre solde disponible."
+                        ),
+                        url=f"/me/boutique/portefeuille/",
+                        metadata={
+                            'commande_id': self.pk,
+                            'numero_commande': self.numero_commande,
+                            'montant_debite': str(vente.montant_net_boutique),
+                            'nouveau_solde': str(boutique.solde_disponible),
+                        }
+                    )
+
                 vente.statut = 'annule'
                 vente.save(update_fields=['statut'])
 
