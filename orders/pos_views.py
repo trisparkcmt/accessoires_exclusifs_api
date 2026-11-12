@@ -215,6 +215,39 @@ class POSRapportJournalierApercuView(APIView):
             date=target_date
         ).first()
 
+        if rapport_existant:
+            if rapport_existant.sorties_articles:
+                donnees['sorties_articles'] = rapport_existant.sorties_articles
+            if rapport_existant.entrees_stock:
+                donnees['entrees_stock'] = rapport_existant.entrees_stock
+            if rapport_existant.depenses:
+                donnees['depenses'] = rapport_existant.depenses
+                donnees['total_depenses'] = float(rapport_existant.total_depenses)
+            if rapport_existant.recette_totale:
+                donnees['recette_totale'] = float(rapport_existant.recette_totale)
+
+        # Prise en compte d'éventuelles dépenses passées en paramètre pour la prévisualisation
+        dep_manuelles = params.get('depenses') or params.get('depenses_ajouts')
+        if dep_manuelles and isinstance(dep_manuelles, list):
+            current_dep = list(donnees['depenses'])
+            for item in dep_manuelles:
+                if item.get('titre') or item.get('montant'):
+                    current_dep.append({
+                        'id': item.get('id'),
+                        'titre': str(item.get('titre', 'Dépense')),
+                        'montant': float(item.get('montant', 0.0)),
+                        'description': str(item.get('description', '')),
+                    })
+            donnees['depenses'] = current_dep
+            donnees['total_depenses'] = float(sum((Decimal(str(d.get('montant', 0))) for d in current_dep), Decimal('0.00')))
+
+        # Recalcul strict du reste en caisse : recette de la caissière - dépenses
+        recette_totale = Decimal(str(donnees['recette_totale']))
+        total_depenses = Decimal(str(donnees['total_depenses']))
+        reste_en_caisse = recette_totale - total_depenses
+        donnees['reste_en_caisse'] = float(reste_en_caisse)
+        donnees['reste_caisse'] = float(reste_en_caisse)
+
         # Récupération souple avec gestion des alias
         def _get_val(keys, default=''):
             for k in keys:
@@ -224,7 +257,6 @@ class POSRapportJournalierApercuView(APIView):
 
         heure_arrivee = _get_val(['heure_arrivee'], rapport_existant.heure_arrivee if rapport_existant else '')
         heure_depart = _get_val(['heure_depart'], rapport_existant.heure_depart if rapport_existant else '')
-        reste_en_caisse = _get_val(['reste_en_caisse', 'reste_caisse', 'reste', 'fond_de_caisse', 'fond_caisse'], rapport_existant.reste_en_caisse if rapport_existant else '')
         actions_communication = _get_val(['actions_communication', 'communication_digitale', 'communication', 'actions_communication_digitale'], rapport_existant.actions_communication if rapport_existant else '')
         observations = _get_val(['observations', 'observation', 'notes', 'remarques'], rapport_existant.observations if rapport_existant else '')
         autres_donnees = params.get('autres_donnees_manuelles') or (rapport_existant.autres_donnees_manuelles if rapport_existant else {})
@@ -235,8 +267,8 @@ class POSRapportJournalierApercuView(APIView):
             date=target_date,
             heure_arrivee=heure_arrivee,
             heure_depart=heure_depart,
-            recette_totale=Decimal(str(donnees['recette_totale'])),
-            total_depenses=Decimal(str(donnees['total_depenses'])),
+            recette_totale=recette_totale,
+            total_depenses=total_depenses,
             reste_en_caisse=reste_en_caisse,
             sorties_articles=donnees['sorties_articles'],
             entrees_stock=donnees['entrees_stock'],
@@ -249,8 +281,6 @@ class POSRapportJournalierApercuView(APIView):
         texte_formate = formater_texte_whatsapp(fake_rapport)
         donnees['heure_arrivee'] = heure_arrivee
         donnees['heure_depart'] = heure_depart
-        donnees['reste_en_caisse'] = reste_en_caisse
-        donnees['reste_caisse'] = reste_en_caisse
         donnees['actions_communication'] = actions_communication
         donnees['communication_digitale'] = actions_communication
         donnees['observations'] = observations
@@ -376,9 +406,8 @@ class POSRapportJournalierDetailView(APIView):
                     return str(val).strip()
             return None
 
-        new_reste = _get_val(['reste_en_caisse', 'reste_caisse', 'reste', 'fond_de_caisse', 'fond_caisse'])
-        if new_reste is not None:
-            rapport.reste_en_caisse = new_reste
+        # reste_en_caisse calculé automatiquement = recette - dépenses
+        rapport.reste_en_caisse = rapport.recette_totale - rapport.total_depenses
 
         new_com = _get_val(['actions_communication', 'communication_digitale', 'communication', 'actions_communication_digitale'])
         if new_com is not None:
@@ -410,6 +439,8 @@ class POSRapportJournalierDetailView(APIView):
                     })
             rapport.depenses = current_dep
             rapport.total_depenses = sum((Decimal(str(d.get('montant', 0))) for d in current_dep), Decimal('0.00'))
+            # Recalculer reste_en_caisse après ajout de dépenses manuelles
+            rapport.reste_en_caisse = rapport.recette_totale - rapport.total_depenses
 
         # 3. Mettre à jour le texte WhatsApp
         rapport.texte_formate = formater_texte_whatsapp(rapport)

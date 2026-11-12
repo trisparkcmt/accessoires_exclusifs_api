@@ -156,7 +156,6 @@ class POSRapportJournalierTests(APITestCase):
         payload_cloture = {
             "heure_arrivee": "09h00",
             "heure_depart": "18h30",
-            "reste_en_caisse": "38000 FCFA",
             "actions_communication": "WhatsApp statut + TikTok live",
             "observations": "Très bonne affluence l'après-midi.",
             "autres_donnees_manuelles": {
@@ -173,7 +172,8 @@ class POSRapportJournalierTests(APITestCase):
         self.assertEqual(rapport.caissiere, self.serveuse_user)
         self.assertEqual(rapport.heure_arrivee, "09h00")
         self.assertEqual(rapport.heure_depart, "18h30")
-        self.assertEqual(rapport.reste_en_caisse, "38000 FCFA")
+        # reste_en_caisse est calculé automatiquement = recette - dépenses
+        self.assertEqual(rapport.reste_en_caisse, total_attendu - Decimal("2000.00"))
         self.assertEqual(rapport.actions_communication, "WhatsApp statut + TikTok live")
         self.assertEqual(rapport.recette_totale, total_attendu)
         self.assertEqual(rapport.total_depenses, Decimal("2000.00"))
@@ -217,7 +217,7 @@ class POSRapportJournalierTests(APITestCase):
             heure_depart="18h00",
             recette_totale=Decimal("50000.00"),
             total_depenses=Decimal("0.00"),
-            reste_en_caisse="50000 FCFA"
+            reste_en_caisse=Decimal("50000.00")
         )
 
         # Création d'un rapport pour Serveuse 2 (Awa)
@@ -228,7 +228,7 @@ class POSRapportJournalierTests(APITestCase):
             heure_depart="19h00",
             recette_totale=Decimal("80000.00"),
             total_depenses=Decimal("5000.00"),
-            reste_en_caisse="75000 FCFA"
+            reste_en_caisse=Decimal("75000.00")
         )
 
         # --- TEST 1 : Caissière 1 (Marie) ---
@@ -298,18 +298,18 @@ class POSRapportJournalierTests(APITestCase):
     def test_alias_cloture_depense_et_apercu_enrichi(self):
         """
         Vérifie :
-        1. Que les alias 'reste_caisse' et 'communication_digitale' sont bien acceptés et sauvegardés.
+        1. Que le reste_en_caisse est calculé automatiquement = recette_totale - total_depenses.
         2. Que 'Dépense' est utilisé dans le texte WhatsApp et le rapport au lieu de 'Retrait'.
         3. Que les dépenses passées manuellement dans le POST sont bien prises en compte.
-        4. Que l'aperçu (GET et POST) retourne bien reste_en_caisse et communication_digitale.
+        4. Que l'aperçu (GET et POST) retourne bien reste_en_caisse calculé et communication_digitale.
         """
         self.client.force_authenticate(user=self.serveuse_user)
 
-        # 1. Clôture avec alias reste_caisse, communication_digitale et liste de dépenses manuelles
+        # 1. Clôture avec communication_digitale et liste de dépenses manuelles
+        #    reste_en_caisse n'est PAS envoyé — il est calculé automatiquement
         payload = {
             "heure_arrivee": "08h30",
             "heure_depart": "19h00",
-            "reste_caisse": "45000 FCFA",
             "communication_digitale": "Campagne TikTok et WhatsApp live",
             "observations": "Rien à signaler",
             "depenses": [
@@ -320,8 +320,11 @@ class POSRapportJournalierTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
         data = res.data
 
-        self.assertEqual(data["reste_en_caisse"], "45000 FCFA")
-        self.assertEqual(data["reste_caisse"], "45000 FCFA")
+        # recette_totale = 0 (pas de vente POS dans ce test), total_depenses = 3000
+        # reste_en_caisse calculé = 0 - 3000 = -3000
+        expected_reste = Decimal("0.00") - Decimal("3000.00")
+        self.assertEqual(Decimal(str(data["reste_en_caisse"])), expected_reste)
+        self.assertEqual(Decimal(str(data["reste_caisse"])), expected_reste)
         self.assertEqual(data["actions_communication"], "Campagne TikTok et WhatsApp live")
         self.assertEqual(data["communication_digitale"], "Campagne TikTok et WhatsApp live")
         self.assertEqual(Decimal(str(data["total_depenses"])), Decimal("3000.00"))
@@ -332,26 +335,24 @@ class POSRapportJournalierTests(APITestCase):
         self.assertIn("Dépense  -  3.000f Achat emballages", texte_wa)
         self.assertNotIn("Retrait  -", texte_wa)
         self.assertIn("Campagne TikTok et WhatsApp live", texte_wa)
-        self.assertIn("45000 FCFA", texte_wa)
 
-        # 2. Vérification que l'aperçu GET après clôture retourne les données saisies
+        # 2. Vérification que l'aperçu GET après clôture retourne le reste calculé
         res_ap = self.client.get(self.apercu_url)
         self.assertEqual(res_ap.status_code, status.HTTP_200_OK)
-        self.assertEqual(res_ap.data["reste_en_caisse"], "45000 FCFA")
+        self.assertEqual(Decimal(str(res_ap.data["reste_en_caisse"])), expected_reste)
         self.assertEqual(res_ap.data["communication_digitale"], "Campagne TikTok et WhatsApp live")
         self.assertIn("Campagne TikTok et WhatsApp live", res_ap.data["apercu_texte_whatsapp"])
 
-        # 3. Vérification de l'aperçu POST avec surcharge dynamique
+        # 3. Vérification de l'aperçu POST avec surcharge dynamique (com uniquement, reste_en_caisse est auto)
         payload_preview = {
-            "reste_caisse": "52000 FCFA",
             "communication_digitale": "Reels Instagram publiés"
         }
         res_post_ap = self.client.post(self.apercu_url, payload_preview, format='json')
         self.assertEqual(res_post_ap.status_code, status.HTTP_200_OK)
-        self.assertEqual(res_post_ap.data["reste_en_caisse"], "52000 FCFA")
+        # reste_en_caisse est toujours calculé automatiquement
+        self.assertEqual(Decimal(str(res_post_ap.data["reste_en_caisse"])), expected_reste)
         self.assertEqual(res_post_ap.data["communication_digitale"], "Reels Instagram publiés")
         self.assertIn("Reels Instagram publiés", res_post_ap.data["apercu_texte_whatsapp"])
-        self.assertIn("52000 FCFA", res_post_ap.data["apercu_texte_whatsapp"])
 
 
 

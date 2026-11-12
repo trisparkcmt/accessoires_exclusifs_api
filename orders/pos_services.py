@@ -188,6 +188,8 @@ def calculer_donnees_journee_caissiere(caissiere_user, target_date=None):
             'description': d.description or '',
         })
 
+    reste_en_caisse = recette_totale - total_depenses
+
     return {
         'date': target_date.strftime('%Y-%m-%d'),
         'recette_totale': float(recette_totale),
@@ -196,6 +198,7 @@ def calculer_donnees_journee_caissiere(caissiere_user, target_date=None):
         'entrees_stock': entrees_list,
         'total_depenses': float(total_depenses),
         'depenses': depenses_list,
+        'reste_en_caisse': float(reste_en_caisse),
     }
 
 
@@ -242,7 +245,7 @@ def formater_texte_whatsapp(rapport):
             autres_lignes.append(f"           {k} : {v}")
     autres_txt = "\n" + "\n".join(autres_lignes) if autres_lignes else ""
 
-    reste_caisse = rapport.reste_en_caisse or "RAS"
+    reste_caisse = f"{int(rapport.reste_en_caisse):,} FCFA".replace(',', '.') if rapport.reste_en_caisse else "0 FCFA"
 
     # 5. Actions de communication digitale
     com_txt = rapport.actions_communication.strip() if rapport.actions_communication else "RAS"

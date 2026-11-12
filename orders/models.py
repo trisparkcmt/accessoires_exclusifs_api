@@ -1295,7 +1295,7 @@ class RapportJournalierCaisse(models.Model):
 
     recette_totale = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Recette du jour")
     total_depenses = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Total des dépenses / retraits")
-    reste_en_caisse = models.CharField(max_length=100, blank=True, default='', verbose_name="Reste en caisse")
+    reste_en_caisse = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Reste en caisse")
 
     sorties_articles = models.JSONField(default=list, blank=True, verbose_name="Sorties parfums / accessoires")
     entrees_stock = models.JSONField(default=list, blank=True, verbose_name="Entrées parfums / accessoires")
