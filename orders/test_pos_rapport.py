@@ -295,4 +295,63 @@ class POSRapportJournalierTests(APITestCase):
         res_ad_d2 = self.client.get(detail_2)
         self.assertEqual(res_ad_d2.status_code, status.HTTP_200_OK)
 
+    def test_alias_cloture_depense_et_apercu_enrichi(self):
+        """
+        Vérifie :
+        1. Que les alias 'reste_caisse' et 'communication_digitale' sont bien acceptés et sauvegardés.
+        2. Que 'Dépense' est utilisé dans le texte WhatsApp et le rapport au lieu de 'Retrait'.
+        3. Que les dépenses passées manuellement dans le POST sont bien prises en compte.
+        4. Que l'aperçu (GET et POST) retourne bien reste_en_caisse et communication_digitale.
+        """
+        self.client.force_authenticate(user=self.serveuse_user)
+
+        # 1. Clôture avec alias reste_caisse, communication_digitale et liste de dépenses manuelles
+        payload = {
+            "heure_arrivee": "08h30",
+            "heure_depart": "19h00",
+            "reste_caisse": "45000 FCFA",
+            "communication_digitale": "Campagne TikTok et WhatsApp live",
+            "observations": "Rien à signaler",
+            "depenses": [
+                {"titre": "Achat emballages", "montant": 3000, "description": "Sacs kraft"}
+            ]
+        }
+        res = self.client.post(self.cloturer_url, payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        data = res.data
+
+        self.assertEqual(data["reste_en_caisse"], "45000 FCFA")
+        self.assertEqual(data["reste_caisse"], "45000 FCFA")
+        self.assertEqual(data["actions_communication"], "Campagne TikTok et WhatsApp live")
+        self.assertEqual(data["communication_digitale"], "Campagne TikTok et WhatsApp live")
+        self.assertEqual(Decimal(str(data["total_depenses"])), Decimal("3000.00"))
+        self.assertEqual(len(data["depenses"]), 1)
+
+        # Vérifier que "Retrait" n'est PAS utilisé et que "Dépense" EST utilisé
+        texte_wa = data["texte_formate"]
+        self.assertIn("Dépense  -  3.000f Achat emballages", texte_wa)
+        self.assertNotIn("Retrait  -", texte_wa)
+        self.assertIn("Campagne TikTok et WhatsApp live", texte_wa)
+        self.assertIn("45000 FCFA", texte_wa)
+
+        # 2. Vérification que l'aperçu GET après clôture retourne les données saisies
+        res_ap = self.client.get(self.apercu_url)
+        self.assertEqual(res_ap.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_ap.data["reste_en_caisse"], "45000 FCFA")
+        self.assertEqual(res_ap.data["communication_digitale"], "Campagne TikTok et WhatsApp live")
+        self.assertIn("Campagne TikTok et WhatsApp live", res_ap.data["apercu_texte_whatsapp"])
+
+        # 3. Vérification de l'aperçu POST avec surcharge dynamique
+        payload_preview = {
+            "reste_caisse": "52000 FCFA",
+            "communication_digitale": "Reels Instagram publiés"
+        }
+        res_post_ap = self.client.post(self.apercu_url, payload_preview, format='json')
+        self.assertEqual(res_post_ap.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_post_ap.data["reste_en_caisse"], "52000 FCFA")
+        self.assertEqual(res_post_ap.data["communication_digitale"], "Reels Instagram publiés")
+        self.assertIn("Reels Instagram publiés", res_post_ap.data["apercu_texte_whatsapp"])
+        self.assertIn("52000 FCFA", res_post_ap.data["apercu_texte_whatsapp"])
+
+
 

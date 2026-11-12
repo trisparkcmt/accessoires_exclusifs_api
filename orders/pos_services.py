@@ -185,14 +185,14 @@ def formater_texte_whatsapp(rapport):
     # 4. Bilan financier
     recette_fmt = f"{int(rapport.recette_totale):,} FCFA".replace(',', '.')
     
-    # Dépenses / retraits
+    # Dépenses
     lignes_depenses = []
     if rapport.depenses:
         for d in rapport.depenses:
             mt = f"{int(d.get('montant', 0)):,}f".replace(',', '.')
             titre = d.get('titre', 'Dépense')
-            lignes_depenses.append(f"           Retrait  -  {mt} {titre}")
-    retraits_txt = "\n".join(lignes_depenses) if lignes_depenses else "           Retrait  -  RAS"
+            lignes_depenses.append(f"           Dépense  -  {mt} {titre}")
+    depenses_txt = "\n".join(lignes_depenses) if lignes_depenses else "           Dépense  -  RAS"
 
     # Autres données manuelles (ex: Reçu cash, Reçu dépôt)
     autres_lignes = []
@@ -223,7 +223,7 @@ def formater_texte_whatsapp(rapport):
 
 *bilan financier*  
          Recette du jour: {recette_fmt}{autres_txt}
-{retraits_txt}
+{depenses_txt}
       *Reste en caisse: * {reste_caisse}
     
 📲 Actions de communication digitale :

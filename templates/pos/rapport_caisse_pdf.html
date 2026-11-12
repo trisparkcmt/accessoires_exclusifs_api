@@ -232,7 +232,7 @@
       {% if rapport.depenses %}
         {% for d in rapport.depenses %}
           <tr>
-            <td>Retrait Caisse : <em>{{ d.titre }}</em> {% if d.description %}({{ d.description }}){% endif %}</td>
+            <td>Dépense Caisse : <em>{{ d.titre }}</em> {% if d.description %}({{ d.description }}){% endif %}</td>
             <td class="text-right" style="color: #c0392b">- {{ d.montant|floatformat:0 }} FCFA</td>
           </tr>
         {% endfor %}
