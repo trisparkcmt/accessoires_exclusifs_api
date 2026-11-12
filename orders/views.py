@@ -1074,6 +1074,18 @@ class AdminFactureRenvoyerView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
             
+        from django.conf import settings
+        if not getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False):
+            try:
+                from orders.tasks import renvoyer_facture_email_async
+                renvoyer_facture_email_async.delay(facture.id, email_client)
+                return Response(
+                    {"detail": f"Facture {facture.numero_facture} renvoyée avec succès à {email_client}."},
+                    status=status.HTTP_200_OK
+                )
+            except Exception:
+                pass  # Fallback synchrone ci-dessous
+
         try:
             from orders.services import envoyer_email_facture
             # Lire le contenu du fichier PDF

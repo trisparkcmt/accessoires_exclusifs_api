@@ -219,6 +219,7 @@ class Commande(models.Model):
     prestataire = models.ForeignKey('utilisateur.Prestataire', on_delete=models.SET_NULL, null=True, blank=True, related_name='commandes')
     panier = models.ForeignKey('orders.Panier', on_delete=models.SET_NULL, null=True, blank=True, related_name='commande_associee')
     livreur = models.ForeignKey('utilisateur.Livreur', on_delete=models.SET_NULL, null=True, blank=True, related_name='commandes')
+    vendeur = models.ForeignKey('utilisateur.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='commandes_pos_vendues', verbose_name='Vendeur / Caissière (POS)')
     statut = models.CharField(max_length=30, choices=STATUT_CHOICES, default='en_attente')
     statut_livraison = models.CharField(max_length=30, choices=STATUT_LIVRAISON_CHOICES, null=True, blank=True)
     sous_total = models.DecimalField(max_digits=10, decimal_places=2)
@@ -916,7 +917,7 @@ class Commande(models.Model):
                     try:
                         from orders.tasks import generer_facture_async
                         commande_id = self.id
-                        transaction.on_commit(lambda: generer_facture_async.delay(commande_id))
+                        transaction.on_commit(lambda cid=commande_id: generer_facture_async.delay(cid))
                     except Exception:
                         try:
                             from orders.services import generer_facture
@@ -1271,5 +1272,54 @@ class VersementBoutique(models.Model):
 
     def __str__(self):
         return f"Versement {self.reference_transaction} — {self.boutique.nom} ({self.montant} FCFA) [{self.statut}]"
+
+
+# ============================================================
+# RAPPORT JOURNALIER DE CAISSE (POS)
+# ============================================================
+class RapportJournalierCaisse(models.Model):
+    """
+    Rapport d'activité journalier généré par une caissière / serveuse en fin de shift ou journée.
+    Combine les données automatiques (ventes POS, sorties, mouvements de stock, dépenses)
+    et les saisies manuelles (horaires, reste en caisse, actions com, remarques).
+    """
+    caissiere = models.ForeignKey(
+        'utilisateur.User',
+        on_delete=models.CASCADE,
+        related_name='rapports_caisse',
+        verbose_name='Caissière / Vendeuse'
+    )
+    date = models.DateField(default=timezone.now, verbose_name='Date du rapport')
+    heure_arrivee = models.CharField(max_length=50, blank=True, default='', verbose_name="Heure d'arrivée")
+    heure_depart = models.CharField(max_length=50, blank=True, default='', verbose_name="Heure de départ")
+
+    recette_totale = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Recette du jour")
+    total_depenses = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Total des dépenses / retraits")
+    reste_en_caisse = models.CharField(max_length=100, blank=True, default='', verbose_name="Reste en caisse")
+
+    sorties_articles = models.JSONField(default=list, blank=True, verbose_name="Sorties parfums / accessoires")
+    entrees_stock = models.JSONField(default=list, blank=True, verbose_name="Entrées parfums / accessoires")
+    depenses = models.JSONField(default=list, blank=True, verbose_name="Dépenses / Retraits de caisse")
+
+    autres_donnees_manuelles = models.JSONField(default=dict, blank=True, verbose_name="Autres données manuelles")
+    actions_communication = models.TextField(blank=True, default='', verbose_name="Actions de communication digitale")
+    observations = models.TextField(blank=True, default='', verbose_name="Observations / Remarques")
+
+    texte_formate = models.TextField(blank=True, default='', verbose_name="Texte formaté WhatsApp")
+    fichier_pdf = models.FileField(upload_to='rapports_caisse/%Y/%m/', null=True, blank=True, verbose_name="Fichier PDF")
+
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_modification = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'rapport_journalier_caisse'
+        verbose_name = 'Rapport Journalier de Caisse'
+        verbose_name_plural = 'Rapports Journaliers de Caisse'
+        ordering = ['-date', '-date_creation']
+
+    def __str__(self):
+        caissiere_nom = self.caissiere.get_full_name() or self.caissiere.email or self.caissiere.username
+        return f"Rapport {self.date} — {caissiere_nom} ({self.recette_totale} FCFA)"
+
 
 

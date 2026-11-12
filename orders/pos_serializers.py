@@ -445,9 +445,13 @@ class POSCommandeCreateSerializer(serializers.Serializer):
             if not display_phone:
                 display_phone = "00000000"
 
+            vendeur_user = request.user if (request and request.user.is_authenticated) else None
+            vendeur_info = f" | Vendeur: {vendeur_user.get_full_name() or vendeur_user.email}" if vendeur_user else ""
+
             # Créer la Commande (les totaux initiaux sont mis à 0, recalculer_commande s'en occupera)
             commande = Commande.objects.create(
                 client=client_obj,
+                vendeur=vendeur_user,
                 prestataire=prestataire,
                 code_promo_utilise=code_promo.strip() if code_promo else '',
                 frais_livraison=Decimal('0'),
@@ -459,10 +463,10 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                 livraison_ville='Boutique',
                 livraison_telephone=display_phone,
                 note_client='',
-                note_interne=f"Achat Direct Boutique. {note_interne}".strip(),
-                statut='validé',  # statut_paiement='payé' passera automatiquement la commande à 'livrée' dans save()
+                note_interne=f"Achat Direct Boutique{vendeur_info}. {note_interne}".strip(),
+                statut='validé',
                 statut_livraison='en_attente_affectation',
-                statut_paiement='payé',  # Forcer le statut de paiement à PAYÉ
+                statut_paiement='en_attente',  # Initialisé à en_attente pour que les lignes soient insérées avant le trigger facture
                 commission_statut='non_versée'
             )
 
@@ -562,9 +566,164 @@ class POSCommandeCreateSerializer(serializers.Serializer):
                         sous_total=prix_unitaire * qty
                     )
 
-            # 4. Recalculer les totaux de la commande et sauvegarder pour déclencher le cycle standard
-            # (ceci met à jour les stocks via appliquer_stocks() et génère le fichier de facture PDF)
+            # 4. Recalculer les totaux de la commande et passer le statut à 'payé'
+            # (ceci met à jour les stocks et déclenche la génération asynchrone de la facture PDF via Celery)
             commande.recalculer_commande()
+            commande.statut_paiement = 'payé'
             commande.save()
 
             return commande
+
+
+# ============================================================
+# SERIALIZERS DU RAPPORT JOURNALIER DE CAISSE
+# ============================================================
+from orders.models import RapportJournalierCaisse
+from orders.pos_services import (
+    calculer_donnees_journee_caissiere,
+    formater_texte_whatsapp,
+    generer_rapport_caisse_pdf,
+)
+from django.utils import timezone
+
+
+class RapportJournalierCaisseSerializer(serializers.ModelSerializer):
+    caissiere_nom = serializers.SerializerMethodField()
+    pdf_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RapportJournalierCaisse
+        fields = [
+            'id',
+            'caissiere',
+            'caissiere_nom',
+            'date',
+            'heure_arrivee',
+            'heure_depart',
+            'recette_totale',
+            'total_depenses',
+            'reste_en_caisse',
+            'sorties_articles',
+            'entrees_stock',
+            'depenses',
+            'autres_donnees_manuelles',
+            'actions_communication',
+            'observations',
+            'texte_formate',
+            'fichier_pdf',
+            'pdf_url',
+            'date_creation',
+            'date_modification',
+        ]
+
+    def get_caissiere_nom(self, obj):
+        if obj.caissiere:
+            return obj.caissiere.get_full_name() or obj.caissiere.email or obj.caissiere.username
+        return ""
+
+    def get_pdf_url(self, obj):
+        request = self.context.get('request')
+        if obj.fichier_pdf and hasattr(obj.fichier_pdf, 'url'):
+            if request:
+                return request.build_absolute_uri(obj.fichier_pdf.url)
+            return obj.fichier_pdf.url
+        return None
+
+
+class POSRapportJournalierClotureSerializer(serializers.Serializer):
+    caissiere_id = serializers.IntegerField(required=False, help_text="Réservé aux superadmins pour clôturer au nom d'une caissière")
+    date = serializers.DateField(required=False, default=timezone.now)
+    heure_arrivee = serializers.CharField(required=False, allow_blank=True, default='')
+    heure_depart = serializers.CharField(required=False, allow_blank=True, default='')
+    reste_en_caisse = serializers.CharField(required=False, allow_blank=True, default='')
+    actions_communication = serializers.CharField(required=False, allow_blank=True, default='')
+    observations = serializers.CharField(required=False, allow_blank=True, default='')
+    autres_donnees_manuelles = serializers.DictField(required=False, default=dict)
+    sorties_articles_ajouts = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    entrees_stock_ajouts = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+
+    def save(self):
+        request = self.context.get('request')
+        caissiere_user = request.user
+        if request and request.user.is_superuser and self.validated_data.get('caissiere_id'):
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            custom_caissiere = User.objects.filter(id=self.validated_data['caissiere_id']).first()
+            if custom_caissiere:
+                caissiere_user = custom_caissiere
+        raw_date = self.validated_data.get('date')
+        if hasattr(raw_date, 'date'):
+            target_date = raw_date.date()
+        elif raw_date:
+            target_date = raw_date
+        else:
+            target_date = timezone.now().date()
+
+        # 1. Calcul automatique des données de la journée
+        donnees = calculer_donnees_journee_caissiere(caissiere_user, target_date=target_date)
+
+        # 2. Fusionner avec d'éventuels ajouts manuels
+        sorties = list(donnees['sorties_articles'])
+        for item in self.validated_data.get('sorties_articles_ajouts', []):
+            if item.get('nom'):
+                sorties.append({
+                    'nom': str(item.get('nom')),
+                    'quantite': int(item.get('quantite', 1)),
+                    'sous_total': float(item.get('sous_total', 0.0)),
+                    'type': str(item.get('type', 'manuel')),
+                })
+
+        entrees = list(donnees['entrees_stock'])
+        for item in self.validated_data.get('entrees_stock_ajouts', []):
+            if item.get('nom'):
+                entrees.append({
+                    'nom': str(item.get('nom')),
+                    'quantite_ajoutee': float(item.get('quantite_ajoutee', 0.0)),
+                    'type_produit': str(item.get('type_produit', 'manuel')),
+                    'date': str(item.get('date', 'manuel')),
+                })
+
+        # 3. Créer ou mettre à jour le rapport pour cette caissière à cette date
+        rapport, created = RapportJournalierCaisse.objects.get_or_create(
+            caissiere=caissiere_user,
+            date=target_date,
+            defaults={
+                'heure_arrivee': self.validated_data.get('heure_arrivee', ''),
+                'heure_depart': self.validated_data.get('heure_depart', ''),
+                'recette_totale': Decimal(str(donnees['recette_totale'])),
+                'total_depenses': Decimal(str(donnees['total_depenses'])),
+                'reste_en_caisse': self.validated_data.get('reste_en_caisse', ''),
+                'sorties_articles': sorties,
+                'entrees_stock': entrees,
+                'depenses': donnees['depenses'],
+                'autres_donnees_manuelles': self.validated_data.get('autres_donnees_manuelles', {}),
+                'actions_communication': self.validated_data.get('actions_communication', ''),
+                'observations': self.validated_data.get('observations', ''),
+            }
+        )
+
+        if not created:
+            rapport.heure_arrivee = self.validated_data.get('heure_arrivee') or rapport.heure_arrivee
+            rapport.heure_depart = self.validated_data.get('heure_depart') or rapport.heure_depart
+            rapport.recette_totale = Decimal(str(donnees['recette_totale']))
+            rapport.total_depenses = Decimal(str(donnees['total_depenses']))
+            rapport.reste_en_caisse = self.validated_data.get('reste_en_caisse', rapport.reste_en_caisse)
+            rapport.sorties_articles = sorties
+            rapport.entrees_stock = entrees
+            rapport.depenses = donnees['depenses']
+            if self.validated_data.get('autres_donnees_manuelles'):
+                rapport.autres_donnees_manuelles = self.validated_data.get('autres_donnees_manuelles')
+            if self.validated_data.get('actions_communication'):
+                rapport.actions_communication = self.validated_data.get('actions_communication')
+            if self.validated_data.get('observations'):
+                rapport.observations = self.validated_data.get('observations')
+
+        # 4. Formater le texte WhatsApp
+        rapport.texte_formate = formater_texte_whatsapp(rapport)
+        rapport.save()
+
+        # 5. Générer le fichier PDF
+        generer_rapport_caisse_pdf(rapport)
+
+        return rapport
+

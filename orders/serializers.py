@@ -676,13 +676,14 @@ class CommandeSerializer(serializers.ModelSerializer):
     
     client_email = serializers.CharField(source='client.user.email', read_only=True)
     livreur_nom = serializers.SerializerMethodField()
+    vendeur_nom = serializers.SerializerMethodField()
     prestataire_code = serializers.CharField(source='prestataire.code_promo', read_only=True)
     boutiques_fournisseurs = serializers.SerializerMethodField()
     
     class Meta:
         model = Commande
         fields = [
-            'id', 'numero_commande', 'client', 'client_email', 'prestataire', 'prestataire_code',
+            'id', 'numero_commande', 'client', 'client_email', 'vendeur', 'vendeur_nom', 'prestataire', 'prestataire_code',
             'livreur', 'livreur_nom', 'statut', 'statut_livraison', 'statut_paiement',
             'sous_total', 'remise_code_promo', 'code_promo_utilise', 'frais_livraison',
             'total_ttc', 'commission_montant', 'commission_statut',
@@ -694,6 +695,11 @@ class CommandeSerializer(serializers.ModelSerializer):
             'lignes_parfums_perso', 'lignes_essence_personnalisee',
             'lignes_diffuseurs', 'facture'
         ]
+
+    def get_vendeur_nom(self, obj):
+        if obj.vendeur:
+            return obj.vendeur.get_full_name() or obj.vendeur.email or obj.vendeur.username
+        return None
 
     def get_livreur_nom(self, obj):
         if obj.livreur:

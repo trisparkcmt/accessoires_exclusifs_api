@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Rapport Journalier de Caisse — {{ rapport.date }}</title>
+    <style>
+      @page {
+        size: a4 portrait;
+        margin: 1cm 1.2cm 1cm 1.2cm;
+      }
+      body {
+        font-family: "Helvetica", "Arial", sans-serif;
+        font-size: 9.5pt;
+        color: #1a1a1a;
+        line-height: 1.4;
+      }
+      .header-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 15px;
+        border-bottom: 2px solid #000000;
+        padding-bottom: 10px;
+      }
+      .header-table td {
+        vertical-align: middle;
+      }
+      .company-title {
+        font-size: 16pt;
+        font-weight: bold;
+        color: #000000;
+        letter-spacing: 0.5px;
+      }
+      .company-subtitle {
+        font-size: 8.5pt;
+        color: #555555;
+      }
+      .doc-title-box {
+        text-align: right;
+      }
+      .doc-title {
+        font-size: 16pt;
+        font-weight: bold;
+        color: #000000;
+        text-transform: uppercase;
+      }
+      .doc-date {
+        font-size: 10pt;
+        color: #333333;
+        font-weight: bold;
+      }
+      .meta-box {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 15px;
+        background-color: #f8f8f8;
+        border: 1px solid #e0e0e0;
+      }
+      .meta-box td {
+        padding: 8px 12px;
+        font-size: 9pt;
+      }
+      .section-title {
+        font-size: 11pt;
+        font-weight: bold;
+        color: #000000;
+        margin-top: 15px;
+        margin-bottom: 6px;
+        padding-bottom: 3px;
+        border-bottom: 1px solid #cccccc;
+        text-transform: uppercase;
+      }
+      .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 12px;
+      }
+      .data-table th {
+        background-color: #000000;
+        color: #ffffff;
+        font-weight: bold;
+        text-align: left;
+        padding: 6px 8px;
+        font-size: 8.5pt;
+      }
+      .data-table td {
+        padding: 5px 8px;
+        border-bottom: 1px solid #eeeeee;
+        font-size: 9pt;
+      }
+      .data-table tr:nth-child(even) td {
+        background-color: #fafafa;
+      }
+      .text-right {
+        text-align: right;
+      }
+      .text-center {
+        text-align: center;
+      }
+      .total-card {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        margin-bottom: 15px;
+        border: 1.5px solid #000000;
+      }
+      .total-card td {
+        padding: 8px 12px;
+        font-size: 9.5pt;
+      }
+      .highlight-total {
+        font-size: 12pt;
+        font-weight: bold;
+        color: #000000;
+      }
+      .notes-box {
+        background-color: #fafafa;
+        border: 1px solid #dddddd;
+        padding: 10px;
+        font-size: 9pt;
+        line-height: 1.4;
+        margin-bottom: 15px;
+      }
+      .footer-note {
+        margin-top: 25px;
+        text-align: center;
+        font-size: 8pt;
+        color: #777777;
+        border-top: 1px solid #e0e0e0;
+        padding-top: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- En-tête -->
+    <table class="header-table">
+      <tr>
+        <td style="width: 60%">
+          <div class="company-title">ACCESSOIRES EXCLUSIFS</div>
+          <div class="company-subtitle">
+            Boutique & Parfumerie Fine
+            {% if entreprise and entreprise.localisation %} — {{ entreprise.localisation }}{% endif %}
+          </div>
+        </td>
+        <td class="doc-title-box" style="width: 40%">
+          <div class="doc-title">Rapport de Caisse</div>
+          <div class="doc-date">{{ rapport.date|date:"d F Y" }}</div>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Informations Générales & Horaires -->
+    <table class="meta-box">
+      <tr>
+        <td style="width: 35%">
+          <strong>Caissière / Vendeuse :</strong><br />
+          {{ rapport.caissiere.get_full_name|default:rapport.caissiere.username }}
+          ({{ rapport.caissiere.email }})
+        </td>
+        <td style="width: 35%">
+          <strong>Horaires de Service :</strong><br />
+          Arrivée : <strong>{{ rapport.heure_arrivee|default:"—" }}</strong> &nbsp;|&nbsp; 
+          Départ : <strong>{{ rapport.heure_depart|default:"—" }}</strong>
+        </td>
+        <td style="width: 30%">
+          <strong>Date de Clôture :</strong><br />
+          {{ rapport.date_creation|date:"d/m/Y H:i" }}
+        </td>
+      </tr>
+    </table>
+
+    <!-- 1. Sorties Parfums & Accessoires -->
+    <div class="section-title">1. Sorties Parfums & Accessoires (Ventes Réalisées)</div>
+    {% if rapport.sorties_articles %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 55%">Désignation Produit</th>
+            <th class="text-center" style="width: 15%">Catégorie</th>
+            <th class="text-center" style="width: 15%">Quantité Vendue</th>
+            <th class="text-right" style="width: 15%">Sous-total (FCFA)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in rapport.sorties_articles %}
+            <tr>
+              <td><strong>{{ s.nom }}</strong></td>
+              <td class="text-center">{{ s.type|default:"produit"|upper }}</td>
+              <td class="text-center"><strong>{{ s.quantite }}</strong></td>
+              <td class="text-right">{{ s.sous_total|floatformat:0 }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p style="font-style: italic; color: #666666; margin: 4px 0 10px 0;">Aucune vente enregistrée pour cette session.</p>
+    {% endif %}
+
+    <!-- 2. Entrées Parfums & Accessoires -->
+    <div class="section-title">2. Entrées Parfums & Accessoires (Mouvements de Stock)</div>
+    {% if rapport.entrees_stock %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width: 60%">Produit Réapprovisionné</th>
+            <th class="text-center" style="width: 20%">Type</th>
+            <th class="text-center" style="width: 20%">Quantité Ajoutée</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in rapport.entrees_stock %}
+            <tr>
+              <td>{{ e.nom }}</td>
+              <td class="text-center">{{ e.type_produit|default:"stock" }}</td>
+              <td class="text-center"><strong>+{{ e.quantite_ajoutee }}</strong></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p style="font-style: italic; color: #666666; margin: 4px 0 10px 0;">RAS — Aucun réassort ou mouvement de stock effectué.</p>
+    {% endif %}
+
+    <!-- 3. Bilan Financier & Dépenses -->
+    <div class="section-title">3. Bilan Financier de la Caisse</div>
+    <table class="total-card">
+      <tr style="background-color: #f2f2f2">
+        <td style="width: 60%"><strong>Recette Totale des Ventes :</strong></td>
+        <td class="text-right highlight-total" style="width: 40%">
+          {{ rapport.recette_totale|floatformat:0 }} FCFA
+        </td>
+      </tr>
+      {% if rapport.depenses %}
+        {% for d in rapport.depenses %}
+          <tr>
+            <td>Retrait Caisse : <em>{{ d.titre }}</em> {% if d.description %}({{ d.description }}){% endif %}</td>
+            <td class="text-right" style="color: #c0392b">- {{ d.montant|floatformat:0 }} FCFA</td>
+          </tr>
+        {% endfor %}
+      {% endif %}
+      {% if rapport.autres_donnees_manuelles %}
+        {% for cle, val in rapport.autres_donnees_manuelles.items %}
+          <tr>
+            <td>{{ cle }} :</td>
+            <td class="text-right">{{ val }}</td>
+          </tr>
+        {% endfor %}
+      {% endif %}
+      <tr style="border-top: 1.5px solid #000000; background-color: #fdfdfd">
+        <td><strong>Reste en Caisse :</strong></td>
+        <td class="text-right highlight-total">
+          <strong>{{ rapport.reste_en_caisse|default:"Non spécifié" }}</strong>
+        </td>
+      </tr>
+    </table>
+
+    <!-- 4. Actions de Communication Digitale -->
+    <div class="section-title">4. Actions de Communication Digitale</div>
+    <div class="notes-box">
+      {{ rapport.actions_communication|default:"RAS — Aucune action de communication enregistrée."|linebreaks }}
+    </div>
+
+    <!-- 5. Observations / Remarques éventuelles -->
+    {% if rapport.observations %}
+      <div class="section-title">5. Observations & Remarques Diverses</div>
+      <div class="notes-box">
+        {{ rapport.observations|linebreaks }}
+      </div>
+    {% endif %}
+
+    <!-- Pied de page -->
+    <div class="footer-note">
+      Document généré automatiquement le {{ now|date:"d/m/Y à H:i" }} — Accessoires Exclusifs POS
+    </div>
+  </body>
+</html>
+

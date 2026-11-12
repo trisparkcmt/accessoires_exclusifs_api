@@ -1,128 +1,417 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
     <meta charset="utf-8">
-    <title>Votre facture Accessoire Exclusif</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Votre facture {{ facture.numero_facture }} — Accessoires Exclusifs</title>
     <style>
         body {
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            background-color: #f4f4f4;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f2f3f5;
             margin: 0;
             padding: 0;
-            color: #333333;
+            color: #222222;
+            -webkit-text-size-adjust: 100%;
         }
-        .email-wrapper {
+        .wrapper {
             width: 100%;
-            background-color: #f4f4f4;
-            padding: 40px 0;
+            background-color: #f2f3f5;
+            padding: 30px 0;
         }
-        .email-content {
-            max-width: 600px;
+        .container {
+            max-width: 620px;
             margin: 0 auto;
             background-color: #ffffff;
             border-radius: 8px;
             overflow: hidden;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.06);
+            border: 1px solid #e2e4e8;
         }
+        /* En-tête de marque */
         .header {
-            background-color: #1a1a1a;
-            padding: 30px 20px;
+            background-color: #111111;
+            padding: 32px 25px 25px 25px;
             text-align: center;
+            border-bottom: 3px solid #D4AF37;
         }
-        .header h1 {
-            color: #D4AF37; /* Or/Doré premium */
-            margin: 0;
-            font-size: 24px;
-            letter-spacing: 2px;
+        .brand-title {
+            color: #D4AF37;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 2.5px;
             text-transform: uppercase;
+            margin: 0 0 6px 0;
         }
-        .body-content {
-            padding: 40px 30px;
+        .brand-tagline {
+            color: #b0b0b0;
+            font-size: 11px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            margin: 0;
         }
-        .body-content h2 {
-            font-size: 20px;
-            color: #1a1a1a;
-            margin-top: 0;
+        /* Contenu principal */
+        .content {
+            padding: 35px 30px;
         }
-        .body-content p {
-            font-size: 16px;
-            line-height: 1.6;
+        /* Badge Statut Paiement */
+        .status-badge {
+            display: inline-block;
+            background-color: #eaf8ee;
+            color: #1a7a38;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid #c2e9cb;
             margin-bottom: 20px;
         }
-        .invoice-details {
-            background-color: #f9f9f9;
-            border-left: 4px solid #D4AF37;
-            padding: 15px 20px;
-            margin: 30px 0;
-            border-radius: 0 4px 4px 0;
+        .greeting {
+            font-size: 20px;
+            font-weight: 700;
+            color: #111111;
+            margin: 0 0 12px 0;
         }
-        .invoice-details p {
-            margin: 5px 0;
+        .intro-text {
             font-size: 15px;
+            line-height: 1.6;
+            color: #4a4a4a;
+            margin: 0 0 24px 0;
         }
-        .invoice-details strong {
-            color: #1a1a1a;
+        /* Bloc Métadonnées Facture & Client */
+        .meta-card {
+            background-color: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 16px 20px;
+            margin-bottom: 28px;
         }
+        .meta-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .meta-table td {
+            padding: 5px 0;
+            font-size: 14px;
+            vertical-align: top;
+        }
+        .meta-label {
+            color: #6b7280;
+            width: 45%;
+        }
+        .meta-value {
+            color: #111111;
+            font-weight: 600;
+            text-align: right;
+        }
+        /* Tableau des articles */
+        .section-title {
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #111111;
+            margin: 0 0 12px 0;
+            border-bottom: 2px solid #111111;
+            padding-bottom: 6px;
+        }
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        .items-table th {
+            background-color: #f3f4f6;
+            color: #374151;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 10px 8px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .items-table td {
+            padding: 12px 8px;
+            font-size: 14px;
+            border-bottom: 1px solid #f0f0f0;
+            vertical-align: middle;
+            color: #222222;
+        }
+        .text-left { text-align: left; }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .item-name {
+            font-weight: 600;
+            color: #111111;
+        }
+        .item-type {
+            font-size: 11px;
+            color: #888888;
+            display: block;
+            margin-top: 2px;
+        }
+        /* Bloc Récapitulatif Financier */
+        .totals-card {
+            background-color: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 16px 20px;
+            margin-bottom: 25px;
+        }
+        .totals-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .totals-table td {
+            padding: 6px 0;
+            font-size: 14px;
+        }
+        .total-highlight td {
+            padding-top: 10px;
+            border-top: 2px solid #111111;
+            font-size: 16px;
+            font-weight: 800;
+            color: #111111;
+        }
+        .total-amount {
+            color: #D4AF37;
+            font-size: 18px;
+            font-weight: 800;
+        }
+        .discount-text {
+            color: #dc2626;
+            font-weight: 600;
+        }
+        /* Encadré Pièce Jointe PDF */
+        .attachment-box {
+            background-color: #fdfbf7;
+            border: 1px solid #e8dec8;
+            border-left: 4px solid #D4AF37;
+            border-radius: 4px;
+            padding: 14px 18px;
+            margin-bottom: 28px;
+        }
+        .attachment-box-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #111111;
+            margin: 0 0 4px 0;
+        }
+        .attachment-box-desc {
+            font-size: 13px;
+            color: #555555;
+            margin: 0;
+            line-height: 1.5;
+        }
+        /* Bouton CTA */
         .cta-container {
             text-align: center;
-            margin: 40px 0;
+            margin: 30px 0 25px 0;
         }
         .cta-button {
             display: inline-block;
-            background-color: #D4AF37;
-            color: #1a1a1a !important;
+            background-color: #111111;
+            color: #D4AF37 !important;
             text-decoration: none;
-            padding: 14px 30px;
+            padding: 13px 32px;
             border-radius: 4px;
-            font-weight: bold;
-            font-size: 16px;
+            font-weight: 700;
+            font-size: 14px;
             text-transform: uppercase;
             letter-spacing: 1px;
+            border: 1px solid #D4AF37;
         }
-        .footer {
-            background-color: #f9f9f9;
-            padding: 20px;
+        /* Contact service client */
+        .contact-box {
+            border-top: 1px solid #e5e7eb;
+            padding-top: 20px;
+            margin-top: 20px;
+            font-size: 13px;
+            color: #6b7280;
+            line-height: 1.6;
             text-align: center;
-            font-size: 14px;
+        }
+        .contact-box a {
+            color: #111111;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        /* Footer */
+        .footer {
+            background-color: #1a1a1a;
+            padding: 24px 20px;
+            text-align: center;
+            font-size: 12px;
             color: #888888;
-            border-top: 1px solid #eeeeee;
+            border-top: 1px solid #333333;
         }
         .footer p {
-            margin: 5px 0;
+            margin: 4px 0;
+            line-height: 1.5;
+        }
+        .footer-brand {
+            color: #D4AF37;
+            font-weight: 600;
         }
     </style>
 </head>
 <body>
-    <div class="email-wrapper">
-        <div class="email-content">
+    <div class="wrapper">
+        <div class="container">
+            <!-- En-tête -->
             <div class="header">
-                <h1>Accessoires Exclusifs</h1>
+                <h1 class="brand-title">Accessoires Exclusifs</h1>
+                <p class="brand-tagline">Redefine your style</p>
             </div>
-            
-            <div class="body-content">
-                <h2>Bonjour {{ prenom }},</h2>
-                <p>Nous vous remercions pour votre achat. Votre commande <strong>{{ commande.numero_commande }}</strong> a bien été traitée et réglée avec succès.</p>
-                
-                <p>Veuillez trouver ci-joint à cet e-mail votre facture détaillée au format PDF.</p>
-                
-                <div class="invoice-details">
-                    <p><strong>N° Facture :</strong> {{ facture.numero_facture }}</p>
-                    <p><strong>Date :</strong> {{ facture.date_emission|date:"d M Y" }}</p>
-                    <p><strong>Montant Total :</strong> {{ commande.total_ttc|floatformat:"0" }} FCFA</p>
+
+            <!-- Contenu -->
+            <div class="content">
+                <div class="status-badge">
+                    ✓ Paiement validé &bull; Facture acquittée
                 </div>
-                
+
+                <h2 class="greeting">Bonjour {{ prenom }},</h2>
+                <p class="intro-text">
+                    Nous vous remercions pour votre achat. Le règlement de votre commande <strong>#{{ commande.numero_commande }}</strong> a bien été enregistré avec succès.
+                </p>
+
+                <!-- Informations récapitulatives -->
+                <div class="meta-card">
+                    <table class="meta-table">
+                        <tr>
+                            <td class="meta-label">Numéro de facture :</td>
+                            <td class="meta-value">{{ facture.numero_facture }}</td>
+                        </tr>
+                        <tr>
+                            <td class="meta-label">Numéro de commande :</td>
+                            <td class="meta-value">{{ commande.numero_commande }}</td>
+                        </tr>
+                        <tr>
+                            <td class="meta-label">Date d'émission :</td>
+                            <td class="meta-value">{{ facture.date_emission|date:"d F Y à H:i" }}</td>
+                        </tr>
+                        <tr>
+                            <td class="meta-label">Client :</td>
+                            <td class="meta-value">{{ commande.livraison_nom_complet|default:prenom }}</td>
+                        </tr>
+                        {% if commande.livraison_telephone %}
+                        <tr>
+                            <td class="meta-label">Téléphone :</td>
+                            <td class="meta-value">{{ commande.livraison_telephone }}</td>
+                        </tr>
+                        {% endif %}
+                        <tr>
+                            <td class="meta-label">Mode d'achat :</td>
+                            <td class="meta-value">
+                                {% if commande.livraison_ville == 'Boutique' %}
+                                Vente Directe Boutique
+                                {% else %}
+                                Livraison à domicile{% if commande.livraison_ville %} ({{ commande.livraison_ville }}){% endif %}
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% if vendeur_nom %}
+                        <tr>
+                            <td class="meta-label">Conseiller(ère) caisse :</td>
+                            <td class="meta-value">{{ vendeur_nom }}</td>
+                        </tr>
+                        {% endif %}
+                    </table>
+                </div>
+
+                <!-- Tableau des articles commandés -->
+                <h3 class="section-title">Détail des articles achetés</h3>
+                <table class="items-table">
+                    <thead>
+                        <tr>
+                            <th class="text-left" style="width: 50%;">Article</th>
+                            <th class="text-center" style="width: 12%;">Qté</th>
+                            <th class="text-right" style="width: 18%;">Prix unit.</th>
+                            <th class="text-right" style="width: 20%;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if lignes_articles %}
+                            {% for item in lignes_articles %}
+                            <tr>
+                                <td class="text-left">
+                                    <span class="item-name">{{ item.nom }}</span>
+                                    {% if item.type %}<span class="item-type">{{ item.type }}</span>{% endif %}
+                                </td>
+                                <td class="text-center"><strong>{{ item.quantite }}</strong></td>
+                                <td class="text-right">{{ item.prix_unitaire|floatformat:"0" }} FCFA</td>
+                                <td class="text-right"><strong>{{ item.sous_total|floatformat:"0" }} FCFA</strong></td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center" style="color: #666666; padding: 15px;">
+                                    Détail disponible sur la facture PDF jointe.
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+
+                <!-- Bloc Totaux Financiers -->
+                <div class="totals-card">
+                    <table class="totals-table">
+                        <tr>
+                            <td class="text-left" style="color: #6b7280;">Sous-total articles :</td>
+                            <td class="text-right" style="font-weight: 600;">{{ commande.sous_total|floatformat:"0" }} FCFA</td>
+                        </tr>
+                        {% if commande.remise_code_promo > 0 %}
+                        <tr>
+                            <td class="text-left discount-text">
+                                Remise promotionnelle {% if commande.code_promo_utilise %}({{ commande.code_promo_utilise }}){% endif %} :
+                            </td>
+                            <td class="text-right discount-text">
+                                - {{ commande.remise_code_promo|floatformat:"0" }} FCFA
+                            </td>
+                        </tr>
+                        {% endif %}
+                        {% if commande.frais_livraison > 0 %}
+                        <tr>
+                            <td class="text-left" style="color: #6b7280;">Frais de livraison :</td>
+                            <td class="text-right" style="font-weight: 600;">+ {{ commande.frais_livraison|floatformat:"0" }} FCFA</td>
+                        </tr>
+                        {% endif %}
+                        <tr class="total-highlight">
+                            <td class="text-left">TOTAL RÉGLÉ (TTC) :</td>
+                            <td class="text-right total-amount">{{ commande.total_ttc|floatformat:"0" }} FCFA</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Encadré Pièce Jointe PDF -->
+                <div class="attachment-box">
+                    <p class="attachment-box-title">📄 Facture officielle en pièce jointe</p>
+                    <p class="attachment-box-desc">
+                        Votre facture officielle <strong>facture_{{ facture.numero_facture }}.pdf</strong> est attachée à cet email. Vous pouvez la télécharger, l'imprimer ou la conserver pour vos archives.
+                    </p>
+                </div>
+
+                <!-- Bouton d'action -->
                 <div class="cta-container">
-                    <a href="{{ url_commande }}" class="cta-button">Voir ma commande en ligne</a>
+                    <a href="{{ url_commande }}" class="cta-button" target="_blank">Consulter ma commande en ligne</a>
                 </div>
-                
-                <p>Pour toute question ou assistance, n'hésitez pas à contacter notre service client.</p>
-                <p>Merci pour votre confiance.</p>
+
+                <!-- Service Client -->
+                <div class="contact-box">
+                    Une question ou besoin d'assistance ? Notre équipe est à votre écoute :<br>
+                    <strong>Tél / WhatsApp :</strong> {{ entreprise_telephone }} &bull; 
+                    <strong>Email :</strong> <a href="mailto:{{ entreprise_email }}">{{ entreprise_email }}</a>
+                </div>
             </div>
-            
+
+            <!-- Pied de page -->
             <div class="footer">
-                <p>L'équipe Accessoires Exclusifs</p>
-                <p><em>Redefine your style</em></p>
-                <p style="margin-top: 15px; font-size: 12px; color: #aaaaaa; font-weight: 500;">Fait par Trispark Digital Cameroun</p>
+                <p class="footer-brand">Accessoires Exclusifs — Yaoundé, Cameroun</p>
+                <p>Marché central (Tabital Square, Boutique B13, Box 2) &bull; Central Mall (Boutique E2-6)</p>
+                <p style="margin-top: 10px; font-size: 11px; color: #666666;">
+                    Cet e-mail automatique a été envoyé à l'adresse liée à votre achat. Merci de votre confiance.
+                </p>
             </div>
         </div>
     </div>

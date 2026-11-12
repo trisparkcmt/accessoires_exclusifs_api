@@ -5,7 +5,7 @@ from django.utils.safestring import mark_safe
 from .models import (
     Panier, PanierLigneParfum, PanierLigneParfumPerso, PanierLigneAccessoire, PanierLigneDiffuseurParfum,
     Commande, CommandeLigneParfum, CommandeLigneParfumPerso, CommandeLigneAccessoire, CommandeLigneDiffuseurParfum,
-    AffectationLivraison, CodePromoAdmin
+    AffectationLivraison, CodePromoAdmin, RapportJournalierCaisse
 )
 
 
@@ -123,11 +123,12 @@ class AffectationLivraisonInline(admin.TabularInline):
 
 @admin.register(Commande)
 class CommandeAdmin(admin.ModelAdmin):
-    list_display = ('id', 'numero_commande', 'client_info', 'total_ttc', 'statut', 'statut_paiement', 'date_creation', 'actions_links')
-    list_filter = ('statut', 'statut_paiement', 'statut_livraison', 'date_creation')
+    list_display = ('id', 'numero_commande', 'client_info', 'vendeur_info', 'total_ttc', 'statut', 'statut_paiement', 'date_creation', 'actions_links')
+    list_filter = ('statut', 'statut_paiement', 'statut_livraison', 'vendeur', 'date_creation')
     search_fields = (
         'numero_commande', 'client__user__email', 'client__user__username', 
-        'client__user__first_name', 'client__user__last_name', 'livraison_nom_complet'
+        'client__user__first_name', 'client__user__last_name', 'livraison_nom_complet',
+        'vendeur__first_name', 'vendeur__last_name', 'vendeur__email'
     )
     list_per_page = 100
     readonly_fields = ('date_creation', 'date_modification', 'numero_commande')
@@ -140,8 +141,8 @@ class CommandeAdmin(admin.ModelAdmin):
     ]
     
     fieldsets = (
-        ('Identifiant', {
-            'fields': ('numero_commande', 'client', 'prestataire', 'panier')
+        ('Identifiant & Vendeur', {
+            'fields': ('numero_commande', 'client', 'vendeur', 'prestataire', 'panier')
         }),
         ('Statuts', {
             'fields': ('statut', 'statut_livraison', 'statut_paiement')
@@ -177,6 +178,12 @@ class CommandeAdmin(admin.ModelAdmin):
         tel = obj.livraison_telephone or ""
         return format_html('<b>{}</b><br/><small>{}</small>', nom, tel)
     client_info.short_description = 'Client'
+
+    def vendeur_info(self, obj):
+        if obj.vendeur:
+            return obj.vendeur.get_full_name() or obj.vendeur.email or obj.vendeur.username
+        return "—"
+    vendeur_info.short_description = 'Vendeur POS'
 
     
     def actions_links(self, obj):
@@ -286,3 +293,65 @@ class CodePromoAdminAdmin(admin.ModelAdmin):
     list_filter = ('est_actif', 'date_creation')
     search_fields = ('code',)
     filter_horizontal = ('clients_autorises',)
+
+
+@admin.register(RapportJournalierCaisse)
+class RapportJournalierCaisseAdmin(admin.ModelAdmin):
+    list_display = (
+        'id',
+        'date',
+        'caissiere_nom',
+        'heure_arrivee',
+        'heure_depart',
+        'recette_totale',
+        'total_depenses',
+        'reste_en_caisse',
+        'actions_links',
+        'date_creation',
+    )
+    list_filter = ('date', 'caissiere', 'date_creation')
+    search_fields = (
+        'caissiere__first_name',
+        'caissiere__last_name',
+        'caissiere__email',
+        'caissiere__username',
+        'reste_en_caisse',
+        'actions_communication',
+    )
+    readonly_fields = ('date_creation', 'date_modification', 'texte_formate')
+
+    fieldsets = (
+        ('Session & Caissière', {
+            'fields': ('caissiere', 'date', 'heure_arrivee', 'heure_depart')
+        }),
+        ('Totaux Financiers', {
+            'fields': ('recette_totale', 'total_depenses', 'reste_en_caisse')
+        }),
+        ('Détails des Opérations (JSON Snapshots)', {
+            'fields': ('sorties_articles', 'entrees_stock', 'depenses', 'autres_donnees_manuelles'),
+            'classes': ('collapse',)
+        }),
+        ('Communication & Remarques', {
+            'fields': ('actions_communication', 'observations')
+        }),
+        ('Rapports Générés (WhatsApp & PDF)', {
+            'fields': ('texte_formate', 'fichier_pdf')
+        }),
+        ('Dates', {
+            'fields': ('date_creation', 'date_modification'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def caissiere_nom(self, obj):
+        if obj.caissiere:
+            return obj.caissiere.get_full_name() or obj.caissiere.email or obj.caissiere.username
+        return "—"
+    caissiere_nom.short_description = 'Caissière'
+
+    def actions_links(self, obj):
+        if obj.fichier_pdf and hasattr(obj.fichier_pdf, 'url'):
+            return format_html('<a href="{}" target="_blank" style="padding: 3px 8px; background: #000; color: #fff; border-radius: 4px; text-decoration: none;">📄 PDF</a>', obj.fichier_pdf.url)
+        return "Pas de PDF"
+    actions_links.short_description = 'Fichier PDF'
+
