@@ -254,7 +254,7 @@
       <tr style="border-top: 1.5px solid #000000; background-color: #fdfdfd">
         <td><strong>Reste en Caisse :</strong></td>
         <td class="text-right highlight-total">
-          <strong>{{ rapport.reste_en_caisse|default:"Non spécifié" }}</strong>
+          <strong>{{ rapport.reste_en_caisse|floatformat:0|default:"0" }} FCFA</strong>
         </td>
       </tr>
     </table>

@@ -591,7 +591,7 @@ class RapportJournalierCaisseSerializer(serializers.ModelSerializer):
     caissiere_nom = serializers.SerializerMethodField()
     pdf_url = serializers.SerializerMethodField()
     communication_digitale = serializers.CharField(source='actions_communication', read_only=True)
-    reste_caisse = serializers.CharField(source='reste_en_caisse', read_only=True)
+    reste_caisse = serializers.DecimalField(source='reste_en_caisse', read_only=True, max_digits=12, decimal_places=2)
 
     class Meta:
         model = RapportJournalierCaisse
@@ -639,8 +639,6 @@ class POSRapportJournalierClotureSerializer(serializers.Serializer):
     date = serializers.DateField(required=False, default=timezone.now)
     heure_arrivee = serializers.CharField(required=False, allow_blank=True, default='')
     heure_depart = serializers.CharField(required=False, allow_blank=True, default='')
-    reste_en_caisse = serializers.CharField(required=False, allow_blank=True, default='')
-    reste_caisse = serializers.CharField(required=False, allow_blank=True, default='')
     actions_communication = serializers.CharField(required=False, allow_blank=True, default='')
     communication_digitale = serializers.CharField(required=False, allow_blank=True, default='')
     observations = serializers.CharField(required=False, allow_blank=True, default='')
@@ -655,13 +653,6 @@ class POSRapportJournalierClotureSerializer(serializers.Serializer):
     def to_internal_value(self, data):
         # Normalisation souple de tous les alias envoyés par le frontend
         data_copy = data.copy() if hasattr(data, 'copy') else dict(data)
-
-        # Reste en caisse
-        if not data_copy.get('reste_en_caisse'):
-            for alias in ['reste_caisse', 'reste', 'fond_de_caisse', 'fond_caisse']:
-                if data_copy.get(alias) is not None and str(data_copy.get(alias)).strip() != '':
-                    data_copy['reste_en_caisse'] = str(data_copy[alias])
-                    break
 
         # Actions de communication digitale
         if not data_copy.get('actions_communication'):
@@ -734,11 +725,8 @@ class POSRapportJournalierClotureSerializer(serializers.Serializer):
                 })
         total_depenses = sum((Decimal(str(d.get('montant', 0))) for d in depenses), Decimal('0.00'))
 
-        reste_caisse_val = (
-            self.validated_data.get('reste_en_caisse')
-            or self.validated_data.get('reste_caisse')
-            or ''
-        ).strip()
+        # reste_en_caisse calculé automatiquement = recette - dépenses
+        reste_en_caisse_calcule = Decimal(str(donnees['recette_totale'])) - total_depenses
 
         com_val = (
             self.validated_data.get('actions_communication')
@@ -757,7 +745,7 @@ class POSRapportJournalierClotureSerializer(serializers.Serializer):
                 'heure_depart': self.validated_data.get('heure_depart', ''),
                 'recette_totale': Decimal(str(donnees['recette_totale'])),
                 'total_depenses': total_depenses,
-                'reste_en_caisse': reste_caisse_val,
+                'reste_en_caisse': reste_en_caisse_calcule,
                 'sorties_articles': sorties,
                 'entrees_stock': entrees,
                 'depenses': depenses,
@@ -774,8 +762,7 @@ class POSRapportJournalierClotureSerializer(serializers.Serializer):
                 rapport.heure_depart = self.validated_data.get('heure_depart')
             rapport.recette_totale = Decimal(str(donnees['recette_totale']))
             rapport.total_depenses = total_depenses
-            if reste_caisse_val:
-                rapport.reste_en_caisse = reste_caisse_val
+            rapport.reste_en_caisse = reste_en_caisse_calcule
             rapport.sorties_articles = sorties
             rapport.entrees_stock = entrees
             rapport.depenses = depenses
