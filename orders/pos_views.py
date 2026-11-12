@@ -175,20 +175,21 @@ class POSRapportJournalierApercuView(APIView):
     - Dépenses enregistrées
     - Recette totale
     Fournit également une prévisualisation du texte formaté pour WhatsApp.
+    Supporte GET et POST (avec payload JSON).
     """
     permission_classes = [IsSuperadminOrActiveServeuse]
 
-    def get(self, request, *args, **kwargs):
+    def _build_apercu(self, request, params):
         from datetime import datetime
         from django.utils import timezone
         from decimal import Decimal
         from orders.models import RapportJournalierCaisse
         from orders.pos_services import calculer_donnees_journee_caissiere, formater_texte_whatsapp
 
-        date_str = request.query_params.get('date')
+        date_str = params.get('date')
         if date_str:
             try:
-                target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                target_date = datetime.strptime(str(date_str).strip(), '%Y-%m-%d').date()
             except ValueError:
                 return Response(
                     {"detail": "Format de date invalide. Utilisez AAAA-MM-JJ (ex: 2026-11-12)."},
@@ -199,7 +200,7 @@ class POSRapportJournalierApercuView(APIView):
 
         # Si admin demande l'aperçu pour une caissière spécifique via ?caissiere_id=...
         target_user = request.user
-        caissiere_id = request.query_params.get('caissiere_id')
+        caissiere_id = params.get('caissiere_id')
         if caissiere_id and request.user.is_superuser:
             from django.contrib.auth import get_user_model
             from django.shortcuts import get_object_or_404
@@ -208,25 +209,72 @@ class POSRapportJournalierApercuView(APIView):
 
         donnees = calculer_donnees_journee_caissiere(target_user, target_date=target_date)
 
+        # Vérifier si un rapport existe déjà en base pour initialiser les valeurs saisies
+        rapport_existant = RapportJournalierCaisse.objects.filter(
+            caissiere=target_user,
+            date=target_date
+        ).first()
+
+        # Récupération souple avec gestion des alias
+        def _get_val(keys, default=''):
+            for k in keys:
+                if params.get(k) is not None and str(params.get(k)).strip() != '':
+                    return str(params.get(k)).strip()
+            return default
+
+        heure_arrivee = _get_val(['heure_arrivee'], rapport_existant.heure_arrivee if rapport_existant else '')
+        heure_depart = _get_val(['heure_depart'], rapport_existant.heure_depart if rapport_existant else '')
+        reste_en_caisse = _get_val(['reste_en_caisse', 'reste_caisse', 'reste', 'fond_de_caisse', 'fond_caisse'], rapport_existant.reste_en_caisse if rapport_existant else '')
+        actions_communication = _get_val(['actions_communication', 'communication_digitale', 'communication', 'actions_communication_digitale'], rapport_existant.actions_communication if rapport_existant else '')
+        observations = _get_val(['observations', 'observation', 'notes', 'remarques'], rapport_existant.observations if rapport_existant else '')
+        autres_donnees = params.get('autres_donnees_manuelles') or (rapport_existant.autres_donnees_manuelles if rapport_existant else {})
+
         # Créer un objet fictif pour prévisualiser le formatage texte
         fake_rapport = RapportJournalierCaisse(
             caissiere=target_user,
             date=target_date,
-            heure_arrivee=request.query_params.get('heure_arrivee', ''),
-            heure_depart=request.query_params.get('heure_depart', ''),
+            heure_arrivee=heure_arrivee,
+            heure_depart=heure_depart,
             recette_totale=Decimal(str(donnees['recette_totale'])),
             total_depenses=Decimal(str(donnees['total_depenses'])),
-            reste_en_caisse=request.query_params.get('reste_en_caisse', ''),
+            reste_en_caisse=reste_en_caisse,
             sorties_articles=donnees['sorties_articles'],
             entrees_stock=donnees['entrees_stock'],
             depenses=donnees['depenses'],
+            actions_communication=actions_communication,
+            observations=observations,
+            autres_donnees_manuelles=autres_donnees if isinstance(autres_donnees, dict) else {},
         )
-        donnees['texte_apercu'] = formater_texte_whatsapp(fake_rapport)
-        donnees['apercu_texte_whatsapp'] = donnees['texte_apercu']
+
+        texte_formate = formater_texte_whatsapp(fake_rapport)
+        donnees['heure_arrivee'] = heure_arrivee
+        donnees['heure_depart'] = heure_depart
+        donnees['reste_en_caisse'] = reste_en_caisse
+        donnees['reste_caisse'] = reste_en_caisse
+        donnees['actions_communication'] = actions_communication
+        donnees['communication_digitale'] = actions_communication
+        donnees['observations'] = observations
+        donnees['autres_donnees_manuelles'] = fake_rapport.autres_donnees_manuelles
+        donnees['texte_apercu'] = texte_formate
+        donnees['apercu_texte_whatsapp'] = texte_formate
         donnees['caissiere_id'] = target_user.id
         donnees['caissiere_nom'] = target_user.get_full_name() or target_user.email or target_user.username
+        if rapport_existant and rapport_existant.fichier_pdf and hasattr(rapport_existant.fichier_pdf, 'url'):
+            donnees['pdf_url'] = request.build_absolute_uri(rapport_existant.fichier_pdf.url)
+        else:
+            donnees['pdf_url'] = None
 
         return Response(donnees, status=status.HTTP_200_OK)
+
+    def get(self, request, *args, **kwargs):
+        return self._build_apercu(request, request.query_params)
+
+    def post(self, request, *args, **kwargs):
+        # Permet aussi de prévisualiser l'aperçu via POST avec payload
+        payload = dict(request.query_params)
+        if isinstance(request.data, dict):
+            payload.update(request.data)
+        return self._build_apercu(request, payload)
 
 
 class POSRapportJournalierClotureView(APIView):

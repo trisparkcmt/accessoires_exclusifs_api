@@ -590,6 +590,8 @@ from django.utils import timezone
 class RapportJournalierCaisseSerializer(serializers.ModelSerializer):
     caissiere_nom = serializers.SerializerMethodField()
     pdf_url = serializers.SerializerMethodField()
+    communication_digitale = serializers.CharField(source='actions_communication', read_only=True)
+    reste_caisse = serializers.CharField(source='reste_en_caisse', read_only=True)
 
     class Meta:
         model = RapportJournalierCaisse
@@ -603,11 +605,13 @@ class RapportJournalierCaisseSerializer(serializers.ModelSerializer):
             'recette_totale',
             'total_depenses',
             'reste_en_caisse',
+            'reste_caisse',
             'sorties_articles',
             'entrees_stock',
             'depenses',
             'autres_donnees_manuelles',
             'actions_communication',
+            'communication_digitale',
             'observations',
             'texte_formate',
             'fichier_pdf',
@@ -636,11 +640,44 @@ class POSRapportJournalierClotureSerializer(serializers.Serializer):
     heure_arrivee = serializers.CharField(required=False, allow_blank=True, default='')
     heure_depart = serializers.CharField(required=False, allow_blank=True, default='')
     reste_en_caisse = serializers.CharField(required=False, allow_blank=True, default='')
+    reste_caisse = serializers.CharField(required=False, allow_blank=True, default='')
     actions_communication = serializers.CharField(required=False, allow_blank=True, default='')
+    communication_digitale = serializers.CharField(required=False, allow_blank=True, default='')
     observations = serializers.CharField(required=False, allow_blank=True, default='')
     autres_donnees_manuelles = serializers.DictField(required=False, default=dict)
+    sorties_articles = serializers.ListField(child=serializers.DictField(), required=False, default=list)
     sorties_articles_ajouts = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    entrees_stock = serializers.ListField(child=serializers.DictField(), required=False, default=list)
     entrees_stock_ajouts = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    depenses = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    depenses_ajouts = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+
+    def to_internal_value(self, data):
+        # Normalisation souple de tous les alias envoyés par le frontend
+        data_copy = data.copy() if hasattr(data, 'copy') else dict(data)
+
+        # Reste en caisse
+        if not data_copy.get('reste_en_caisse'):
+            for alias in ['reste_caisse', 'reste', 'fond_de_caisse', 'fond_caisse']:
+                if data_copy.get(alias) is not None and str(data_copy.get(alias)).strip() != '':
+                    data_copy['reste_en_caisse'] = str(data_copy[alias])
+                    break
+
+        # Actions de communication digitale
+        if not data_copy.get('actions_communication'):
+            for alias in ['communication_digitale', 'communication', 'actions_communication_digitale', 'actions_communication']:
+                if data_copy.get(alias) is not None and str(data_copy.get(alias)).strip() != '':
+                    data_copy['actions_communication'] = str(data_copy[alias])
+                    break
+
+        # Observations / remarques
+        if not data_copy.get('observations'):
+            for alias in ['observation', 'notes', 'remarques']:
+                if data_copy.get(alias) is not None and str(data_copy.get(alias)).strip() != '':
+                    data_copy['observations'] = str(data_copy[alias])
+                    break
+
+        return super().to_internal_value(data_copy)
 
     def save(self):
         request = self.context.get('request')
@@ -664,7 +701,8 @@ class POSRapportJournalierClotureSerializer(serializers.Serializer):
 
         # 2. Fusionner avec d'éventuels ajouts manuels
         sorties = list(donnees['sorties_articles'])
-        for item in self.validated_data.get('sorties_articles_ajouts', []):
+        ajouts_sorties = self.validated_data.get('sorties_articles_ajouts', []) or self.validated_data.get('sorties_articles', [])
+        for item in ajouts_sorties:
             if item.get('nom'):
                 sorties.append({
                     'nom': str(item.get('nom')),
@@ -674,7 +712,8 @@ class POSRapportJournalierClotureSerializer(serializers.Serializer):
                 })
 
         entrees = list(donnees['entrees_stock'])
-        for item in self.validated_data.get('entrees_stock_ajouts', []):
+        ajouts_entrees = self.validated_data.get('entrees_stock_ajouts', []) or self.validated_data.get('entrees_stock', [])
+        for item in ajouts_entrees:
             if item.get('nom'):
                 entrees.append({
                     'nom': str(item.get('nom')),
@@ -682,6 +721,32 @@ class POSRapportJournalierClotureSerializer(serializers.Serializer):
                     'type_produit': str(item.get('type_produit', 'manuel')),
                     'date': str(item.get('date', 'manuel')),
                 })
+
+        depenses = list(donnees['depenses'])
+        ajouts_depenses = self.validated_data.get('depenses_ajouts', []) or self.validated_data.get('depenses', [])
+        for item in ajouts_depenses:
+            if item.get('titre') or item.get('montant'):
+                depenses.append({
+                    'id': item.get('id'),
+                    'titre': str(item.get('titre', 'Dépense')),
+                    'montant': float(item.get('montant', 0.0)),
+                    'description': str(item.get('description', '')),
+                })
+        total_depenses = sum((Decimal(str(d.get('montant', 0))) for d in depenses), Decimal('0.00'))
+
+        reste_caisse_val = (
+            self.validated_data.get('reste_en_caisse')
+            or self.validated_data.get('reste_caisse')
+            or ''
+        ).strip()
+
+        com_val = (
+            self.validated_data.get('actions_communication')
+            or self.validated_data.get('communication_digitale')
+            or ''
+        ).strip()
+
+        obs_val = (self.validated_data.get('observations') or '').strip()
 
         # 3. Créer ou mettre à jour le rapport pour cette caissière à cette date
         rapport, created = RapportJournalierCaisse.objects.get_or_create(
@@ -691,32 +756,35 @@ class POSRapportJournalierClotureSerializer(serializers.Serializer):
                 'heure_arrivee': self.validated_data.get('heure_arrivee', ''),
                 'heure_depart': self.validated_data.get('heure_depart', ''),
                 'recette_totale': Decimal(str(donnees['recette_totale'])),
-                'total_depenses': Decimal(str(donnees['total_depenses'])),
-                'reste_en_caisse': self.validated_data.get('reste_en_caisse', ''),
+                'total_depenses': total_depenses,
+                'reste_en_caisse': reste_caisse_val,
                 'sorties_articles': sorties,
                 'entrees_stock': entrees,
-                'depenses': donnees['depenses'],
+                'depenses': depenses,
                 'autres_donnees_manuelles': self.validated_data.get('autres_donnees_manuelles', {}),
-                'actions_communication': self.validated_data.get('actions_communication', ''),
-                'observations': self.validated_data.get('observations', ''),
+                'actions_communication': com_val,
+                'observations': obs_val,
             }
         )
 
         if not created:
-            rapport.heure_arrivee = self.validated_data.get('heure_arrivee') or rapport.heure_arrivee
-            rapport.heure_depart = self.validated_data.get('heure_depart') or rapport.heure_depart
+            if self.validated_data.get('heure_arrivee'):
+                rapport.heure_arrivee = self.validated_data.get('heure_arrivee')
+            if self.validated_data.get('heure_depart'):
+                rapport.heure_depart = self.validated_data.get('heure_depart')
             rapport.recette_totale = Decimal(str(donnees['recette_totale']))
-            rapport.total_depenses = Decimal(str(donnees['total_depenses']))
-            rapport.reste_en_caisse = self.validated_data.get('reste_en_caisse', rapport.reste_en_caisse)
+            rapport.total_depenses = total_depenses
+            if reste_caisse_val:
+                rapport.reste_en_caisse = reste_caisse_val
             rapport.sorties_articles = sorties
             rapport.entrees_stock = entrees
-            rapport.depenses = donnees['depenses']
+            rapport.depenses = depenses
             if self.validated_data.get('autres_donnees_manuelles'):
                 rapport.autres_donnees_manuelles = self.validated_data.get('autres_donnees_manuelles')
-            if self.validated_data.get('actions_communication'):
-                rapport.actions_communication = self.validated_data.get('actions_communication')
-            if self.validated_data.get('observations'):
-                rapport.observations = self.validated_data.get('observations')
+            if com_val:
+                rapport.actions_communication = com_val
+            if obs_val:
+                rapport.observations = obs_val
 
         # 4. Formater le texte WhatsApp
         rapport.texte_formate = formater_texte_whatsapp(rapport)

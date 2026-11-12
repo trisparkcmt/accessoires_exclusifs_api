@@ -323,12 +323,31 @@ def creer_notification_alerte(type_produit, product_id, product_name, stock_actu
 # ============================================================
 def _enregistrer_mouvement(type_produit, instance, nom_produit, quantite_avant, quantite_apres):
     """
-    Crée un MouvementStock si la quantité a réellement changé.
-    quantite_avant=None signifie création (1ère sauvegarde) — aucune ligne créée.
+    Crée un MouvementStock si la quantité a changé OU si c'est une création avec stock > 0.
+    - quantite_avant=None → création du produit : on enregistre si stock_initial > 0.
+    - quantite_avant=valeur → mise à jour : on enregistre si delta != 0.
     L'utilisateur courant est récupéré via le middleware thread-local.
     """
+    from utilisateur.middleware import get_current_user
+    from .models import MouvementStock
+
+    utilisateur = get_current_user()  # None si appel hors contexte HTTP
+
     if quantite_avant is None:
-        return  # premier enregistrement, pas de mouvement à tracer
+        # Création : enregistrer uniquement si le stock initial est > 0
+        q_apres = Decimal(str(quantite_apres))
+        if q_apres <= 0:
+            return
+        MouvementStock.objects.create(
+            utilisateur=utilisateur,
+            type_produit=type_produit,
+            produit_id=instance.pk,
+            nom_produit=nom_produit,
+            quantite_avant=Decimal('0'),
+            quantite_apres=q_apres,
+            quantite_ajoutee=q_apres,  # entrée initiale
+        )
+        return
 
     q_avant = Decimal(str(quantite_avant))
     q_apres = Decimal(str(quantite_apres))
@@ -336,11 +355,6 @@ def _enregistrer_mouvement(type_produit, instance, nom_produit, quantite_avant, 
 
     if delta == 0:
         return  # aucun changement
-
-    from utilisateur.middleware import get_current_user
-    from .models import MouvementStock
-
-    utilisateur = get_current_user()  # None si appel hors contexte HTTP (ex: signal JWT)
 
     MouvementStock.objects.create(
         utilisateur=utilisateur,  # Peut être None : le champ doit être null=True, blank=True
