@@ -236,6 +236,12 @@
             <td class="text-right" style="color: #c0392b">- {{ d.montant|floatformat:0 }} FCFA</td>
           </tr>
         {% endfor %}
+        <tr style="background-color: #faf5f5;">
+          <td><strong>Total Dépenses Caisse :</strong></td>
+          <td class="text-right" style="color: #c0392b; font-weight: bold;">
+            - {{ rapport.total_depenses|floatformat:0 }} FCFA
+          </td>
+        </tr>
       {% endif %}
       {% if rapport.autres_donnees_manuelles %}
         {% for cle, val in rapport.autres_donnees_manuelles.items %}
