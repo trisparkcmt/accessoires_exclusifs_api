@@ -114,12 +114,47 @@ def calculer_donnees_journee_caissiere(caissiere_user, target_date=None):
         })
     sorties_list.sort(key=lambda x: x['nom'])
 
-    # 3. Entrées de stock effectuées par cette caissière
+    # Rattrapage automatique pour les produits créés ce jour avec du stock mais sans mouvement tracé
+    from catalogue.models import Parfum, Accessoire
+    parfums_du_jour = Parfum.objects.filter(date_creation__date=target_date, stock_quantite__gt=0)
+    for p in parfums_du_jour:
+        if not MouvementStock.objects.filter(type_produit='parfum', produit_id=p.id).exists():
+            MouvementStock.objects.create(
+                utilisateur=caissiere_user if not getattr(caissiere_user, 'is_superuser', False) else None,
+                type_produit='parfum',
+                produit_id=p.id,
+                nom_produit=p.nom,
+                quantite_avant=Decimal('0'),
+                quantite_apres=Decimal(str(p.stock_quantite)),
+                quantite_ajoutee=Decimal(str(p.stock_quantite)),
+            )
+
+    accessoires_du_jour = Accessoire.objects.filter(date_creation__date=target_date, stock_quantite__gt=0)
+    for a in accessoires_du_jour:
+        if not MouvementStock.objects.filter(type_produit='accessoire', produit_id=a.id).exists():
+            MouvementStock.objects.create(
+                utilisateur=caissiere_user if not getattr(caissiere_user, 'is_superuser', False) else None,
+                type_produit='accessoire',
+                produit_id=a.id,
+                nom_produit=a.nom,
+                quantite_avant=Decimal('0'),
+                quantite_apres=Decimal(str(a.stock_quantite)),
+                quantite_ajoutee=Decimal(str(a.stock_quantite)),
+            )
+
+    # 3. Entrées de stock effectuées par cette caissière (ou au niveau de la boutique)
     mouvements_qs = MouvementStock.objects.filter(
         utilisateur=caissiere_user,
         date_ajout__date=target_date,
         quantite_ajoutee__gt=0
     ).order_by('-date_ajout')
+
+    if not mouvements_qs.exists():
+        # Fallback : toutes les entrées de stock enregistrées pour la boutique ce jour
+        mouvements_qs = MouvementStock.objects.filter(
+            date_ajout__date=target_date,
+            quantite_ajoutee__gt=0
+        ).order_by('-date_ajout')
 
     entrees_list = []
     for m in mouvements_qs:
@@ -130,11 +165,17 @@ def calculer_donnees_journee_caissiere(caissiere_user, target_date=None):
             'date': m.date_ajout.strftime('%H:%M'),
         })
 
-    # 4. Dépenses de caisse effectuées par cette caissière
+    # 4. Dépenses de caisse effectuées par cette caissière (ou au niveau de la caisse boutique)
     depenses_qs = Depense.objects.filter(
         cree_par=caissiere_user,
         date_depense=target_date
     ).order_by('date_creation')
+
+    if not depenses_qs.exists():
+        # Fallback : toutes les dépenses enregistrées en boutique ce jour
+        depenses_qs = Depense.objects.filter(
+            Q(date_depense=target_date) | Q(date_creation__date=target_date)
+        ).order_by('date_creation')
 
     total_depenses = depenses_qs.aggregate(total=Sum('montant'))['total'] or Decimal('0.00')
 
@@ -269,8 +310,10 @@ def generer_rapport_caisse_pdf(rapport):
     pdf_content = pdf_buffer.getvalue()
     pdf_buffer.close()
 
+    import time
+    ts = int(time.time())
     date_label = str(rapport.date).replace('-', '')
-    nom_fichier = f"rapport_caisse_{rapport.caissiere_id}_{date_label}_{rapport.id}.pdf"
+    nom_fichier = f"rapport_caisse_{rapport.caissiere_id}_{date_label}_{rapport.id}_{ts}.pdf"
 
     if rapport.fichier_pdf:
         try:

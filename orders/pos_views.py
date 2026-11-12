@@ -339,9 +339,86 @@ class POSRapportJournalierListView(APIView):
 
 class POSRapportJournalierDetailView(APIView):
     """
-    Détail d'un rapport journalier avec option de régénération du PDF via ?regenerer_pdf=true.
+    Détail d'un rapport journalier avec option de régénération du PDF via ?regenerer_pdf=true ou recalcul des données.
+    Supporte GET, PATCH, PUT et POST pour mettre à jour et régénérer le PDF en direct.
     """
     permission_classes = [IsSuperadminOrActiveServeuse]
+
+    def _update_and_regenerate(self, request, rapport, params=None):
+        from decimal import Decimal
+        from orders.pos_services import (
+            calculer_donnees_journee_caissiere,
+            formater_texte_whatsapp,
+            generer_rapport_caisse_pdf,
+        )
+
+        params = params or {}
+
+        # 1. Recalculer les activités de la journée pour rafraîchir ventes, entrées, dépenses
+        donnees = calculer_donnees_journee_caissiere(rapport.caissiere, target_date=rapport.date)
+        rapport.recette_totale = Decimal(str(donnees['recette_totale']))
+        rapport.sorties_articles = donnees['sorties_articles']
+
+        # Entrées de stock
+        if donnees.get('entrees_stock'):
+            rapport.entrees_stock = donnees['entrees_stock']
+
+        # Dépenses
+        if donnees.get('depenses'):
+            rapport.depenses = donnees['depenses']
+            rapport.total_depenses = Decimal(str(donnees['total_depenses']))
+
+        # 2. Récupérer les paramètres passés (query_params ou body) pour écraser/mettre à jour les champs
+        def _get_val(keys):
+            for k in keys:
+                val = params.get(k)
+                if val is not None and str(val).strip() != '':
+                    return str(val).strip()
+            return None
+
+        new_reste = _get_val(['reste_en_caisse', 'reste_caisse', 'reste', 'fond_de_caisse', 'fond_caisse'])
+        if new_reste is not None:
+            rapport.reste_en_caisse = new_reste
+
+        new_com = _get_val(['actions_communication', 'communication_digitale', 'communication', 'actions_communication_digitale'])
+        if new_com is not None:
+            rapport.actions_communication = new_com
+
+        new_obs = _get_val(['observations', 'observation', 'notes', 'remarques'])
+        if new_obs is not None:
+            rapport.observations = new_obs
+
+        new_arr = _get_val(['heure_arrivee'])
+        if new_arr is not None:
+            rapport.heure_arrivee = new_arr
+
+        new_dep = _get_val(['heure_depart'])
+        if new_dep is not None:
+            rapport.heure_depart = new_dep
+
+        # Ajout éventuel de dépenses manuelles
+        dep_manuelles = params.get('depenses') or params.get('depenses_ajouts')
+        if dep_manuelles and isinstance(dep_manuelles, list):
+            current_dep = list(rapport.depenses)
+            for item in dep_manuelles:
+                if item.get('titre') or item.get('montant'):
+                    current_dep.append({
+                        'id': item.get('id'),
+                        'titre': str(item.get('titre', 'Dépense')),
+                        'montant': float(item.get('montant', 0.0)),
+                        'description': str(item.get('description', '')),
+                    })
+            rapport.depenses = current_dep
+            rapport.total_depenses = sum((Decimal(str(d.get('montant', 0))) for d in current_dep), Decimal('0.00'))
+
+        # 3. Mettre à jour le texte WhatsApp
+        rapport.texte_formate = formater_texte_whatsapp(rapport)
+        rapport.save()
+
+        # 4. Régénérer le PDF
+        generer_rapport_caisse_pdf(rapport)
+        rapport.refresh_from_db()
+        return rapport
 
     def get(self, request, pk, *args, **kwargs):
         from django.shortcuts import get_object_or_404
@@ -355,11 +432,51 @@ class POSRapportJournalierDetailView(APIView):
         else:
             rapport = get_object_or_404(RapportJournalierCaisse, pk=pk, caissiere=user)
 
-        regenerer = request.query_params.get('regenerer_pdf') in ('true', '1', 'yes')
-        if regenerer or not rapport.fichier_pdf:
+        regenerer = (
+            request.query_params.get('regenerer_pdf') in ('true', '1', 'yes')
+            or request.query_params.get('recalculer') in ('true', '1', 'yes')
+        )
+
+        # Si l'utilisateur demande une régénération ou si des paramètres sont fournis dans l'URL
+        has_override_params = any(
+            request.query_params.get(k) for k in [
+                'reste_en_caisse', 'reste_caisse', 'reste',
+                'actions_communication', 'communication_digitale', 'communication',
+                'heure_arrivee', 'heure_depart', 'observations'
+            ]
+        )
+
+        if regenerer or has_override_params:
+            self._update_and_regenerate(request, rapport, params=request.query_params)
+        elif not rapport.fichier_pdf:
             generer_rapport_caisse_pdf(rapport)
             rapport.refresh_from_db()
 
         serializer = RapportJournalierCaisseSerializer(rapport, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def patch(self, request, pk, *args, **kwargs):
+        from django.shortcuts import get_object_or_404
+        from orders.models import RapportJournalierCaisse
+        from orders.pos_serializers import RapportJournalierCaisseSerializer
+
+        user = request.user
+        if user.is_superuser:
+            rapport = get_object_or_404(RapportJournalierCaisse, pk=pk)
+        else:
+            rapport = get_object_or_404(RapportJournalierCaisse, pk=pk, caissiere=user)
+
+        payload = dict(request.query_params)
+        if isinstance(request.data, dict):
+            payload.update(request.data)
+
+        self._update_and_regenerate(request, rapport, params=payload)
+        serializer = RapportJournalierCaisseSerializer(rapport, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request, pk, *args, **kwargs):
+        return self.patch(request, pk, *args, **kwargs)
+
+    def post(self, request, pk, *args, **kwargs):
+        return self.patch(request, pk, *args, **kwargs)
 
