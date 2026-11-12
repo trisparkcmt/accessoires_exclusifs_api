@@ -354,5 +354,54 @@ class POSRapportJournalierTests(APITestCase):
         self.assertEqual(res_post_ap.data["communication_digitale"], "Reels Instagram publiés")
         self.assertIn("Reels Instagram publiés", res_post_ap.data["apercu_texte_whatsapp"])
 
+    def test_isolation_stock_et_depenses_entre_caissieres(self):
+        """
+        Garantit que chaque caissière ne voit STRICTEMENT QUE ses propres actions :
+        - Les entrées de stock de la caissière 1 n'apparaissent JAMAIS chez la caissière 2.
+        - Les dépenses de la caissière 1 n'apparaissent JAMAIS chez la caissière 2.
+        - Sur l'endpoint des mouvements de stock, une serveuse ne voit QUE ses propres mouvements.
+        """
+        # 1. Marie (caissière 1) effectue une entrée de stock et une dépense
+        MouvementStock.objects.create(
+            type_produit="parfum",
+            produit_id=self.parfum.id,
+            nom_produit=self.parfum.nom,
+            quantite_avant=Decimal("0.00"),
+            quantite_apres=Decimal("15.00"),
+            quantite_ajoutee=Decimal("15.00"),
+            utilisateur=self.serveuse_user  # Marie
+        )
+        Depense.objects.create(
+            titre="Transport Marie",
+            montant=Decimal("5000.00"),
+            cree_par=self.serveuse_user  # Marie
+        )
+
+        # 2. Awa (caissière 2) consulte son aperçu
+        self.client.force_authenticate(user=self.serveuse_user_2)
+        res_awa = self.client.get(self.apercu_url)
+        self.assertEqual(res_awa.status_code, status.HTTP_200_OK)
+        # Awa ne doit avoir AUCUNE entrée de stock ni dépense
+        self.assertEqual(len(res_awa.data["entrees_stock"]), 0)
+        self.assertEqual(len(res_awa.data["depenses"]), 0)
+        self.assertEqual(Decimal(str(res_awa.data["total_depenses"])), Decimal("0.00"))
+        self.assertEqual(Decimal(str(res_awa.data["reste_en_caisse"])), Decimal("0.00"))
+
+        # 3. Awa consulte l'API générale des mouvements de stock
+        mouvements_url = reverse('mouvementstock-list')
+        res_mouvements_awa = self.client.get(mouvements_url)
+        self.assertEqual(res_mouvements_awa.status_code, status.HTTP_200_OK)
+        # Awa n'a pas créé de mouvement, elle ne doit rien voir
+        items_awa = res_mouvements_awa.data if isinstance(res_mouvements_awa.data, list) else res_mouvements_awa.data.get('results', [])
+        self.assertEqual(len(items_awa), 0)
+
+        # 4. Superadmin consulte les mouvements de stock -> voit tous les mouvements (créations initiales + ajout Marie)
+        self.client.force_authenticate(user=self.superadmin)
+        res_mouvements_admin = self.client.get(mouvements_url)
+        self.assertEqual(res_mouvements_admin.status_code, status.HTTP_200_OK)
+        items_admin = res_mouvements_admin.data if isinstance(res_mouvements_admin.data, list) else res_mouvements_admin.data.get('results', [])
+        self.assertGreaterEqual(len(items_admin), 3)
+
+
 
 

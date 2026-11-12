@@ -2013,6 +2013,9 @@ class MouvementStockViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ['-date_ajout']
 
     def get_queryset(self):
+        user = self.request.user
+        if user.is_authenticated and not (user.is_superuser or user.is_staff):
+            return MouvementStock.objects.select_related('utilisateur').filter(utilisateur=user)
         return MouvementStock.objects.select_related('utilisateur').all()
 
 
