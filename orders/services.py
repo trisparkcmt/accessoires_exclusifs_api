@@ -89,6 +89,83 @@ def number_to_words_fr(number: float) -> str:
     return (words.capitalize() + " FCFA") if words else ""
 
 
+def extraire_lignes_commande(commande):
+    """
+    Extrait une liste unifiée et ordonnée de tous les articles d'une commande
+    (parfums, accessoires, essences, diffuseurs, créations sur-mesure)
+    pour un rendu soigné et harmonieux dans la facture PDF et l'email client.
+    """
+    lignes = []
+
+    # 1. Parfums standard
+    for lp in commande.lignes_parfums.select_related('parfum').all():
+        contenance = f" ({lp.parfum.contenance_ml} ml)" if (lp.parfum and lp.parfum.contenance_ml) else ""
+        lignes.append({
+            'type': 'Parfum',
+            'nom': f"{lp.nom_snapshot}{contenance}",
+            'quantite': lp.quantite,
+            'prix_unitaire': lp.prix_unitaire_snapshot,
+            'sous_total': lp.sous_total,
+        })
+
+    # 2. Accessoires standard
+    for la in commande.lignes_accessoires.select_related('accessoire').all():
+        lignes.append({
+            'type': 'Accessoire',
+            'nom': la.nom_snapshot,
+            'quantite': la.quantite,
+            'prix_unitaire': la.prix_unitaire_snapshot,
+            'sous_total': la.sous_total,
+        })
+
+    # 3. Produits finis essence
+    for le in commande.lignes_produit_fini_essence.select_related('produit_fini_essence__essence').all():
+        taille = f" ({le.produit_fini_essence.taille_ml} ml)" if (le.produit_fini_essence and le.produit_fini_essence.taille_ml) else ""
+        lignes.append({
+            'type': 'Essence',
+            'nom': f"{le.nom_snapshot}{taille}",
+            'quantite': le.quantite,
+            'prix_unitaire': le.prix_unitaire_snapshot,
+            'sous_total': le.sous_total,
+        })
+
+    # 4. Diffuseurs de parfum
+    for ld in commande.lignes_diffuseurs.select_related('diffuseur').all():
+        lignes.append({
+            'type': 'Diffuseur',
+            'nom': ld.nom_snapshot,
+            'quantite': ld.quantite,
+            'prix_unitaire': ld.prix_unitaire_snapshot,
+            'sous_total': ld.sous_total,
+        })
+
+    # 5. Parfums personnalisés
+    for lpp in commande.lignes_parfums_perso.select_related('parfum_personnalise__flacon').all():
+        flacon_nom = lpp.parfum_personnalise.flacon.nom if (lpp.parfum_personnalise and lpp.parfum_personnalise.flacon) else ""
+        flacon_txt = f" (Flacon {flacon_nom})" if flacon_nom else ""
+        nom = lpp.parfum_personnalise.nom if lpp.parfum_personnalise else "Parfum sur-mesure"
+        lignes.append({
+            'type': 'Sur-Mesure',
+            'nom': f"{nom}{flacon_txt}",
+            'quantite': lpp.quantite,
+            'prix_unitaire': lpp.prix_snapshot,
+            'sous_total': lpp.sous_total,
+        })
+
+    # 6. Essences personnalisées
+    for lep in commande.lignes_essence_personnalisee.select_related('essence_personnalise').all():
+        nom = lep.essence_personnalise.nom if lep.essence_personnalise else "Essence personnalisée"
+        lignes.append({
+            'type': 'Essence Sur-Mesure',
+            'nom': nom,
+            'quantite': lep.quantite,
+            'prix_unitaire': getattr(lep, 'prix_snapshot', getattr(lep, 'prix_calcule', 0)),
+            'sous_total': lep.sous_total,
+        })
+
+    return lignes
+
+
 def generer_facture(commande):
     """
     Génère (ou régénère) la facture PDF d'une commande payée.
@@ -111,7 +188,6 @@ def generer_facture(commande):
         max_retries = 5
         for attempt in range(max_retries): 
             try:
-            
                 facture.save()
                 break
             except IntegrityError as e:
@@ -121,6 +197,8 @@ def generer_facture(commande):
                     )
                     facture.numero_facture = Facture.generer_numero()
                     continue
+                raise
+            except Exception:
                 raise
         else:
             logger.error(
@@ -132,8 +210,10 @@ def generer_facture(commande):
     # ── 2. Préparer le contexte du template ───────────────────────────
     # Chemin absolu du logo pour que xhtml2pdf puisse le lire
     logo_path = os.path.join(settings.BASE_DIR, 'staticfiles', 'img', 'logo.png')
+    if not os.path.exists(logo_path):
+        logo_path = None
 
-    # gérer le cas où la commande est passée par un invité (client peut être None)
+    # Gérer le client et l'utilisateur
     client_obj = commande.client if getattr(commande, 'client', None) else None
     user_obj = getattr(client_obj, 'user', None) if client_obj else None
 
@@ -157,6 +237,8 @@ def generer_facture(commande):
     entreprise_email = 'accessoiresexclusifs@gmail.com'
 
     total_en_lettres = number_to_words_fr(commande.total_ttc)
+    lignes_articles = extraire_lignes_commande(commande)
+    vendeur_nom = (commande.vendeur.get_full_name() or commande.vendeur.first_name) if commande.vendeur else None
 
     context = {
         'facture': facture,
@@ -165,12 +247,8 @@ def generer_facture(commande):
         'user': user_obj,
         'logo_path': logo_path,
         'date_emission': facture.date_emission,
-        'lignes_parfums': commande.lignes_parfums.all(),
-        'lignes_accessoires': commande.lignes_accessoires.all(),
-        'lignes_produit_fini_essence': commande.lignes_produit_fini_essence.all(),
-        'lignes_parfums_perso': commande.lignes_parfums_perso.all(),
-        'lignes_essence_personnalisee': commande.lignes_essence_personnalisee.all(),
-        'lignes_diffuseurs': commande.lignes_diffuseurs.all(),
+        'lignes_articles': lignes_articles,
+        'vendeur_nom': vendeur_nom,
         'entreprise_telephone': entreprise_telephone,
         'entreprise_email': entreprise_email,
         'total_en_lettres': total_en_lettres,
@@ -220,7 +298,6 @@ def generer_facture(commande):
     facture.save()
 
     # ── 7. Envoyer l'email au client ──────────────────────────────────
-    # L'adresse peut être absente si commande.client est None (invité)
     email_client = None
     if client_obj and getattr(client_obj, 'user', None) and getattr(client_obj.user, 'email', None):
         email_client = client_obj.user.email
@@ -230,7 +307,6 @@ def generer_facture(commande):
             envoyer_email_facture(facture, pdf_content, email_client)
         except Exception as e:
             logger.error(f"[FACTURE] Erreur envoi email pour {facture.numero_facture}: {e}")
-            # L'email en échec ne doit pas bloquer la sauvegarde
 
     return facture
 
@@ -244,22 +320,43 @@ def envoyer_email_facture(facture, pdf_content: bytes, email_destinataire: str):
     Envoie la facture PDF par email au client avec un design HTML Premium.
     """
     commande = facture.commande
-    user = commande.client.user
-    prenom = user.first_name or 'Cher client'
+    client = commande.client
+    user = getattr(client, 'user', None) if client else None
+    prenom = (user.first_name or user.username) if user else (commande.livraison_nom_complet or 'Cher client')
+    vendeur_nom = (commande.vendeur.get_full_name() or commande.vendeur.first_name) if commande.vendeur else None
+
+    try:
+        from catalogue.models import EntrepriseInfo
+        entreprise = EntrepriseInfo.objects.first()
+    except Exception:
+        entreprise = None
+
+    telephones = []
+    if entreprise:
+        if entreprise.telephone_principal:
+            telephones.append(entreprise.telephone_principal)
+        if entreprise.telephone_secondaire:
+            telephones.append(entreprise.telephone_secondaire)
+        if not telephones and entreprise.whatsapp:
+            telephones.append(entreprise.whatsapp)
+
+    entreprise_telephone = " / ".join(telephones) if telephones else "+237 693 835 601 / 680 215 310"
+    entreprise_email = 'accessoiresexclusifs@gmail.com'
 
     sujet = f"Votre facture {facture.numero_facture} — Accessoires Exclusifs"
     
     # 1. Version texte brut (Fallback)
     corps_texte = f"""Bonjour {prenom},
 
-Nous vous remercions pour votre commande {commande.numero_commande}.
-Veuillez trouver ci-joint votre facture {facture.numero_facture} d'un montant de {commande.total_ttc:,.0f} FCFA.
+Nous vous remercions pour votre achat.
+Votre commande {commande.numero_commande} a bien été enregistrée et réglée avec succès.
+Veuillez trouver ci-joint votre facture officielle {facture.numero_facture} d'un montant de {commande.total_ttc:,.0f} FCFA.
 
 Pour voir les détails en ligne, visitez : {settings.FRONTEND_URL}/mes-commandes/{commande.numero_commande}
 
 Cordialement,
 L'équipe Accessoires Exclusifs
-redefine your style
+Redefine your style
 """
 
     # 2. Construction de l'URL pour le bouton
@@ -270,7 +367,12 @@ redefine your style
         'prenom': prenom,
         'commande': commande,
         'facture': facture,
-        'url_commande': url_commande
+        'url_commande': url_commande,
+        'lignes_articles': extraire_lignes_commande(commande),
+        'vendeur_nom': vendeur_nom,
+        'entreprise_telephone': entreprise_telephone,
+        'entreprise_email': entreprise_email,
+        'DEVISE': 'FCFA',
     }
     corps_html = render_to_string('emails/facture_email.html', context)
 

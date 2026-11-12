@@ -35,6 +35,42 @@ def generer_facture_async(self, commande_id):
         raise exc
 
 
+@shared_task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+)
+def renvoyer_facture_email_async(self, facture_id, email_destinataire=None):
+    """
+    Renvoie la facture par email en arrière-plan via Celery.
+    """
+    from orders.models import Facture
+    from orders.services import envoyer_email_facture, generer_facture
+
+    try:
+        facture = Facture.objects.select_related('commande__client__user').get(id=facture_id)
+        if not facture.fichier_pdf:
+            facture = generer_facture(facture.commande)
+
+        email = email_destinataire
+        if not email and facture.commande.client and facture.commande.client.user:
+            email = facture.commande.client.user.email
+
+        if not email:
+            logger.warning(f"[CELERY FACTURE] Aucun email pour renvoyer la facture #{facture_id}")
+            return False
+
+        pdf_content = facture.fichier_pdf.read()
+        envoyer_email_facture(facture, pdf_content, email)
+        logger.info(f"[CELERY FACTURE] Facture {facture.numero_facture} renvoyée avec succès à {email}")
+        return True
+    except Exception as exc:
+        logger.error(f"[CELERY FACTURE] Erreur renvoi facture #{facture_id}: {exc}")
+        raise exc
+
+
 @shared_task
 def relancer_paniers_abandonnes_task():
     """
